@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3NPS Major Scale Patterns — Validation</title>
+<style>
+    :root { --bg:#151515; --card:#1e1e1e; --line:#3a3a3a; --text:#ddd; --muted:#999; --accent:#ff9800; --root:#4caf50; --warn:#ff6b6b; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:24px; background:var(--bg); color:var(--text); font:14px/1.45 Segoe UI, Arial, sans-serif; }
+    h1 { margin:0 0 6px; font-size:1.45rem; color:var(--accent); }
+    h2 { margin:0; font-size:1rem; color:var(--accent); }
+    .intro { max-width:1000px; margin:0 0 18px; color:var(--muted); }
+    .intro b { color:var(--text); }
+    .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:16px 0; padding:10px 12px; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+    .toolbar label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; }
+    .toolbar select { background:#111; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:6px 9px; font:inherit; }
+    .summary { margin-left:auto; font-size:.8rem; color:var(--muted); }
+    .summary .ok { color:var(--root); font-weight:700; }
+    .summary .bad { color:var(--warn); font-weight:700; }
+    .patterns { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:16px; }
+    .pattern { background:var(--card); border:1px solid var(--line); border-radius:9px; padding:12px; min-width:0; }
+    .pattern-head { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; margin-bottom:8px; }
+    .pattern-head .meta { color:var(--muted); font-size:.76rem; }
+    .board-wrap { overflow-x:auto; margin:4px 0 8px; }
+    table.board { border-collapse:collapse; font-size:10px; table-layout:fixed; }
+    table.board th { font-weight:normal; color:var(--muted); font-size:9px; height:19px; padding:0 1px; }
+    table.board th.string-name { width:20px; text-align:right; padding-right:4px; color:#bbb; font-size:10px; }
+    table.board td { width:21px; height:26px; padding:0; border-right:1px solid #333; border-bottom:1px solid #444; text-align:center; vertical-align:middle; }
+    table.board td.nut { border-left:3px solid #aaa; }
+    table.board tr:first-child td { border-top:1px solid #444; }
+    .dot { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:var(--accent); color:#151515; font-size:8px; font-weight:800; box-shadow:0 0 0 1px rgba(0,0,0,.65); }
+    .dot.root { background:var(--root); color:#081508; box-shadow:0 0 0 2px rgba(255,255,255,.8), 0 0 6px rgba(76,175,80,.6); }
+    .dot.out { background:transparent; color:var(--warn); box-shadow:none; font-size:12px; }
+    .tab { margin:0; padding:7px 8px; background:#111; border-radius:5px; color:#bbb; font:11px/1.45 Consolas, monospace; white-space:pre; overflow-x:auto; }
+    .status { margin-top:7px; color:var(--muted); font-size:.73rem; }
+    .status .good { color:var(--root); }
+    .status .warn { color:var(--warn); }
+    .all-keys { margin-top:20px; padding:12px; background:var(--card); border:1px solid var(--line); border-radius:8px; }
+    .all-keys h2 { margin-bottom:8px; }
+    .key-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(82px,1fr)); gap:6px; }
+    .key-badge { padding:5px 7px; background:#111; border:1px solid var(--line); border-radius:5px; text-align:center; font-size:.75rem; color:#bbb; }
+    .key-badge.good { border-color:rgba(76,175,80,.55); }
+    .key-badge.bad { border-color:rgba(255,107,107,.55); color:#e6a0a0; }
+    .foot { margin-top:20px; color:#666; font-size:.72rem; }
+</style>
+</head>
+<body>
+<h1>3NPS Major Scale — Validation</h1>
+<div class="intro">
+    Each pattern has <b>exactly 3 scale notes per string</b>. <b>P1</b> starts on the 1st scale degree
+    on the low E string, <b>P2</b> on the 2nd degree, and so on. The generator follows the scale upwards
+    across the strings, so the G–B string tuning shift is included automatically.
+    The board shows frets 0–15; any note that would fall above fret 15 is flagged.
+</div>
+<div class="toolbar">
+    <label for="keySel">Key</label>
+    <select id="keySel"></select>
+    <div id="summary" class="summary">Loading…</div>
+</div>
+<div id="patterns" class="patterns"></div>
+<div class="all-keys">
+    <h2>Board fit check (frets 0–15)</h2>
+    <div id="allKeys" class="key-grid"></div>
+</div>
+<div class="foot">Standalone validation page · not connected to the Practice Assistant app.</div>
+<script>
+    const NOTE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const DEG = ['1', '2', '3', '4', '5', '6', '7'];
+    const SCALE = [0, 2, 4, 5, 7, 9, 11];
+    const OPEN_LOW = [40, 45, 50, 55, 59, 64];       // low E, A, D, G, B, high e
+    const STRING_NAMES = ['e', 'B', 'G', 'D', 'A', 'E']; // high to low display
+    const MAX_FRET = 15;
+
+    function mod12(n) { return ((n % 12) + 12) % 12; }
+    function isScalePc(pc, root) { return SCALE.indexOf(mod12(pc - root)) >= 0; }
+
+    function nextScaleMidi(from, root) {
+        let m = Math.max(0, from);
+        while (!isScalePc(mod12(m), root)) m++;
+        return m;
+    }
+
+    function firstFretOnLowE(root, degreeIndex) {
+        const pc = mod12(root + SCALE[degreeIndex]);
+        for (let f = 0; f <= MAX_FRET; f++) {
+            if (mod12(OPEN_LOW[0] + f) === pc) return f;
+        }
+        return 0;
+    }
+
+    // Generate one 3NPS pattern: 3 consecutive scale tones on each string.
+    // P1 starts on degree 1 on low E, P2 on degree 2, etc.
+    function generatePattern(root, degreeIndex) {
+        const startFret = firstFretOnLowE(root, degreeIndex);
+        let cursor = OPEN_LOW[0] + startFret - 1;
+        const strings = [];
+        for (let s = 0; s < 6; s++) {
+            const notes = [];
+            for (let n = 0; n < 3; n++) {
+                let midi = nextScaleMidi(cursor + 1, root);
+                while (midi < OPEN_LOW[s]) midi += 12;
+                const fret = midi - OPEN_LOW[s];
+                notes.push({ midi: midi, fret: fret, pc: mod12(midi), degree: mod12(midi - root) });
+                cursor = midi;
+            }
+            strings.push(notes);
+        }
+        const all = strings.reduce(function (a, b) { return a.concat(b); }, []);
+        const frets = all.map(function (n) { return n.fret; });
+        return {
+            index: degreeIndex,
+            degree: SCALE[degreeIndex],
+            startFret: startFret,
+            strings: strings,
+            notes: all,
+            minFret: Math.min.apply(null, frets),
+            maxFret: Math.max.apply(null, frets),
+            outOfRange: all.filter(function (n) { return n.fret > MAX_FRET; })
+        };
+    }
+
+    function validatePattern(pattern, root) {
+        const three = pattern.strings.every(function (s) { return s.length === 3; });
+        const inScale = pattern.notes.every(function (n) { return isScalePc(n.pc, root); });
+        const starts = pattern.strings[0][0].pc === mod12(root + pattern.degree);
+        const total = pattern.notes.length === 18;
+        return three && inScale && starts && total;
+    }
+    function buildAll(root) {
+        const out = [];
+        for (let d = 0; d < 7; d++) out.push(generatePattern(root, d));
+        return out;
+    }
+
+    function spanDot(note) {
+        const dot = document.createElement('span');
+        const degreeIndex = SCALE.indexOf(note.degree);
+        dot.className = 'dot' + (degreeIndex === 0 ? ' root' : '');
+        dot.textContent = degreeIndex >= 0 ? DEG[degreeIndex] : '';
+        dot.title = NOTE[note.pc] + ' · degree ' + (degreeIndex + 1);
+        return dot;
+    }
+
+    function renderPattern(pattern, root) {
+        const card = document.createElement('section');
+        card.className = 'pattern';
+        const head = document.createElement('div');
+        head.className = 'pattern-head';
+        const h = document.createElement('h2');
+        h.textContent = 'P' + (pattern.index + 1);
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent = 'starts on degree ' + (pattern.index + 1) + ' (' +
+            NOTE[mod12(root + pattern.degree)] + ') · low E fret ' + pattern.startFret;
+        head.appendChild(h); head.appendChild(meta); card.appendChild(head);
+
+        const wrap = document.createElement('div');
+        wrap.className = 'board-wrap';
+        const table = document.createElement('table');
+        table.className = 'board';
+        const thead = document.createElement('thead');
+        const hr = document.createElement('tr');
+        const corner = document.createElement('th');
+        corner.className = 'string-name';
+        hr.appendChild(corner);
+        for (let f = 0; f <= MAX_FRET; f++) {
+            const th = document.createElement('th');
+            th.textContent = f === 0 ? '0' : String(f);
+            hr.appendChild(th);
+        }
+        thead.appendChild(hr); table.appendChild(thead);
+        const tbody = document.createElement('tbody');
+        const displayStrings = pattern.strings.slice().reverse();
+        displayStrings.forEach(function (notes, rowIndex) {
+            const tr = document.createElement('tr');
+            const name = document.createElement('th');
+            name.className = 'string-name';
+            name.textContent = STRING_NAMES[rowIndex];
+            tr.appendChild(name);
+            for (let f = 0; f <= MAX_FRET; f++) {
+                const td = document.createElement('td');
+                if (f === 0) td.className = 'nut';
+                const note = notes.filter(function (n) { return n.fret === f; })[0];
+                if (note) td.appendChild(spanDot(note));
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody); wrap.appendChild(table); card.appendChild(wrap);
+
+        const tab = document.createElement('pre');
+        tab.className = 'tab';
+        tab.textContent = displayStrings.map(function (notes, i) {
+            return STRING_NAMES[i] + '|' + notes.map(function (n) { return n.fret; }).join('-');
+        }).join('\n');
+        card.appendChild(tab);
+
+        const status = document.createElement('div');
+        status.className = 'status';
+        const valid = validatePattern(pattern, root);
+        const fits = pattern.outOfRange.length === 0;
+        status.innerHTML = '<span class="' + (valid ? 'good' : 'warn') + '">' +
+            (valid ? '✓ 3 notes/string · 18 notes · all in scale' : '✗ pattern validation failed') +
+            '</span> · range ' + pattern.minFret + '–' + pattern.maxFret +
+            (fits ? ' · fits 0–15' : ' · <span class="warn">needs fret ' +
+                Math.max.apply(null, pattern.outOfRange.map(function (n) { return n.fret; })) +
+                '</span>');
+        card.appendChild(status);
+        return card;
+    }
+
+    function renderAllKeys() {
+        const host = document.getElementById('allKeys');
+        host.innerHTML = '';
+        let total = 0, totalFit = 0;
+        for (let root = 0; root < 12; root++) {
+            const patterns = buildAll(root);
+            const fit = patterns.filter(function (p) { return p.outOfRange.length === 0; }).length;
+            total += patterns.length; totalFit += fit;
+            const badge = document.createElement('div');
+            badge.className = 'key-badge ' + (fit === 7 ? 'good' : 'bad');
+            badge.textContent = NOTE[root] + ' · ' + fit + '/7';
+            badge.title = 'Patterns fully visible in frets 0–15';
+            host.appendChild(badge);
+        }
+        const info = document.createElement('div');
+        info.className = 'key-badge';
+        info.style.gridColumn = '1 / -1';
+        info.textContent = 'Total: ' + totalFit + '/' + total + ' patterns fit in frets 0–15';
+        host.appendChild(info);
+    }
+
+    function render(root) {
+        const host = document.getElementById('patterns');
+        const summary = document.getElementById('summary');
+        host.innerHTML = '';
+        const patterns = buildAll(root);
+        const valid = patterns.filter(function (p) { return validatePattern(p, root); }).length;
+        const fits = patterns.filter(function (p) { return p.outOfRange.length === 0; }).length;
+        summary.innerHTML = '<span class="' + (valid === 7 ? 'ok' : 'bad') + '">' +
+            valid + '/7 valid</span> · ' + fits + '/7 fit 0–15';
+        patterns.forEach(function (p) { host.appendChild(renderPattern(p, root)); });
+        renderAllKeys();
+    }
+
+    const keySel = document.getElementById('keySel');
+    NOTE.forEach(function (name, i) {
+        const opt = document.createElement('option');
+        opt.value = String(i); opt.textContent = name + ' major';
+        keySel.appendChild(opt);
+    });
+    keySel.value = '0';
+    keySel.addEventListener('change', function () { render(parseInt(this.value, 10)); });
+    render(0);
+</script>
+</body>
+</html>
+
