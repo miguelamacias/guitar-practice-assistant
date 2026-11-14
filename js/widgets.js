@@ -430,6 +430,7 @@
                     <textarea id="transposeOutput" class="transpose-output" rows="4" readonly spellcheck="false" placeholder="—"></textarea>
                 </label>
             </div>
+            <div class="transposer-hint">Tip: one line per section (Verse, Chorus…) is fine.</div>
             <div id="transposeCapo" class="transposer-capo" aria-live="polite">Enter chords to transpose.</div>
             <div id="transposeBest" class="transposer-best" aria-live="polite" hidden></div>
         </div>`;
@@ -445,6 +446,9 @@
     NOTE_INDEX['E#'] = 5;
     NOTE_INDEX.Fb = 4;
     const CHORD_RE = /^([A-Ga-g])([#b]?)(.*?)(?:\/([A-Ga-g])([#b]?))?$/;
+    // Accept real chord qualities (maj7, m7b5, 7(b9), add9, 6/9...) but reject
+    // section labels such as "Chorus" or "Bridge" that happen to start with A-G.
+    const QUALITY_RE = /^(?:(?:maj(?:or)?|min(?:or)?|mi|m|M|dim|aug|sus|add|no|dom|°|º|ø|\+|-)?(?:[0-9]|1[0-3])*(?:[#b][0-9]+)*(?:sus[24]|add[0-9]+|no[0-9]+)?(?:\([^)]*\))?(?:\/[0-9]+)?)?$/i;
     const FLAT_KEY_PCS = [1, 3, 5, 8, 10];      // Db, Eb, F, Ab, Bb
     const SHARP_KEY_PCS = [2, 4, 6, 7, 9, 11];   // D, E, F#, G, A, B
 
@@ -462,6 +466,7 @@
         if (!m) return null;
         const root = m[1].toUpperCase() + m[2];
         const bass = m[4] ? m[4].toUpperCase() + m[5] : '';
+        if (!QUALITY_RE.test(m[3] || '')) return null;
         if (noteIndex(root) < 0 || (bass && noteIndex(bass) < 0)) return null;
         return { root: root, suffix: m[3] || '', bass: bass };
     }
@@ -520,7 +525,7 @@
         'C6', 'D6', 'E6', 'G6'
     ].forEach(function (name) { OPEN_CHORDS[name] = true; });
 
-    function openChordKey(shape) {
+    function chordKey(shape) {
         const chord = parseChord(shape);
         if (!chord) return '';
         let q = chord.suffix;
@@ -529,8 +534,21 @@
         else if (q === 'm' || q === 'min' || q === 'mi' || q === '-') q = 'm';
         else if (q === 'm7' || q === 'min7' || q === 'mi7' || q === '-7') q = 'm7';
         else q = q.toLowerCase();
-        const key = chord.root + q;
-        return OPEN_CHORDS[key] ? key : '';
+        return chord.root + q;
+    }
+
+    // 1.0 = open, 0.6 = gateway barre (F/Bm), 0.7 = easy substitute,
+    // 0.25 = other common barre. Everything else is 0.
+    const FRIENDLY_WEIGHTS = {
+        'F': 0.6, 'Bm': 0.6,
+        'Fmaj7': 0.7, 'Bm7': 0.7,
+        'B': 0.25, 'Bb': 0.25, 'F#': 0.25,
+        'F#m': 0.25, 'C#m': 0.25, 'Gm': 0.25
+    };
+
+    function chordWeight(key) {
+        if (!key) return 0;
+        return OPEN_CHORDS[key] ? 1 : (FRIENDLY_WEIGHTS[key] || 0);
     }
 
     function findBestCapo(text) {
@@ -540,20 +558,35 @@
         if (!chords.length) return null;
         const firstRoot = noteIndex(chords[0].root);
         let best = null;
-        // Common capo range; 0 means "no capo".
+        // Common capo range; 0 means "no capo". A tiny capo penalty prefers a
+        // lower, more comfortable fret when the chord scores are very close.
         for (let capo = 0; capo <= 7; capo++) {
             const flats = preferFlats(src, firstRoot, -capo);
+            let score = 0;
             let openCount = 0;
             const openChords = [];
+            const easyChords = [];
             chords.forEach(function (chord) {
                 const shape = transposeChord(chord, -capo, flats);
-                if (!openChordKey(shape)) return;
-                openCount++;
-                if (openChords.indexOf(shape) < 0) openChords.push(shape);
+                const key = chordKey(shape);
+                const weight = chordWeight(key);
+                if (!weight) return;
+                score += weight;
+                if (weight >= 1) {
+                    openCount++;
+                    if (openChords.indexOf(shape) < 0) openChords.push(shape);
+                } else if (easyChords.indexOf(shape) < 0) {
+                    easyChords.push(shape);
+                }
             });
-            if (!best || openCount > best.openCount ||
-                (openCount === best.openCount && capo < best.capo)) {
-                best = { capo: capo, openCount: openCount, total: chords.length, openChords: openChords };
+            const adjusted = score - capo * 0.03;
+            if (!best || adjusted > best.adjusted + 1e-9 ||
+                (Math.abs(adjusted - best.adjusted) < 1e-9 && capo < best.capo)) {
+                best = {
+                    capo: capo, score: Math.round(score * 10) / 10,
+                    adjusted: adjusted, openCount: openCount, total: chords.length,
+                    openChords: openChords, easyChords: easyChords
+                };
             }
         }
         return best;
@@ -623,19 +656,22 @@
             bestEl.innerHTML = '';
             const title = document.createElement('strong');
             title.textContent = best.capo
-                ? 'Best open-chord capo: ' + best.capo
-                : 'Best open-chord position: no capo';
+                ? 'Best friendly capo: ' + best.capo
+                : 'Best friendly position: no capo';
             bestEl.appendChild(title);
             const detail = document.createElement('span');
-            if (!best.openCount) {
-                detail.textContent = ' — no open chords found in this progression.';
+            if (!best.score) {
+                detail.textContent = ' — no friendly chords found in this progression.';
             } else {
-                detail.textContent = ' — ' + best.openCount + '/' + best.total + ' open' +
-                    (best.openChords.length ? ': ' + best.openChords.join(' · ') : '');
+                let text = best.openCount + '/' + best.total + ' open';
+                if (best.openChords.length) text += ': ' + best.openChords.join(' · ');
+                if (best.easyChords.length) text += ' + ' + best.easyChords.join(' + ');
+                if (best.score < best.total) text += ' (score ' + best.score + '/' + best.total + ')';
+                detail.textContent = ' — ' + text;
             }
             bestEl.appendChild(detail);
-            bestEl.classList.toggle('is-neutral', !best.openCount);
-            if (best.capo > 0) {
+            bestEl.classList.toggle('is-neutral', !best.score);
+            if (best.capo > 0 && best.score > 0) {
                 bestEl.appendChild(document.createTextNode(' '));
                 const use = document.createElement('button');
                 use.type = 'button';

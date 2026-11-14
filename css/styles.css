@@ -1572,6 +1572,7 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 }
 .transpose-input:focus { outline: none; border-color: var(--sec-color, var(--accent)); }
 .transpose-output { color: var(--sec-color, var(--accent)); background: rgba(255, 255, 255, 0.03); cursor: default; }
+.transposer-hint { margin-top: 6px; font-size: 0.7rem; color: #777; }
 .transposer-capo {
     margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--sec-color, var(--accent));
     border-radius: 4px; background: rgba(255, 255, 255, 0.04);
