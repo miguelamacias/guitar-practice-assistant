@@ -219,22 +219,22 @@
         return (state.labels === 'notes') ? NOTE[pc] : DEG[semis];
     }
 
-    // ---------- 3NPS (major scale only) ----------
-    // A 3NPS pattern is a continuous run of the major scale with exactly
-    // three notes on each string. P1 starts on degree 1 on low E, P2 on
-    // degree 2, etc. Following MIDI pitches (instead of fret offsets) makes
-    // the G -> B string shift automatic.
-    function nextScaleMidi(from, rootPc) {
+    // ---------- 3NPS (the 7 major modes) ----------
+    // A 3NPS pattern is a continuous run of the parent major scale with exactly
+    // three notes on each string. Like CAGED, the patterns are anchored on the
+    // parent major tonic, not on the mode tonic: A Aeolian uses C major, so P1
+    // starts on C and the A root appears in P6. Following MIDI pitches (instead
+    // of fret offsets) makes the G -> B string shift automatic.
+    function nextScaleMidi(from, rootPc, intervals) {
         let midi = Math.max(0, from);
-        const major = SCALES['Ionian (major)'];
-        while (major.indexOf((midi - rootPc + 12) % 12) < 0) midi++;
+        while (intervals.indexOf((midi - rootPc + 12) % 12) < 0) midi++;
         return midi;
     }
 
-    function npsPatternSet(rootPc, pattern) {
+    function npsPatternSet(rootPc, pattern, intervals) {
         const set = {};
         const degree = Math.max(0, Math.min(6, (pattern || 1) - 1));
-        const degreePc = (rootPc + SCALES['Ionian (major)'][degree]) % 12;
+        const degreePc = (rootPc + intervals[degree]) % 12;
         let startFret = 0;
         for (let f = 0; f <= 11; f++) {
             if ((OPEN[0] + f) % 12 === degreePc) { startFret = f; break; }
@@ -242,7 +242,7 @@
         let cursor = OPEN[0] + startFret - 1;   // OPEN is low E -> high e
         for (let s = 0; s < 6; s++) {
             for (let n = 0; n < 3; n++) {
-                let midi = nextScaleMidi(cursor + 1, rootPc);
+                let midi = nextScaleMidi(cursor + 1, rootPc, intervals);
                 while (midi < OPEN[s]) midi += 12;
                 const fret = midi - OPEN[s];
                 const row = 5 - s;
@@ -253,12 +253,13 @@
         return set;
     }
 
-    function isMajorScale() {
-        return state.kind === 'scale' && state.type === 'Ionian (major)';
-    }
-
+    // 3NPS follows the same parent-major rule as CAGED. The derived scales
+    // (pentatonics, blues, harmonic/melodic minor) keep CAGED and do not claim
+    // to have seven major-mode 3NPS patterns.
     function npsAvailable() {
-        return !state.allNotes && isMajorScale();
+        return !state.allNotes &&
+            state.kind === 'scale' &&
+            isMajorMode(state.type);
     }
     function playNote(midi) {
         try {
@@ -373,7 +374,12 @@
 
     function paintScale(ivals, rootPc, cls, small, shapeName, anchorPc, npsPattern) {
         const shapeRoot = (typeof anchorPc === 'number') ? anchorPc : rootPc;
-        const npsSet = npsPattern ? npsPatternSet(shapeRoot, npsPattern) : null;
+        // Modes use the parent major patterns, exactly like CAGED; the mode's
+        // own intervals (ivals) decide which of those notes are painted and
+        // which note carries the root color.
+        const npsSet = npsPattern
+            ? npsPatternSet(shapeRoot, npsPattern, SCALES['Ionian (major)'])
+            : null;
         const startFret = (!npsSet && shapeName && shapeName !== 'all') ? scaleShapeStart(shapeName, shapeRoot) : null;
 
         for (let row = 0; row < 6; row++) {
@@ -502,7 +508,9 @@
                 const active = (state.npsPattern === p);
                 b.className = 'th-chip' + (active ? ' active' : '');
                 b.textContent = 'P' + p;
-                b.title = '3 notes per string · starts on degree ' + p;
+                b.title = state.type === 'Ionian (major)'
+                    ? '3 notes per string · major degree ' + p
+                    : '3 notes per string · parent major degree ' + p;
                 b.addEventListener('click', function () {
                     state.npsPattern = p; saveState(); render();
                 });
