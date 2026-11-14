@@ -110,6 +110,10 @@ _TAG_CACHE = {}
 _TAG_LOCK = threading.Lock()
 _MAX_TAG_BYTES = 4 * 1024 * 1024
 
+# ID3v2.2 PIC stores a three-letter format instead of a MIME string.
+_PIC_MIME = {'JPG': 'image/jpeg', 'JPEG': 'image/jpeg', 'PNG': 'image/png',
+             'GIF': 'image/gif', 'BMP': 'image/bmp'}
+
 
 def _syncsafe(raw):
     if len(raw) != 4:
@@ -214,6 +218,117 @@ def read_mp3_tags(path):
             _TAG_CACHE.clear()
         _TAG_CACHE[key] = dict(tags)
     return tags
+
+
+def _cover_description_end(data, start, encoding):
+    """Offset of the null terminator of an APIC description."""
+    if encoding in (1, 2):          # UTF-16 / UTF-16BE: 2-byte terminator
+        i = start
+        while i + 1 < len(data):
+            if data[i] == 0 and data[i + 1] == 0:
+                return i
+            i += 2
+        return -1
+    return data.find(b'\x00', start)
+
+
+def _cover_mime(declared, data):
+    """Prefer the image magic bytes; fall back to the declared MIME."""
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    if data[:2] == b'BM':
+        return 'image/bmp'
+    mime = (declared or '').strip().lower().split(';', 1)[0]
+    if mime in ('image/jpg', 'image/pjpeg'):
+        mime = 'image/jpeg'
+    return mime if mime.startswith('image/') else 'image/jpeg'
+
+
+def _parse_cover_frame(payload, version):
+    """Return (picture_type, mime, image_bytes) from an APIC/PIC frame."""
+    if not payload or len(payload) < 4:
+        return None
+    encoding = payload[0]
+    if version == 2:                # PIC: encoding, 3-byte format, type, desc, data
+        declared = _PIC_MIME.get(
+            payload[1:4].decode('latin-1', errors='replace').strip('\x00 ').upper(), '')
+        if len(payload) < 5:
+            return None
+        picture_type = payload[4]
+        desc_start = 5
+    else:                           # APIC: encoding, MIME\0, type, desc, data
+        mime_end = payload.find(b'\x00', 1)
+        if mime_end < 0 or mime_end + 1 >= len(payload):
+            return None
+        declared = payload[1:mime_end].decode('latin-1', errors='replace').strip()
+        picture_type = payload[mime_end + 1]
+        desc_start = mime_end + 2
+    desc_end = _cover_description_end(payload, desc_start, encoding)
+    if desc_end < 0:
+        return None
+    image_start = desc_end + (2 if encoding in (1, 2) else 1)
+    image = payload[image_start:]
+    if not image:
+        return None
+    return picture_type, _cover_mime(declared, image), image
+
+
+def read_mp3_cover(path):
+    """Return {'mime', 'data'} for an embedded ID3 cover, or None.
+
+    A front-cover APIC (type 3) wins; otherwise the first embedded picture is
+    used. ID3v2.2 PIC and ID3v2.3/v2.4 APIC are supported. ID3v1 has no art.
+    """
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(10)
+            if len(head) != 10 or head[:3] != b'ID3':
+                return None
+            version = head[3]
+            flags = head[5]
+            size = _syncsafe(head[6:10])
+            data = f.read(min(size, _MAX_TAG_BYTES))
+            if flags & 0x80:
+                data = data.replace(b'\xff\x00', b'\xff')
+            pos = 0
+            if flags & 0x40 and len(data) >= 4:
+                pos = _syncsafe(data[:4]) if version == 4 else \
+                    4 + int.from_bytes(data[:4], 'big')
+            fallback = None
+            while pos + 6 <= len(data):
+                if data[pos] == 0:
+                    break
+                if version == 2:
+                    fid = data[pos:pos + 3].decode('latin-1', errors='replace')
+                    fsize = int.from_bytes(data[pos + 3:pos + 6], 'big')
+                    hdr = 6
+                else:
+                    fid = data[pos:pos + 4].decode('latin-1', errors='replace')
+                    if version == 4:
+                        fsize = _syncsafe(data[pos + 4:pos + 8])
+                    else:
+                        fsize = int.from_bytes(data[pos + 4:pos + 8], 'big')
+                    hdr = 10
+                if fsize <= 0 or pos + hdr + fsize > len(data):
+                    break
+                if fid in ('APIC', 'PIC'):
+                    parsed = _parse_cover_frame(data[pos + hdr:pos + hdr + fsize], version)
+                    if parsed:
+                        picture_type, mime, image = parsed
+                        if picture_type == 3:       # front cover
+                            return {'mime': mime, 'data': image}
+                        if fallback is None:
+                            fallback = {'mime': mime, 'data': image}
+                pos += hdr + fsize
+            return fallback
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def media_path(value):

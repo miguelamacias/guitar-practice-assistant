@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎸</text></svg>">
     <title>Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/styles.css?v=79">
+    <link rel="stylesheet" href="css/styles.css?v=80">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
          so its fetch wrapper can block writes from the very first request. -->
     <script defer src="js/debug.js?v=2"></script>
     <script defer src="js/audioEngine.js?v=12"></script>
-    <script defer src="js/players.js?v=2"></script>
+    <script defer src="js/players.js?v=3"></script>
     <script defer src="js/scrobbler.js?v=3"></script>
     <script defer src="js/icons.js?v=12"></script>
     <script defer src="js/ui.js?v=4"></script>
@@ -225,8 +225,9 @@
     <iframe id="ytIframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
 </div>
 
-<!-- Floating audio player (left panel, YouTube style) -->
+<!-- Floating audio player (bottom-right, square album-art card) -->
 <div id="audioPanel" class="audio-panel">
+    <div id="apCover" class="audio-cover" aria-hidden="true"></div>
     <div class="audio-titlebar">
         <div class="audio-title-wrap">
             <span id="current-playing" class="audio-title-text">No audio selected</span>

@@ -642,9 +642,43 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception:  # noqa: BLE001
             pass
 
+    def _serve_cover(self):
+        """Serve the embedded ID3 cover for an allowed local MP3."""
+        self._cache_ok = True
+        qs = parse_qs(urlparse(self.path).query)
+        target = (qs.get('path') or [''])[0]
+        target = lastfm.media_path(target)
+        if not target or not target.lower().endswith('.mp3'):
+            return self._send_json({'error': 'no_path'}, 400)
+        conn = db_connect()
+        try:
+            allowed = _is_media_allowed(conn, target)
+        finally:
+            conn.close()
+        if not allowed:
+            return self._send_json({'error': 'forbidden'}, 403)
+        if not os.path.isfile(target):
+            return self._send_json({'error': 'not_found'}, 404)
+        cover = lastfm.read_mp3_cover(target)
+        if not cover:
+            return self._send_json({'error': 'no_cover'}, 404)
+        body = cover['data']
+        self.send_response(200)
+        self.send_header('Content-Type', cover['mime'])
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'private, max-age=300')
+        self.send_header('X-Content-Type-Options', 'nosniff')
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except Exception:  # noqa: BLE001
+            pass
+
     def do_GET(self):
         self._cache_ok = False
         path = urlparse(self.path).path
+        if path == '/api/cover':
+            return self._serve_cover()
         if path == '/api/media':
             return self._serve_media()
         if path.startswith('/api/'):

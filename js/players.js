@@ -9,6 +9,48 @@
     function getAudioEl() { return document.getElementById('audioPlayer'); }
     function getTitleEl() { return document.getElementById('current-playing'); }
 
+    // ---- Album art ---------------------------------------------------------
+    // The cover is read from the MP3's ID3 APIC/PIC frame by the local server.
+    // Keep a token so a slow image for track A can never paint over track B.
+    let coverToken = 0;
+
+    function localMediaPath(url) {
+        if (!url) return '';
+        try {
+            const u = new URL(url, window.location.href);
+            if (u.origin !== window.location.origin) return '';
+            if (u.pathname !== '/api/media' && !u.pathname.endsWith('/api/media')) return '';
+            return u.searchParams.get('path') || '';
+        } catch (e) { return ''; }
+    }
+
+    function clearCover() {
+        coverToken++;
+        const panel = document.getElementById('audioPanel');
+        const cover = document.getElementById('apCover');
+        if (panel) panel.classList.remove('has-cover');
+        if (cover) cover.style.backgroundImage = '';
+    }
+
+    function applyCover(url) {
+        clearCover();
+        const path = localMediaPath(url);
+        if (!path || !/\.mp3$/i.test(path)) return;
+        const panel = document.getElementById('audioPanel');
+        const cover = document.getElementById('apCover');
+        if (!panel || !cover) return;
+        const token = coverToken;
+        const coverUrl = '/api/cover?path=' + encodeURIComponent(path);
+        const probe = new Image();
+        probe.onload = function () {
+            if (token !== coverToken) return;
+            cover.style.backgroundImage = 'url("' + coverUrl + '")';
+            panel.classList.add('has-cover');
+        };
+        probe.onerror = function () { /* no embedded cover: keep the black card */ };
+        probe.src = coverUrl;
+    }
+
     function syncLoopButton() {
         const player = getAudioEl();
         const btn = document.getElementById('apLoop');
@@ -30,6 +72,7 @@
         player.loop = false;
         player.src = url;
         titleSpan.textContent = title;
+        applyCover(url);
         const panel = document.getElementById('audioPanel');
         if (panel) panel.classList.add('is-open');
         if (GPH.scrobbler && GPH.scrobbler.start) GPH.scrobbler.start(url, title);
@@ -41,6 +84,7 @@
     function openYouTube(videoId, title, originalUrl) {
         const audioPlayer = getAudioEl();
         if (audioPlayer) audioPlayer.pause();
+        clearCover();
         const apanel = document.getElementById('audioPanel');
         if (apanel) apanel.classList.remove('is-open');
 
@@ -77,6 +121,7 @@
             player.loop = false;
         }
         loopOverride = false;
+        clearCover();
         syncLoopButton();
         if (GPH.scrobbler && GPH.scrobbler.stop) GPH.scrobbler.stop();
         const titleSpan = getTitleEl();
