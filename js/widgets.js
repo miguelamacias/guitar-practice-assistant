@@ -431,8 +431,6 @@
                     <div id="transposeOutput" class="transpose-output" aria-live="polite"></div>
                 </div>
             </div>
-            <div class="transposer-hint">Tip: one line per section (Verse, Chorus…) is fine.</div>
-            <div id="transposeLegend" class="transposer-legend" hidden></div>
             <div id="transposeCapo" class="transposer-capo" aria-live="polite">Enter chords to transpose.</div>
             <div id="transposeBest" class="transposer-best" aria-live="polite" hidden></div>
         </div>`;
@@ -683,7 +681,6 @@
         const capoEl = content.querySelector('#transposeCapo');
         const bestEl = content.querySelector('#transposeBest');
         const keyEl = content.querySelector('#transposeKey');
-        const legendEl = content.querySelector('#transposeLegend');
         const reset = content.querySelector('#transposeReset');
         const stepBtns = content.querySelectorAll('[data-transpose]');
         if (!input || !output || !value || !capoEl) return;
@@ -782,8 +779,6 @@
 
         function renderOutput(text, key) {
             output.textContent = '';
-            let borrowed = 0;
-            let outside = 0;
             String(text || '').split(/(\s+|[|,;])/).forEach(function (part) {
                 const chord = parseChord(part);
                 if (!chord) {
@@ -797,20 +792,12 @@
                 if (state === 'outside') {
                     span.classList.add('is-outside');
                     span.title = 'Outside ' + key.name;
-                    outside++;
                 } else if (state === 'borrowed') {
                     span.classList.add('is-borrowed');
                     span.title = 'Borrowed chord in ' + key.name;
-                    borrowed++;
                 }
                 output.appendChild(span);
             });
-            if (legendEl) {
-                legendEl.hidden = !(outside || borrowed);
-                legendEl.textContent = outside
-                    ? 'Red: outside ' + key.name + ' · Amber: borrowed quality'
-                    : (borrowed ? 'Amber: borrowed chord in ' + key.name : '');
-            }
         }
 
         function render() {
