@@ -20,6 +20,7 @@
     let dirty = false;
     let resources = [];
     let finishResources = [];
+    let finishPicker = null;
     let activeResourcePicker = null;
 
     async function loadRoutines(preferId) {
@@ -138,6 +139,7 @@
                 });
             }
             fSel.value = fval;
+            if (finishPicker) finishPicker.refresh();
             fBpm.value = current.finish_bpm || '';
             syncFinishBpm();
         }
@@ -211,7 +213,9 @@
             .replace(/[\u0300-\u036f]/g, '');
     }
 
-    function createResourcePicker(items, initialValue) {
+    function createResourcePicker(items, initialValue, opts) {
+        const options = opts || {};
+        const noneLabel = options.noneLabel || '\u2014 No resource \u2014';
         const root = document.createElement('div');
         root.className = 'ex-res-picker';
 
@@ -247,9 +251,10 @@
         const select = document.createElement('select');
         select.className = 'ex-res';
         select.hidden = true;
+        if (options.selectId) select.id = options.selectId;
         const none = document.createElement('option');
         none.value = '';
-        none.textContent = '\u2014 No resource \u2014';
+        none.textContent = noneLabel;
         select.appendChild(none);
         items.forEach(function (item, index) {
             const option = document.createElement('option');
@@ -263,9 +268,9 @@
         let highlighted = -1;
 
         function selectedLabel() {
-            if (select.value === '') return '\u2014 No resource \u2014';
+            if (select.value === '') return noneLabel;
             const item = items[Number(select.value)];
-            return item ? item.label : '\u2014 No resource \u2014';
+            return item ? item.label : noneLabel;
         }
 
         function refresh() {
@@ -300,8 +305,8 @@
                 }
             }
 
-            if (matches('\u2014 No resource \u2014', query)) {
-                addOption('', '\u2014 No resource \u2014');
+            if (matches(noneLabel, query)) {
+                addOption('', noneLabel);
             }
             items.forEach(function (item, index) {
                 if (matches(item.label, query)) addOption(String(index), item.label);
@@ -561,11 +566,16 @@
         return out;
     }
     function populateFinishSelect() {
+        if (finishPicker) return;
         const sel = $('finishResource');
         if (!sel) return;
-        sel.innerHTML = '';
-        const none = document.createElement('option'); none.value = ''; none.textContent = '\u2014 None \u2014'; sel.appendChild(none);
-        finishResources.forEach(function (r, i) { const o = document.createElement('option'); o.value = String(i); o.textContent = r.label; sel.appendChild(o); });
+        const picker = createResourcePicker(finishResources, '', {
+            noneLabel: '\u2014 None \u2014',
+            selectId: 'finishResource'
+        });
+        sel.replaceWith(picker.root);
+        picker.select.addEventListener('change', syncFinishBpm);
+        finishPicker = picker;
     }
     function syncFinishBpm() {
         const sel = $('finishResource'); const bpm = $('finishBpm');

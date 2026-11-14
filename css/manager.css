@@ -73,6 +73,8 @@ body {
 /* Inline row inside a field (e.g. "On routine finish": select + BPM) */
 .field .row { display: flex; gap: 8px; align-items: center; }
 .field .row select { flex: 1 1 auto; min-width: 0; }
+.field .row .ex-res-picker { flex: 1 1 auto; min-width: 0; }
+.routine-head-row .ex-res-trigger { height: 2.25rem; }
 .field .row .ex-res-bpm { flex: 0 0 90px; }
 input[type=text], input[type=number], textarea {
     background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
