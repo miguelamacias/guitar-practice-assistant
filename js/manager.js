@@ -20,6 +20,7 @@
     let dirty = false;
     let resources = [];
     let finishResources = [];
+    let activeResourcePicker = null;
 
     async function loadRoutines(preferId) {
         routines = await api('GET', '/api/routines');
@@ -184,6 +185,206 @@
         if (!base) return prefix.replace(/: $/, '');
         const needsTag = it.tag && base.indexOf(it.tag) !== 0;
         return prefix + (needsTag ? it.tag + ' - ' : '') + base;
+    }
+
+    // ---- Searchable resource picker ---------------------------------------
+    // The native select stays as the value source so saving/reloading keeps
+    // working; the visible trigger is a small custom combobox with a filter.
+    function closeResourcePicker() {
+        if (!activeResourcePicker) return;
+        const picker = activeResourcePicker;
+        activeResourcePicker = null;
+        picker.menu.hidden = true;
+        picker.trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    document.addEventListener('mousedown', function (event) {
+        if (activeResourcePicker && !activeResourcePicker.root.contains(event.target)) {
+            closeResourcePicker();
+        }
+    });
+
+    function normalizeSearch(value) {
+        return String(value || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+    }
+
+    function createResourcePicker(items, initialValue) {
+        const root = document.createElement('div');
+        root.className = 'ex-res-picker';
+
+        const trigger = document.createElement('button');
+        trigger.type = 'button';
+        trigger.className = 'ex-res-trigger';
+        trigger.setAttribute('aria-haspopup', 'listbox');
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.setAttribute('aria-label', 'Choose resource');
+
+        const menu = document.createElement('div');
+        menu.className = 'ex-res-menu';
+        menu.hidden = true;
+
+        const search = document.createElement('input');
+        search.type = 'search';
+        search.className = 'ex-res-search';
+        search.placeholder = 'Search resources\u2026';
+        search.autocomplete = 'off';
+        search.spellcheck = false;
+        search.setAttribute('aria-label', 'Search resources');
+
+        const optionsBox = document.createElement('div');
+        optionsBox.className = 'ex-res-options';
+        optionsBox.setAttribute('role', 'listbox');
+
+        menu.appendChild(search);
+        menu.appendChild(optionsBox);
+        root.appendChild(trigger);
+        root.appendChild(menu);
+
+        // Keep a real <select> as the value source for the existing save code.
+        const select = document.createElement('select');
+        select.className = 'ex-res';
+        select.hidden = true;
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = '\u2014 No resource \u2014';
+        select.appendChild(none);
+        items.forEach(function (item, index) {
+            const option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = item.label;
+            select.appendChild(option);
+        });
+        select.value = initialValue || '';
+        root.appendChild(select);
+
+        let highlighted = -1;
+
+        function selectedLabel() {
+            if (select.value === '') return '\u2014 No resource \u2014';
+            const item = items[Number(select.value)];
+            return item ? item.label : '\u2014 No resource \u2014';
+        }
+
+        function refresh() {
+            const label = selectedLabel();
+            trigger.textContent = label;
+            trigger.title = label;
+        }
+
+        function matches(label, query) {
+            return !query || normalizeSearch(label).indexOf(query) >= 0;
+        }
+
+        function renderOptions() {
+            const query = normalizeSearch(search.value.trim());
+            optionsBox.innerHTML = '';
+            highlighted = -1;
+
+            function addOption(value, label) {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'ex-res-option';
+                option.dataset.value = value;
+                option.textContent = label;
+                option.title = label;
+                option.setAttribute('role', 'option');
+                if (String(select.value) === String(value)) option.classList.add('selected');
+                option.addEventListener('click', function () { choose(value); });
+                optionsBox.appendChild(option);
+                if (highlighted < 0) {
+                    highlighted = optionsBox.children.length - 1;
+                    option.classList.add('highlighted');
+                }
+            }
+
+            if (matches('\u2014 No resource \u2014', query)) {
+                addOption('', '\u2014 No resource \u2014');
+            }
+            items.forEach(function (item, index) {
+                if (matches(item.label, query)) addOption(String(index), item.label);
+            });
+
+            if (!optionsBox.children.length) {
+                const empty = document.createElement('div');
+                empty.className = 'ex-res-empty';
+                empty.textContent = 'No resources match.';
+                optionsBox.appendChild(empty);
+            }
+        }
+
+        function choose(value) {
+            select.value = value;
+            refresh();
+            closeResourcePicker();
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        function moveHighlight(delta) {
+            const options = Array.prototype.slice.call(
+                optionsBox.querySelectorAll('.ex-res-option')
+            );
+            if (!options.length) return;
+            options.forEach(function (option) { option.classList.remove('highlighted'); });
+            highlighted = (highlighted + delta + options.length) % options.length;
+            const current = options[highlighted];
+            current.classList.add('highlighted');
+            current.scrollIntoView({ block: 'nearest' });
+        }
+
+        function open() {
+            if (activeResourcePicker === api) {
+                closeResourcePicker();
+                return;
+            }
+            closeResourcePicker();
+            search.value = '';
+            renderOptions();
+            menu.classList.toggle('up', window.innerHeight - trigger.getBoundingClientRect().bottom < 280);
+            menu.hidden = false;
+            trigger.setAttribute('aria-expanded', 'true');
+            activeResourcePicker = api;
+            search.focus();
+        }
+
+        trigger.addEventListener('click', open);
+        search.addEventListener('input', renderOptions);
+        search.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeResourcePicker();
+                trigger.focus();
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                moveHighlight(1);
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveHighlight(-1);
+            } else if (event.key === 'Enter') {
+                const current = optionsBox.querySelector('.ex-res-option.highlighted');
+                if (current) {
+                    event.preventDefault();
+                    choose(current.dataset.value);
+                }
+            }
+        });
+        menu.addEventListener('keydown', function (event) {
+            if (event.key === 'Tab') closeResourcePicker();
+        });
+
+        const api = {
+            root: root,
+            menu: menu,
+            trigger: trigger,
+            select: select,
+            refresh: refresh,
+            close: closeResourcePicker,
+            open: open
+        };
+        refresh();
+        return api;
     }
 
     // ---- Theory resources -------------------------------------------------
@@ -452,15 +653,8 @@
             line._resCfg = (res && res.cfg) || {};
             line._resUrl = res ? res.url : '';
 
-            const sel = document.createElement('select');
-            sel.className = 'ex-res';
-            const none = document.createElement('option');
-            none.value = ''; none.textContent = '\u2014 No resource \u2014';
-            sel.appendChild(none);
             let selVal = '';
             resources.forEach(function (r, i) {
-                const o = document.createElement('option');
-                o.value = String(i); o.textContent = r.label; sel.appendChild(o);
                 if (!res) return;
                 const isFixed = (r.kind === 'metronome' || r.kind === 'drums' || r.kind === 'fretboard');
                 const match = (r.kind === 'theory')
@@ -468,7 +662,8 @@
                     : (res.kind === r.kind && (isFixed || r.url === res.url));
                 if (match) selVal = String(i);
             });
-            sel.value = selVal;
+            const picker = createResourcePicker(resources, selVal);
+            const sel = picker.select;
 
             const bpm = document.createElement('input');
             bpm.type = 'number'; bpm.className = 'ex-res-bpm';
@@ -614,11 +809,12 @@
                     refreshDeleteButtons();
                 } else {
                     sel.value = '';
+                    picker.refresh();
                     sync();
                 }
             });
 
-            line.appendChild(sel);
+            line.appendChild(picker.root);
             line.appendChild(cfgBox);
             line.appendChild(thBox);
             line.appendChild(del);
