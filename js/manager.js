@@ -491,14 +491,23 @@
             resSel.dataset.cfg = 'res';
             swingSel.dataset.cfg = 'swing';
 
-            function fillStyles(sig) {
-                const all = drumStyles();
-                const items = [{ v: 'custom', t: 'preset: Custom' }];
-                Object.keys(all).forEach(function (id) {
-                    if (all[id].sig !== sig) return;
-                    items.push({ v: id, t: 'preset: ' + (all[id].name || id) });
+            function fillStyles() {
+                const dm = window.GPH && GPH.drumMachine;
+                const opts = (dm && dm.styleOptions) ? dm.styleOptions() : [];
+                const items = opts.map(function (o) {
+                    return { v: o.value, t: 'preset: ' + o.label };
                 });
                 fillSel(styleSel, 'preset: auto', items);
+            }
+
+            function styleSigOf(id) {
+                const dm = window.GPH && GPH.drumMachine;
+                return (dm && dm.styleSig) ? dm.styleSig(id) : '';
+            }
+
+            function styleTextOf(id) {
+                const dm = window.GPH && GPH.drumMachine;
+                return (dm && dm.styleLabel) ? dm.styleLabel(id) : id;
             }
 
             // Builds the controls for a kind and shows the settings stored on it.
@@ -506,7 +515,7 @@
             // extra captions and nothing gets truncated.
             function buildCfg(kind) {
                 const isDrums = kind === 'drums';
-                fillSel(sigSel, 'sig: auto', (isDrums ? ['4/4', '6/8']
+                fillSel(sigSel, 'sig: auto', (isDrums ? ['4/4', '3/4', '6/8']
                     : ['4/4', '3/4', '2/4', '6/8']).map(function (v) {
                     return { v: v, t: 'sig: ' + v };
                 }));
@@ -523,22 +532,31 @@
 
                 const cfg = line._resCfg || {};
                 const legacyFlat = cfg.pattern === 'flat';
+                let styleVal = cfg.style || '';
+                // Old states stored a single "custom"; map it to the custom of
+                // the saved signature.
+                if (styleVal === 'custom' && (cfg.sig === '6/8' || cfg.sig === '3/4')) {
+                    const dm = window.GPH && GPH.drumMachine;
+                    if (dm && dm.customStyleId) styleVal = dm.customStyleId(cfg.sig);
+                }
                 sigSel.value = cfg.sig || '';
                 patSel.value = legacyFlat ? '1' : (cfg.pattern != null ? String(cfg.pattern) : '');
                 accentSel.value = legacyFlat ? 'off'
                     : (cfg.accent === true ? 'on' : (cfg.accent === false ? 'off' : ''));
                 resSel.value = cfg.res ? String(cfg.res) : '';
                 swingSel.value = cfg.swing === true ? 'on' : (cfg.swing === false ? 'off' : '');
-                fillStyles(sigSel.value || '4/4');
-                styleSel.value = cfg.style || '';
-                if (cfg.style && !styleSel.value) {
-                    // a preset from another family: keep it visible, never lose it
+                fillStyles();
+                styleSel.value = styleVal;
+                if (styleVal && !styleSel.value) {
+                    // Unknown/legacy preset: keep it visible, never lose it
                     const o = document.createElement('option');
-                    o.value = cfg.style;
-                    o.textContent = (drumStyles()[cfg.style] || {}).name || cfg.style;
+                    o.value = styleVal;
+                    o.textContent = 'preset: ' + styleTextOf(styleVal);
                     styleSel.appendChild(o);
-                    styleSel.value = cfg.style;
+                    styleSel.value = styleVal;
                 }
+                const styleSig = styleSigOf(styleSel.value);
+                if (styleSig) sigSel.value = styleSig;
                 patSel.style.display = isDrums ? 'none' : '';
                 accentSel.style.display = isDrums ? 'none' : '';
                 styleSel.style.display = isDrums ? '' : 'none';
@@ -547,14 +565,18 @@
                 cfgBox.dataset.kind = kind;
             }
 
-            // Another signature means another preset family
+            // All styles stay visible. Choosing one loads its meter; changing
+            // the meter manually clears an incompatible preset.
             sigSel.addEventListener('change', function () {
                 if (cfgBox.dataset.kind !== 'drums') return;
-                const keep = styleSel.value;
-                const sig = sigSel.value || '4/4';
-                fillStyles(sig);
-                const all = drumStyles();
-                styleSel.value = (keep && all[keep] && all[keep].sig === sig) ? keep : '';
+                const sig = sigSel.value;
+                const styleSig = styleSigOf(styleSel.value);
+                if (sig && styleSig && styleSig !== sig) styleSel.value = '';
+            });
+            styleSel.addEventListener('change', function () {
+                if (cfgBox.dataset.kind !== 'drums') return;
+                const sig = styleSigOf(styleSel.value);
+                if (sig) sigSel.value = sig;
             });
 
             cfgBox.appendChild(bpm);
@@ -684,10 +706,6 @@
     }
 
     // --- widget settings stored with a resource (metronome / drums) ----------
-    // Preset catalog straight from the drum machine: one single source of truth.
-    function drumStyles() {
-        return (window.GPH && GPH.drumMachine && GPH.drumMachine.styles) || {};
-    }
 
     function makeSel(title) {
         const s = document.createElement('select');

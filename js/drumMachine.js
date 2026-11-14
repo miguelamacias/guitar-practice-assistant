@@ -1,5 +1,5 @@
-// Drum Machine: interactive grid, 4/4-6/8 time signatures, 8th/16th resolution,
-// style presets, swing and drum synthesis.
+// Drum Machine: interactive grid, 4/4, 3/4 and 6/8 signatures, 8th/16th
+// resolution, style presets, swing and drum synthesis.
 (function (GPH) {
     'use strict';
 
@@ -16,6 +16,7 @@
     let currentRes = 8;              // 8 = eighths per bar, 16 = sixteenths
     let currentStyle = 'custom';
     let swingPending = null;        // swing saved in the state, applied once the DOM exists
+    const SIGNATURES = ['4/4', '3/4', '6/8'];
 
     // Factory patterns, on the base grid of each signature (8 / 6 steps).
     const drumPatterns = {
@@ -34,17 +35,26 @@
             ride:  [0, 0, 0,  0, 0, 0],
             tom:   [0, 0, 0,  0, 0, 0],
             splash:[0, 0, 0,  0, 0, 0]
+        },
+        '3/4': {
+            kick:  [1, 0, 0,  0, 1, 0],
+            snare: [0, 0, 1,  0, 0, 0],
+            hihat: [1, 1, 1,  1, 1, 1],
+            ride:  [0, 0, 0,  0, 0, 0],
+            tom:   [0, 0, 0,  0, 0, 0],
+            splash:[1, 0, 0,  0, 0, 0]
         }
     };
 
     // ---- Style presets ------------------------------------------------------
-    // Each pattern is a string of 16 (4/4) or 12 (6/8) characters, one per
+    // Each pattern is a string of 16 (4/4), 12 (3/4 or 6/8) characters, one per
     // sixteenth ("1" = hit). One definition feeds both resolutions: in 8th mode
     // the pairs are collapsed, so the 8th grid and the 16th grid stay in sync.
-    // Every preset belongs to ONE signature (`sig`): the 4/4 list and the 6/8
-    // list are different families, they are never mixed.
+    // Every preset belongs to ONE signature (`sig`); the selector shows all of
+    // them and selecting one loads its signature automatically.
     //
     //   4/4 :  1 e & a | 2 e & a | 3 e & a | 4 e & a
+    //   3/4 :  1 e & a | 2 e & a | 3 e & a
     //   6/8 :  1 e 2 e 3 e 4 e 5 e 6 e
     const DRUM_STYLES = {
         rock: {
@@ -138,9 +148,30 @@
             }
         },
 
-        // --- 6/8 only (own family: nothing borrowed from the 4/4 list) --------
+        // --- 3/4 family ---------------------------------------------------------
+        waltz: {
+            name: 'Waltz', sig: '3/4', swing: false,
+            '3/4': {
+                kick:  '1...........',
+                snare: '....1...1...',
+                ride:  '1.1.1.1.1.1.',
+                splash:'1...........'
+            }
+        },
+        sevillana: {
+            name: 'Sevillana', sig: '3/4', swing: false,
+            '3/4': {
+                kick:  '1.......1...',
+                snare: '....1...1...',
+                hihat: '1.1.1.1.1.1.',
+                ride:  '..1...1...1.',
+                splash:'1...........'
+            }
+        },
+
+        // --- 6/8 family ---------------------------------------------------------
         ballad68: {
-            name: 'Ballad 6/8', sig: '6/8', swing: false,
+            name: 'Ballad', sig: '6/8', swing: false,
             '6/8': {
                 kick:  '1.....1.....',
                 snare: '......1.....',
@@ -148,17 +179,8 @@
                 splash:'1...........'
             }
         },
-        waltz: {
-            name: 'Waltz', sig: '6/8', swing: false,
-            '6/8': {
-                kick:  '1...........',
-                snare: '....1...1...',
-                ride:  '....1...1...',
-                splash:'1...........'
-            }
-        },
         slowblues68: {
-            name: 'Slow blues 6/8', sig: '6/8', swing: true,
+            name: 'Slow blues', sig: '6/8', swing: true,
             '6/8': {
                 kick:  '1.....1.....',
                 snare: '......1.....',
@@ -167,7 +189,7 @@
             }
         },
         rock68: {
-            name: 'Rock 6/8', sig: '6/8', swing: false,
+            name: 'Rock', sig: '6/8', swing: false,
             '6/8': {
                 kick:  '1.....1.1...',
                 snare: '......1.....',
@@ -186,7 +208,41 @@
         }
     };
 
+    // Custom is per signature: "Custom" = 4/4, "Custom (3/4)" and
+    // "Custom (6/8)" keep their own patterns instead of overwriting each other.
+    const CUSTOM_STYLE_IDS = { '4/4': 'custom', '3/4': 'custom34', '6/8': 'custom68' };
+    const CUSTOM_STYLE_SIGS = { custom: '4/4', custom34: '3/4', custom68: '6/8' };
+
+    function isCustomStyle(id) { return !!CUSTOM_STYLE_SIGS[id]; }
+    function customStyleId(sig) { return CUSTOM_STYLE_IDS[sig] || 'custom'; }
+    function customStyleSig(id) { return CUSTOM_STYLE_SIGS[id] || '4/4'; }
+    function customStyleLabel(sig) {
+        return sig === '4/4' ? 'Custom' : 'Custom (' + sig + ')';
+    }
+    function styleLabel(id) {
+        if (isCustomStyle(id)) return customStyleLabel(customStyleSig(id));
+        const style = DRUM_STYLES[id];
+        if (!style) return id;
+        return style.sig === '4/4' ? style.name : style.name + ' (' + style.sig + ')';
+    }
+    function styleSig(id) {
+        if (isCustomStyle(id)) return customStyleSig(id);
+        return DRUM_STYLES[id] ? DRUM_STYLES[id].sig : '';
+    }
+    function styleOptions() {
+        const out = [];
+        SIGNATURES.forEach(function (sig) {
+            out.push({ value: customStyleId(sig), label: customStyleLabel(sig) });
+            Object.keys(DRUM_STYLES).forEach(function (id) {
+                if (DRUM_STYLES[id].sig !== sig) return;
+                out.push({ value: id, label: styleLabel(id) });
+            });
+        });
+        return out;
+    }
+
     let drumPattern = JSON.parse(JSON.stringify(drumPatterns['4/4']));
+    let customPatterns = {};           // sig -> canonical 16th-grid pattern
     let isDrumRunning = false;
     let drumBpm = 120;
     let currentDrumStep = 0;
@@ -200,6 +256,9 @@
     function stepsPerEighth() { return currentRes === 16 ? 2 : 1; }
     function totalSteps() { return eighthsPerBar() * stepsPerEighth(); }
     function baseSteps(sig) { return sig === '4/4' ? 8 : 6; }
+    function stepsFor(sig, res) { return baseSteps(sig) * (res === 16 ? 2 : 1); }
+    function beatCount(sig) { return sig === '4/4' ? 4 : (sig === '3/4' ? 3 : 6); }
+    function accentBeats(sig) { return sig === '4/4' ? 4 : (sig === '3/4' ? 3 : 2); }
 
     function toArray(str, n) {
         const out = new Array(n).fill(0);
@@ -218,33 +277,67 @@
         arr.forEach(function (v) { out.push(v ? 1 : 0, 0); });
         return out;
     }
-    function convertPattern(p, fromSteps) {
-        const to = totalSteps();
-        if (fromSteps === to) return JSON.parse(JSON.stringify(p));
-        const conv = to > fromSteps ? expand : collapse;
+    function normalizePattern(p, steps) {
+        const out = {};
+        drumInstruments.forEach(function (inst) {
+            const arr = p && p[inst.id];
+            out[inst.id] = (Array.isArray(arr) && arr.length === steps)
+                ? arr.map(function (v) { return v ? 1 : 0; })
+                : new Array(steps).fill(0);
+        });
+        return out;
+    }
+    function convertTo(p, fromSteps, toSteps) {
+        if (fromSteps === toSteps) return normalizePattern(p, toSteps);
+        const conv = toSteps > fromSteps ? expand : collapse;
         const out = {};
         drumInstruments.forEach(function (inst) {
             out[inst.id] = conv((p && p[inst.id]) || []);
         });
         return out;
     }
-    function defaultPattern(sig) {
-        const base = JSON.parse(JSON.stringify(drumPatterns[sig]));
-        return convertPattern(base, baseSteps(sig));
+    function convertPattern(p, fromSteps) {
+        return convertTo(p, fromSteps, totalSteps());
     }
-    // Pattern of a preset, on the grid being used right now.
-    function stylePattern(id) {
+    function defaultPattern(sig, res) {
+        const target = res || currentRes;
+        return convertTo(drumPatterns[sig] || drumPatterns['4/4'],
+            baseSteps(sig), stepsFor(sig, target));
+    }
+    // Pattern of a preset, on the requested grid.
+    function stylePattern(id, res) {
         const style = DRUM_STYLES[id];
-        if (!style || !style[currentSig]) return null;
-        const raw = style[currentSig];
-        const base = baseSteps(currentSig) * 2;
+        if (!style || !style[style.sig]) return null;
+        const sig = style.sig;
+        const raw = style[sig];
+        const base = baseSteps(sig) * 2;
+        const target = stepsFor(sig, res || currentRes);
         const out = {};
         drumInstruments.forEach(function (inst) {
             let arr = toArray(raw[inst.id], base);
-            if (totalSteps() < base) arr = collapse(arr);
+            if (target < base) arr = collapse(arr);
             out[inst.id] = arr;
         });
         return out;
+    }
+    // Custom patterns are stored in the 16th grid of their own signature, so
+    // switching grid resolution never loses sixteenth-note detail.
+    function canonicalPattern(p, sig) {
+        const base = baseSteps(sig) * 2;
+        const src = p && p.kick;
+        if (!Array.isArray(src)) return null;
+        if (src.length === base) return normalizePattern(p, base);
+        if (src.length === base / 2) return convertTo(p, base / 2, base);
+        return null;
+    }
+    function customPatternFor(sig, res) {
+        const canonical = customPatterns[sig];
+        if (!canonical) return defaultPattern(sig, res);
+        return convertTo(canonical, baseSteps(sig) * 2, stepsFor(sig, res || currentRes));
+    }
+    function rememberCustom() {
+        const canonical = canonicalPattern(drumPattern, currentSig);
+        if (canonical) customPatterns[currentSig] = canonical;
     }
 
     // --- Persistencia (BPM, compas, rejilla, estilo y patron) ----------------
@@ -254,34 +347,65 @@
         try { const b = parseInt(localStorage.getItem(LS_BPM), 10); if (b >= 40 && b <= 240) drumBpm = b; } catch (e) {}
         try {
             const st = JSON.parse(localStorage.getItem(LS_STATE) || 'null');
-            if (!st || !drumPatterns[st.sig]) return;
+            if (!st || SIGNATURES.indexOf(st.sig) < 0) return;
             currentSig = st.sig;
             currentRes = st.res === 16 ? 16 : 8;
-            let steps = totalSteps();
+            let loaded = null;
             const first = st.pattern && st.pattern.kick;
-            if (!Array.isArray(first) || first.length !== steps) {   // older state
+            if (Array.isArray(first) && first.length === totalSteps()) {
+                loaded = normalizePattern(st.pattern, totalSteps());
+            } else if (Array.isArray(first)) {   // older state / grid changed
                 currentRes = 8;
-                steps = totalSteps();
+                if (first.length === totalSteps()) loaded = normalizePattern(st.pattern, totalSteps());
             }
-            if (st.pattern) {
-                const out = {};
-                drumInstruments.forEach(function (inst) {
-                    const arr = st.pattern[inst.id];
-                    out[inst.id] = (Array.isArray(arr) && arr.length === steps)
-                        ? arr.map(function (v) { return v ? 1 : 0; })
-                        : new Array(steps).fill(0);                  // new instrument
+            if (st.customPatterns && typeof st.customPatterns === 'object') {
+                SIGNATURES.forEach(function (sig) {
+                    const cp = st.customPatterns[sig];
+                    const canonical = cp && canonicalPattern(cp, sig);
+                    if (canonical) customPatterns[sig] = canonical;
                 });
-                drumPattern = out;
             }
-            if (st.style === 'custom' || DRUM_STYLES[st.style]) currentStyle = st.style;
+            let style = st.style;
+            // "custom" was the single 4/4 custom in older state; when the saved
+            // signature was 6/8, migrate it to the 6/8 custom variant.
+            if (style === 'custom' && currentSig !== '4/4') style = customStyleId(currentSig);
+            if (!isCustomStyle(style) && !DRUM_STYLES[style]) style = customStyleId(currentSig);
+            const targetSig = styleSig(style);
+            if (targetSig && targetSig !== currentSig) {
+                // A style now owns another meter (Waltz moved from 6/8 to 3/4):
+                // the style wins over the old saved signature.
+                currentSig = targetSig;
+                currentStyle = style;
+                if (DRUM_STYLES[style]) {
+                    currentRes = styleUsesSixteenths(style) ? 16 : 8;
+                    drumPattern = stylePattern(style, currentRes) || defaultPattern(currentSig, currentRes);
+                } else {
+                    drumPattern = customPatternFor(currentSig, currentRes);
+                }
+            } else {
+                currentStyle = style;
+                if (loaded) {
+                    drumPattern = loaded;
+                } else if (isCustomStyle(currentStyle)) {
+                    drumPattern = customPatternFor(currentSig, currentRes);
+                } else {
+                    drumPattern = stylePattern(currentStyle, currentRes) || defaultPattern(currentSig, currentRes);
+                }
+                if (isCustomStyle(currentStyle) && !customPatterns[currentSig]) rememberCustom();
+            }
             if (typeof st.swing === 'boolean') swingPending = st.swing;
         } catch (e) {}
     })();
     function saveDrumState() {
         try {
+            const custom = {};
+            SIGNATURES.forEach(function (sig) {
+                if (customPatterns[sig]) custom[sig] = customPatterns[sig];
+            });
             localStorage.setItem(LS_STATE, JSON.stringify({
                 sig: currentSig, res: currentRes, style: currentStyle,
-                swing: isSwingActive, pattern: drumPattern
+                swing: isSwingActive, pattern: drumPattern,
+                customPatterns: custom
             }));
         } catch (e) {}
     }
@@ -289,37 +413,28 @@
     // --- Style / resolution controls ----------------------------------------
     function styleSelect() { return document.getElementById('drumStyleSel'); }
 
-    // Which presets belong to the current signature: 4/4 and 6/8 have their own
-    // families (a 6/8 waltz makes sense, a 6/8 disco does not).
-    function styleList(sig) {
-        return Object.keys(DRUM_STYLES).filter(function (id) {
-            return DRUM_STYLES[id].sig === sig;
-        });
-    }
-
+    // The selector shows the complete catalog; the meter is part of each
+    // preset, so choosing a style loads its signature too.
     function fillStyleOptions() {
         const sel = styleSelect();
         if (!sel) return;
-        const keep = sel.value;
         sel.innerHTML = '';
-        const custom = document.createElement('option');
-        custom.value = 'custom';
-        custom.textContent = 'Custom';
-        sel.appendChild(custom);
-        styleList(currentSig).forEach(function (id) {
+        styleOptions().forEach(function (opt) {
             const o = document.createElement('option');
-            o.value = id;
-            o.textContent = DRUM_STYLES[id].name;
+            o.value = opt.value;
+            o.textContent = opt.label;
             sel.appendChild(o);
         });
-        if (keep && sel.querySelector('option[value="' + keep + '"]')) sel.value = keep;
+        if (!sel.querySelector('option[value="' + currentStyle + '"]')) {
+            currentStyle = customStyleId(currentSig);
+        }
+        sel.value = currentStyle;
     }
 
     function syncControls() {
         const sel = styleSelect();
-        // A preset that does not exist in this signature falls back to Custom
         if (sel && !sel.querySelector('option[value="' + currentStyle + '"]')) {
-            currentStyle = 'custom';
+            currentStyle = customStyleId(currentSig);
         }
         if (sel && sel.value !== currentStyle) sel.value = currentStyle;
         const btn = document.getElementById('drumResBtn');
@@ -338,10 +453,11 @@
         btn.classList.toggle('is-on', isSwingActive);
     }
 
-    // Any manual edit stops being "the preset".
+    // Any manual edit stops being "the preset" and is remembered as the custom
+    // pattern of the signature that is currently open.
     function markCustom() {
-        if (currentStyle === 'custom') return;
-        currentStyle = 'custom';
+        currentStyle = customStyleId(currentSig);
+        rememberCustom();
         syncControls();
     }
 
@@ -360,7 +476,7 @@
 
         container.innerHTML = '';
         const steps = totalSteps();
-        const perBeat = steps / (currentSig === '4/4' ? 4 : 6);
+        const perBeat = steps / beatCount(currentSig);
         container.classList.toggle('is-dense', steps >= 12);
 
         // Beats header adapted to signature and resolution
@@ -479,8 +595,10 @@
 
     // Reset: back to the selected preset (or to the factory pattern when custom)
     function resetDrumPattern() {
-        const p = currentStyle === 'custom' ? null : stylePattern(currentStyle);
-        drumPattern = p || defaultPattern(currentSig);
+        const custom = isCustomStyle(currentStyle);
+        const p = custom ? null : stylePattern(currentStyle, currentRes);
+        drumPattern = p || defaultPattern(currentSig, currentRes);
+        if (custom) rememberCustom();
         if (p && typeof DRUM_STYLES[currentStyle].swing === 'boolean') {
             setSwing(DRUM_STYLES[currentStyle].swing);
         }
@@ -557,7 +675,7 @@
     // starts, so no velocity lane is needed. 6/8 counts as two groups of three.
     function stepVelocity(step) {
         const steps = totalSteps();
-        const beats = currentSig === '4/4' ? 4 : 2;
+        const beats = accentBeats(currentSig);
         const perBeat = steps / beats;
         return (step % perBeat) === 0 ? 1 : 0.75;
     }
@@ -574,17 +692,17 @@
     }
 
     function toggleTimeSignature() {
-        currentSig = currentSig === '4/4' ? '6/8' : '4/4';
-        const p = currentStyle === 'custom' ? null : stylePattern(currentStyle);
-        if (p) {
-            drumPattern = p;
-            if (typeof DRUM_STYLES[currentStyle].swing === 'boolean') {
-                setSwing(DRUM_STYLES[currentStyle].swing);
-            }
-        } else {
-            drumPattern = defaultPattern(currentSig);
-            markCustom();
-        }
+        const idx = SIGNATURES.indexOf(currentSig);
+        setDrumSig(SIGNATURES[(idx + 1) % SIGNATURES.length]);
+    }
+
+    function setDrumSig(sig) {
+        if (SIGNATURES.indexOf(sig) < 0 || sig === currentSig) return;
+        currentSig = sig;
+        // A preset belongs to one meter; changing meter manually returns to
+        // that meter's own Custom pattern.
+        currentStyle = customStyleId(sig);
+        drumPattern = customPatternFor(sig, currentRes);
         currentDrumStep = 0;
         saveDrumState();
         initDrumMachineGrid();
@@ -599,8 +717,9 @@
         if (res === currentRes) return;
         const from = totalSteps();
         currentRes = res;
-        const styleP = currentStyle === 'custom' ? null : stylePattern(currentStyle);
+        const styleP = isCustomStyle(currentStyle) ? null : stylePattern(currentStyle, res);
         drumPattern = styleP || convertPattern(drumPattern, from);
+        if (isCustomStyle(currentStyle)) rememberCustom();
         currentDrumStep = 0;
         saveDrumState();
         initDrumMachineGrid();
@@ -612,8 +731,8 @@
     // the grid follow the genre on its own.
     function styleUsesSixteenths(id) {
         const style = DRUM_STYLES[id];
-        if (!style || !style[currentSig]) return false;
-        const pad = style[currentSig];
+        if (!style || !style[style.sig]) return false;
+        const pad = style[style.sig];
         return Object.keys(pad).some(function (key) {
             const str = pad[key];
             if (typeof str !== 'string') return false;
@@ -625,19 +744,30 @@
     }
 
     function setDrumStyle(id) {
-        if (!DRUM_STYLES[id] || DRUM_STYLES[id].sig !== currentSig) {   // "custom" or not for this signature
-            currentStyle = 'custom';
+        if (isCustomStyle(id)) {
+            currentSig = customStyleSig(id);
+            currentStyle = id;
+            drumPattern = customPatternFor(currentSig, currentRes);
+            currentDrumStep = 0;
+            saveDrumState();
+            initDrumMachineGrid();
+            return;
+        }
+        const style = DRUM_STYLES[id];
+        if (!style) {
+            currentStyle = customStyleId(currentSig);
             syncControls();
             saveDrumState();
             return;
         }
-        // The preset picks the grid: 16ths if it needs them, eighths if not
-        currentRes = styleUsesSixteenths(id) ? 16 : 8;
-        const p = stylePattern(id);
-        if (!p) return;                              // no variant for this signature
-        drumPattern = p;
+        // The preset owns its meter and picks the grid it needs.
+        currentSig = style.sig;
         currentStyle = id;
-        if (typeof DRUM_STYLES[id].swing === 'boolean') setSwing(DRUM_STYLES[id].swing);
+        currentRes = styleUsesSixteenths(id) ? 16 : 8;
+        const p = stylePattern(id, currentRes);
+        if (!p) return;
+        drumPattern = p;
+        if (typeof style.swing === 'boolean') setSwing(style.swing);
         currentDrumStep = 0;
         saveDrumState();
         initDrumMachineGrid();
@@ -647,20 +777,18 @@
         return { sig: currentSig, style: currentStyle, res: currentRes, swing: isSwingActive };
     }
 
-    function setDrumSig(sig) {
-        if ((sig !== '4/4' && sig !== '6/8') || sig === currentSig) return;
-        toggleTimeSignature();
-    }
-
     // Per-exercise settings of a drums resource, applied when the exercise opens.
-    // Order matters: signature first (a preset is bound to one), then the preset
-    // (which may bring its own grid and swing), then the saved grid and swing.
+    // Order matters: signature first, then the preset (which brings its own
+    // meter, grid and swing), then the saved grid and swing.
     function applyConfig(cfg) {
         if (!cfg || typeof cfg !== 'object') return;
-        if (cfg.sig === '4/4' || cfg.sig === '6/8') setDrumSig(cfg.sig);
-        if (typeof cfg.style === 'string' && cfg.style !== currentStyle &&
-            (cfg.style === 'custom' || DRUM_STYLES[cfg.style])) {
-            setDrumStyle(cfg.style);
+        if (SIGNATURES.indexOf(cfg.sig) >= 0) setDrumSig(cfg.sig);
+        let style = cfg.style;
+        // Legacy "custom" belongs to 4/4; recover a 6/8/3/4 legacy state.
+        if (style === 'custom' && cfg.sig && cfg.sig !== '4/4') style = customStyleId(cfg.sig);
+        if (typeof style === 'string' && style !== currentStyle &&
+            (isCustomStyle(style) || DRUM_STYLES[style])) {
+            setDrumStyle(style);
         }
         if (cfg.res === 8 || cfg.res === 16) setResolution(cfg.res);
         if (typeof cfg.swing === 'boolean' && cfg.swing !== isSwingActive) {
@@ -686,9 +814,16 @@
         tap,
         getBpm,
         setStyle: setDrumStyle,
+        setSig: setDrumSig,
         setResolution,
         toggleResolution,
         stepVelocity,
-        styles: DRUM_STYLES
+        styles: DRUM_STYLES,
+        signatures: SIGNATURES,
+        styleOptions: styleOptions,
+        styleLabel: styleLabel,
+        styleSig: styleSig,
+        customStyleId: customStyleId,
+        isCustomStyle: isCustomStyle
     };
 })(window.GPH = window.GPH || {});
