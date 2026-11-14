@@ -418,6 +418,7 @@
                     <button type="button" class="metro-btn transpose-step" data-transpose="1" title="Up one semitone">+1</button>
                     <button type="button" class="metro-btn transpose-step" data-transpose="12" title="Up an octave">+12</button>
                 </div>
+                <div id="transposeKey" class="transpose-key is-empty" title="Guessed key of the displayed chords">—</div>
                 <button type="button" id="transposeReset" class="metro-btn transpose-reset" title="Back to the original chords">Reset</button>
             </div>
             <div class="transposer-panes">
@@ -425,12 +426,13 @@
                     <span class="transposer-label">Chords</span>
                     <textarea id="transposeInput" class="transpose-input" rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="G# C#m D#7"></textarea>
                 </label>
-                <label class="transposer-pane" for="transposeOutput">
+                <div class="transposer-pane">
                     <span class="transposer-label">Transposed</span>
-                    <textarea id="transposeOutput" class="transpose-output" rows="4" readonly spellcheck="false" placeholder="—"></textarea>
-                </label>
+                    <div id="transposeOutput" class="transpose-output" aria-live="polite"></div>
+                </div>
             </div>
             <div class="transposer-hint">Tip: one line per section (Verse, Chorus…) is fine.</div>
+            <div id="transposeLegend" class="transposer-legend" hidden></div>
             <div id="transposeCapo" class="transposer-capo" aria-live="polite">Enter chords to transpose.</div>
             <div id="transposeBest" class="transposer-best" aria-live="polite" hidden></div>
         </div>`;
@@ -592,12 +594,96 @@
         return best;
     }
 
+    const MAJOR_KEY_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+    const MINOR_KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+    const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
+    const MAJOR_TRIADS = ['major', 'minor', 'minor', 'major', 'major', 'minor', 'dim'];
+    const MINOR_STEPS = [0, 2, 3, 5, 7, 8, 10];
+    const MINOR_TRIADS = ['minor', 'dim', 'major', 'minor', 'minor', 'major', 'major'];
+
+    function chordQuality(chord) {
+        const q = String(chord && chord.suffix || '');
+        if (/m7b5|dim|°|º|ø/i.test(q)) return 'dim';
+        if (/^(?:M|maj|major)/.test(q)) return 'major';
+        if (/^(?:m|min|mi|-)/.test(q)) return 'minor';
+        return 'major';
+    }
+
+    function keyMap(tonic, minor) {
+        const map = {};
+        const steps = minor ? MINOR_STEPS : MAJOR_STEPS;
+        const triads = minor ? MINOR_TRIADS : MAJOR_TRIADS;
+        steps.forEach(function (step, i) {
+            const pc = (tonic + step) % 12;
+            map[pc] = map[pc] || {};
+            map[pc][triads[i]] = true;
+        });
+        if (minor) map[(tonic + 7) % 12].major = true;   // common harmonic V
+        return map;
+    }
+
+    function scoreKey(chords, tonic, minor) {
+        const map = keyMap(tonic, minor);
+        let score = 0;
+        let matched = 0;
+        chords.forEach(function (chord) {
+            const set = map[noteIndex(chord.root)];
+            if (!set) { score -= 0.35; return; }
+            if (set[chordQuality(chord)]) { score += 1; matched++; }
+            else score += 0.3;
+        });
+        const first = chords.length ? noteIndex(chords[0].root) : -1;
+        const last = chords.length ? noteIndex(chords[chords.length - 1].root) : -1;
+        if (first === tonic) score += 1.5;
+        if (last === tonic) score += 0.8;
+        const tonicChord = chords.filter(function (c) { return noteIndex(c.root) === tonic; })[0];
+        if (tonicChord) {
+            const q = chordQuality(tonicChord);
+            if ((minor && q === 'minor') || (!minor && q === 'major')) score += 0.35;
+        }
+        return { score: score, matched: matched };
+    }
+
+    function guessKey(text) {
+        const parts = String(text || '').split(/(\s+|[|,;])/);
+        const chords = parts.map(parseChord).filter(Boolean);
+        if (!chords.length) return null;
+        let best = null;
+        for (let tonic = 0; tonic < 12; tonic++) {
+            [false, true].forEach(function (minor) {
+                const result = scoreKey(chords, tonic, minor);
+                if (!best || result.score > best.score + 1e-9 ||
+                    (Math.abs(result.score - best.score) < 1e-9 && !minor && best.minor)) {
+                    const tonicChord = chords.filter(function (c) { return noteIndex(c.root) === tonic; })[0];
+                    const tonicName = tonicChord ? tonicChord.root :
+                        (minor ? MINOR_KEY_NAMES : MAJOR_KEY_NAMES)[tonic];
+                    best = {
+                        tonic: tonic, minor: minor, score: result.score,
+                        matched: result.matched,
+                        name: tonicName + (minor ? ' minor' : ' major'),
+                        map: keyMap(tonic, minor)
+                    };
+                }
+            });
+        }
+        return best;
+    }
+
+    function chordOutside(chord, key) {
+        if (!key) return '';
+        const set = key.map[noteIndex(chord.root)];
+        if (!set) return 'outside';
+        return set[chordQuality(chord)] ? '' : 'borrowed';
+    }
+
     function initTransposerWidget(content) {
         const input = content.querySelector('.transpose-input');
         const output = content.querySelector('.transpose-output');
         const value = content.querySelector('#transposeVal');
         const capoEl = content.querySelector('#transposeCapo');
         const bestEl = content.querySelector('#transposeBest');
+        const keyEl = content.querySelector('#transposeKey');
+        const legendEl = content.querySelector('#transposeLegend');
         const reset = content.querySelector('#transposeReset');
         const stepBtns = content.querySelectorAll('[data-transpose]');
         if (!input || !output || !value || !capoEl) return;
@@ -687,9 +773,52 @@
             }
         }
 
+        function renderKey(key) {
+            if (!keyEl) return;
+            keyEl.textContent = key ? key.name : '—';
+            keyEl.classList.toggle('is-empty', !key);
+            keyEl.title = key ? 'Guessed key of the displayed chords' : 'Guessed key (no chords yet)';
+        }
+
+        function renderOutput(text, key) {
+            output.textContent = '';
+            let borrowed = 0;
+            let outside = 0;
+            String(text || '').split(/(\s+|[|,;])/).forEach(function (part) {
+                const chord = parseChord(part);
+                if (!chord) {
+                    output.appendChild(document.createTextNode(part));
+                    return;
+                }
+                const span = document.createElement('span');
+                span.className = 'transpose-chord';
+                span.textContent = part;
+                const state = chordOutside(chord, key);
+                if (state === 'outside') {
+                    span.classList.add('is-outside');
+                    span.title = 'Outside ' + key.name;
+                    outside++;
+                } else if (state === 'borrowed') {
+                    span.classList.add('is-borrowed');
+                    span.title = 'Borrowed chord in ' + key.name;
+                    borrowed++;
+                }
+                output.appendChild(span);
+            });
+            if (legendEl) {
+                legendEl.hidden = !(outside || borrowed);
+                legendEl.textContent = outside
+                    ? 'Red: outside ' + key.name + ' · Amber: borrowed quality'
+                    : (borrowed ? 'Amber: borrowed chord in ' + key.name : '');
+            }
+        }
+
         function render() {
             value.textContent = transposeLabel(semitones);
-            output.value = transposeText(input.value, semitones);
+            const outText = transposeText(input.value, semitones);
+            const key = guessKey(outText);
+            renderOutput(outText, key);
+            renderKey(key);
             renderCapo();
             renderBest();
             updateButtons();

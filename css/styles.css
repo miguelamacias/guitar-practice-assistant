@@ -1561,7 +1561,14 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .transposer-controls { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .transpose-step { padding: 4px 8px; font-size: 0.76rem; }
 .transpose-val { min-width: 42px; text-align: center; font-size: 1.05rem; font-weight: 700; line-height: 1; color: var(--sec-color, var(--accent)); }
-.transpose-reset { margin-left: auto; padding: 4px 8px; font-size: 0.72rem; }
+.transpose-key {
+    min-width: 78px; margin-left: auto; padding: 5px 10px; border-radius: 6px;
+    border: 1px solid var(--accent-green); background: rgba(76, 175, 80, 0.1);
+    color: var(--accent-green); font-size: 0.8rem; font-weight: 700;
+    text-align: center; white-space: nowrap;
+}
+.transpose-key.is-empty { border-color: #444; background: transparent; color: #777; }
+.transpose-reset { margin-left: 0; padding: 4px 8px; font-size: 0.72rem; }
 .transposer-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .transposer-pane { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .transposer-label { font-size: 0.7rem; letter-spacing: 0.08em; color: #9a9a9a; text-transform: uppercase; }
@@ -1571,8 +1578,16 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
     border-radius: 6px; padding: 8px 9px; font: inherit; font-size: 0.95rem; line-height: 1.45;
 }
 .transpose-input:focus { outline: none; border-color: var(--sec-color, var(--accent)); }
-.transpose-output { color: var(--sec-color, var(--accent)); background: rgba(255, 255, 255, 0.03); cursor: default; }
+.transpose-output {
+    color: var(--sec-color, var(--accent)); background: rgba(255, 255, 255, 0.03);
+    overflow: auto; resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; cursor: text;
+}
+.transpose-output:empty::before { content: '—'; color: #666; }
+.transpose-chord { white-space: nowrap; }
+.transpose-chord.is-borrowed { color: var(--accent-orange); text-decoration: underline dotted; }
+.transpose-chord.is-outside { color: #ff6b6b; text-decoration: underline dotted; }
 .transposer-hint { margin-top: 6px; font-size: 0.7rem; color: #777; }
+.transposer-legend { margin-top: 4px; font-size: 0.7rem; color: #9a9a9a; }
 .transposer-capo {
     margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--sec-color, var(--accent));
     border-radius: 4px; background: rgba(255, 255, 255, 0.04);
