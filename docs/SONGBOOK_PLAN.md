@@ -26,6 +26,28 @@
 | Visibilidad | La sección se activa/desactiva desde **Settings**, como las demás secciones fijas. |
 | Nombres de BD | La tabla nueva se llamará `songbook_songs`, no `songs`, para no colisionar con el índice actual de archivos locales. |
 
+### 0.1 Convención de idioma — obligatoria
+
+**Toda la implementación debe estar en inglés:**
+
+- **Interfaz de usuario:** labels, botones, menús, tabs, placeholders, tooltips,
+  mensajes de error, estados vacíos, textos de ayuda y mensajes de confirmación.
+- **Código:** nombres de variables, funciones, clases, módulos, endpoints,
+  tablas, columnas, claves JSON y valores de configuración nuevos.
+- **Comentarios:** todos los comentarios de código, docstrings y notas internas.
+- **Mensajes del servidor/API:** errores y mensajes de diagnóstico.
+- **Tests:** nombres de tests, descripciones y comentarios.
+- **Commits:** mensajes en inglés, siguiendo la convención del repositorio.
+- **Documentación de implementación:** los nuevos documentos técnicos de código
+  deben escribirse en inglés.
+
+La UI no debe introducir textos nuevos en español. Las únicas excepciones son
+datos ya existentes suministrados por el usuario (nombres de canciones, notas,
+secciones escritas por el usuario, etc.).
+
+> Este documento de planificación puede permanecer en español; la aplicación,
+> el código y sus comentarios deben implementarse en inglés.
+
 ---
 
 ## 1. Objetivo
@@ -1406,6 +1428,8 @@ Manager → Songbook → Hide
 
 ### 18.2 Manager
 
+- [ ] Toda la UI nueva está en inglés.
+- [ ] Todo el código, comentarios, tests y mensajes de API nuevos están en inglés.
 - [ ] Pestaña Songbook.
 - [ ] Buscador y filtros.
 - [ ] `Show hidden`.
