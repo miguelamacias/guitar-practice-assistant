@@ -168,6 +168,54 @@
                 splash:'1...........'
             }
         },
+        jazzwaltz: {
+            name: 'Jazz waltz', sig: '3/4', swing: true,
+            '3/4': {
+                kick:  '1...........',
+                snare: '....1...1...',
+                ride:  '1.....1...1.',
+                hihat: '....1...1...',
+                splash:'1...........'
+            }
+        },
+        countrywaltz: {
+            name: 'Country waltz', sig: '3/4', swing: false,
+            '3/4': {
+                kick:  '1...........',
+                snare: '....1...1...',
+                hihat: '1.1.1.1.1.1.',
+                splash:'1...........'
+            }
+        },
+        mazurka: {
+            name: 'Mazurka', sig: '3/4', swing: false,
+            '3/4': {
+                kick:  '1...........',
+                snare: '....1...1...',
+                hihat: '1.1.1.1.1.1.',
+                splash:'....1.......'
+            }
+        },
+        valscriollo: {
+            name: 'Vals criollo', sig: '3/4', swing: false,
+            '3/4': {
+                kick:  '1...........',
+                snare: '....1...1...',
+                tom:   '..1...1...1.',
+                ride:  '1.1.1.1.1.1.',
+                splash:'1...........'
+            }
+        },
+        fandango: {
+            name: 'Fandango', sig: '3/4', swing: false,
+            '3/4': {
+                kick:  '1.....1.....',
+                snare: '....1...1...',
+                hihat: '1.1.1.1.1.1.',
+                ride:  '..1...1...1.',
+                splash:'1...........'
+            }
+        },
 
         // --- 6/8 family ---------------------------------------------------------
         ballad68: {
