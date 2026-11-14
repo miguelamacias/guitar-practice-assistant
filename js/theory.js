@@ -253,13 +253,25 @@
         return set;
     }
 
-    // 3NPS follows the same parent-major rule as CAGED. The derived scales
-    // (pentatonics, blues, harmonic/melodic minor) keep CAGED and do not claim
-    // to have seven major-mode 3NPS patterns.
+    // 3NPS is available for every seven-note scale. The major modes use the
+    // parent major itself; harmonic/melodic minor use their relative major
+    // (A minor -> C) and a scale-specific interval set relative to that anchor.
+    // Pentatonics and blues stay on CAGED: they do not have seven 3NPS degrees.
     function npsAvailable() {
+        const scale = SCALES[state.type];
         return !state.allNotes &&
             state.kind === 'scale' &&
-            isMajorMode(state.type);
+            Array.isArray(scale) &&
+            scale.length === 7;
+    }
+
+    // Translate a scale expressed from its own root into the same pitch set
+    // expressed from the CAGED/3NPS anchor. A Aeolian -> C major; A harmonic
+    // minor -> C D E F G# A B; A melodic minor -> C D E F# G# A B.
+    function intervalsFromAnchor(rootPc, anchorPc, ivals) {
+        return ivals.map(function (semis) {
+            return (semis + rootPc - anchorPc + 24) % 12;
+        }).sort(function (a, b) { return a - b; });
     }
     function playNote(midi) {
         try {
@@ -374,11 +386,13 @@
 
     function paintScale(ivals, rootPc, cls, small, shapeName, anchorPc, npsPattern) {
         const shapeRoot = (typeof anchorPc === 'number') ? anchorPc : rootPc;
-        // Modes use the parent major patterns, exactly like CAGED; the mode's
-        // own intervals (ivals) decide which of those notes are painted and
-        // which note carries the root color.
+        // 3NPS uses the same anchor as CAGED. For the major modes that anchor
+        // is the parent major; for harmonic/melodic minor it is the relative
+        // major. The scale's own intervals (ivals) decide which notes are
+        // painted and which note carries the root color.
         const npsSet = npsPattern
-            ? npsPatternSet(shapeRoot, npsPattern, SCALES['Ionian (major)'])
+            ? npsPatternSet(shapeRoot, npsPattern,
+                intervalsFromAnchor(rootPc, shapeRoot, ivals))
             : null;
         const startFret = (!npsSet && shapeName && shapeName !== 'all') ? scaleShapeStart(shapeName, shapeRoot) : null;
 
@@ -510,7 +524,9 @@
                 b.textContent = 'P' + p;
                 b.title = state.type === 'Ionian (major)'
                     ? '3 notes per string · major degree ' + p
-                    : '3 notes per string · parent major degree ' + p;
+                    : (isMajorMode(state.type)
+                        ? '3 notes per string · parent major degree ' + p
+                        : '3 notes per string · relative major degree ' + p);
                 b.addEventListener('click', function () {
                     state.npsPattern = p; saveState(); render();
                 });
