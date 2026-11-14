@@ -1611,7 +1611,7 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .theory-card .subfolder-content:not(.collapsed) { max-height: 640px; overflow: visible; }
 /* The theory board spans the full width and starts where the controls and legend do */
 .theory-board .fb2 { max-width: none; margin: 8px 0 2px; }
-/* Slightly taller board so strings 1 and 6 do not touch the edge with 20 px dots */
+/* Slightly taller board so strings 1 and 6 do not touch the edge with 22 px dots */
 .theory-board .fb2-board { height: 200px; }
 .theory-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
 .theory-controls select { background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 8px; font-size: 0.85rem; }
@@ -1624,8 +1624,8 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .th-chip:hover { background: #3a3a3a; }
 .th-chip.active { border-color: var(--sec-color, var(--accent)); box-shadow: inset 0 0 0 1px var(--sec-color, var(--accent)); }
 .theory-board { margin: 4px 0; }
-.th-dot { position: absolute; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #101010; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.5); }
-.th-dot b { font-size: 10px; line-height: 1; pointer-events: none; font-weight: 700; }
+.th-dot { position: absolute; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #101010; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.5); }
+.th-dot b { font-size: 11px; line-height: 1; pointer-events: none; font-weight: 700; }
 .th-dot.d0 { background: var(--deg-0); color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 10px var(--deg-0); }
 .th-dot.d1 { background: var(--deg-1); }
 .th-dot.d2 { background: var(--deg-2); }
@@ -1641,8 +1641,8 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .th-dot.small { width: 11px; height: 11px; opacity: 0.5; box-shadow: none; }
 .th-dot.small b { display: none; }
 /* "All notes" mode: naturals light, accidentals dark */
-.th-dot.th-all { width: 19px; height: 19px; }
-.th-dot.th-all b { font-size: 9px; }
+.th-dot.th-all { width: 21px; height: 21px; }
+.th-dot.th-all b { font-size: 10px; }
 .th-dot.th-nat { background: #e6e6e6; color: #111; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); }
 .th-dot.th-acc { background: #242424; color: #e8e8e8; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5); }
 .th-sw.th-nat { background: #e6e6e6; }
