@@ -1342,6 +1342,26 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 }
 .audio-bottom #apSeek { flex: 1; min-width: 0; accent-color: var(--accent-red); cursor: pointer; }
 .ap-time { font-size: 0.72rem; color: #aaa; white-space: nowrap; }
+.ap-icon-btn {
+    width: 24px; height: 24px; padding: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; border-radius: 4px;
+    color: #888; cursor: pointer;
+}
+.ap-icon-btn .ico { width: 16px; height: 16px; }
+.ap-icon-btn:hover:not(:disabled) { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.ap-icon-btn.is-on { color: var(--accent-red); }
+.ap-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.ap-scrobble {
+    width: 24px; height: 24px; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #777; cursor: default;
+}
+.ap-scrobble .ico { width: 16px; height: 16px; }
+.ap-scrobble.is-on { color: var(--accent-green); }
+.ap-scrobble.is-pending { color: var(--accent-orange); }
+.ap-scrobble.is-error { color: var(--accent-red); }
+.ap-scrobble.is-off { color: #777; }
 .audio-panel audio { display: none; }
 
 /* Manager floating layer (iframe) */

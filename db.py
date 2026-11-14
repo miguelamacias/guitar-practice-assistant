@@ -14,6 +14,7 @@ import sqlite3
 import functools
 import re
 import sys
+import time
 import mimetypes
 import subprocess
 import threading
@@ -92,6 +93,24 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS lastfm_scrobbles (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL DEFAULT '',
+    artist TEXT NOT NULL DEFAULT '',
+    track TEXT NOT NULL DEFAULT '',
+    album TEXT NOT NULL DEFAULT '',
+    duration INTEGER NOT NULL DEFAULT 0,
+    started_at INTEGER NOT NULL DEFAULT 0,
+    played_seconds INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    sent_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_lastfm_scrobbles_queue
+    ON lastfm_scrobbles(status, next_attempt_at);
 CREATE TABLE IF NOT EXISTS fretboard_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     duration_seconds INTEGER NOT NULL,
@@ -1021,6 +1040,61 @@ def set_setting(conn, key, value):
     conn.execute('INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)', (key, value))
     conn.commit()
     return {'ok': True}
+
+
+# ------------------------- Last.fm scrobble queue -------------------------
+
+def lastfm_enqueue_scrobble(conn, item):
+    """Insert one pending scrobble. Returns True when it was new."""
+    cur = conn.execute(
+        'INSERT OR IGNORE INTO lastfm_scrobbles'
+        '(id, path, artist, track, album, duration, started_at, played_seconds) '
+        'VALUES(?,?,?,?,?,?,?,?)',
+        (item['id'], item.get('path', ''), item['artist'], item['track'],
+         item['album'], int(item.get('duration') or 0),
+         int(item.get('started_at') or 0), int(item.get('played_seconds') or 0)),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def lastfm_pending(conn, limit=50, now=None):
+    if now is None:
+        now = int(time.time())
+    rows = conn.execute(
+        'SELECT * FROM lastfm_scrobbles '
+        "WHERE status IN ('pending','needs_auth') AND next_attempt_at<=? "
+        'ORDER BY created_at, id LIMIT ?',
+        (int(now), max(1, min(50, int(limit)))),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def lastfm_update_scrobble(conn, sid, status, error='', attempts=None, next_attempt_at=0):
+    if attempts is None:
+        conn.execute(
+            "UPDATE lastfm_scrobbles SET status=?, last_error=?, next_attempt_at=?, "
+            "sent_at=CASE WHEN ?='sent' THEN datetime('now') ELSE sent_at END "
+            "WHERE id=?",
+            (status, error or '', int(next_attempt_at or 0), status, sid),
+        )
+    else:
+        conn.execute(
+            "UPDATE lastfm_scrobbles SET status=?, last_error=?, attempts=?, "
+            "next_attempt_at=?, sent_at=CASE WHEN ?='sent' THEN datetime('now') ELSE sent_at END "
+            "WHERE id=?",
+            (status, error or '', int(attempts), int(next_attempt_at or 0), status, sid),
+        )
+    conn.commit()
+
+
+def lastfm_queue_counts(conn):
+    out = {'pending': 0, 'sent': 0, 'ignored': 0, 'failed': 0, 'needs_auth': 0}
+    for r in conn.execute('SELECT status, COUNT(*) AS n FROM lastfm_scrobbles GROUP BY status'):
+        if r['status'] in out:
+            out[r['status']] = int(r['n'])
+    out['total'] = sum(out.values())
+    return out
 
 
 # ------------------------- Cache de "Song Info" (BPM/Key) -------------------------

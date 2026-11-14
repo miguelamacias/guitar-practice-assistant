@@ -2,8 +2,23 @@
 (function (GPH) {
     'use strict';
 
+    // Tracks shorter than two minutes are practice loops: loop is ON by default.
+    const SHORT_TRACK_SECONDS = 120;
+    let loopOverride = false;
+
     function getAudioEl() { return document.getElementById('audioPlayer'); }
     function getTitleEl() { return document.getElementById('current-playing'); }
+
+    function syncLoopButton() {
+        const player = getAudioEl();
+        const btn = document.getElementById('apLoop');
+        if (!player || !btn) return;
+        const on = !!player.loop;
+        btn.classList.toggle('is-on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.disabled = !player.getAttribute('src');
+        btn.title = 'Loop: ' + (on ? 'on' : 'off');
+    }
 
     function playAudio(url, title) {
         closeYouTube();
@@ -11,12 +26,15 @@
         const player = getAudioEl();
         const titleSpan = getTitleEl();
 
+        loopOverride = false;
+        player.loop = false;
         player.src = url;
-        player.loop = true;
         titleSpan.textContent = title;
         const panel = document.getElementById('audioPanel');
         if (panel) panel.classList.add('is-open');
+        if (GPH.scrobbler && GPH.scrobbler.start) GPH.scrobbler.start(url, title);
         player.play();
+        syncLoopButton();
         setTimeout(updateMarquee, 30);
     }
 
@@ -56,7 +74,11 @@
             player.pause();
             player.removeAttribute('src');
             player.load();
+            player.loop = false;
         }
+        loopOverride = false;
+        syncLoopButton();
+        if (GPH.scrobbler && GPH.scrobbler.stop) GPH.scrobbler.stop();
         const titleSpan = getTitleEl();
         if (titleSpan) { titleSpan.textContent = 'No audio selected'; titleSpan.classList.remove('scrolling'); titleSpan.style.removeProperty('--shift'); }
         const panel = document.getElementById('audioPanel');
@@ -99,6 +121,15 @@
         playBtn.addEventListener('click', function () {
             if (player.paused) { player.play(); } else { player.pause(); }
         });
+        const loopBtn = document.getElementById('apLoop');
+        if (loopBtn) {
+            loopBtn.addEventListener('click', function () {
+                if (!player.getAttribute('src')) return;
+                player.loop = !player.loop;
+                loopOverride = true;
+                syncLoopButton();
+            });
+        }
         player.addEventListener('play', function () { playBtn.classList.add('is-playing'); });
         player.addEventListener('pause', function () { playBtn.classList.remove('is-playing'); });
         player.addEventListener('timeupdate', function () {
@@ -110,10 +141,16 @@
         player.addEventListener('loadedmetadata', function () {
             seek.value = 0;
             time.textContent = '0:00 / ' + fmtTime(player.duration);
+            if (!loopOverride && isFinite(player.duration) && player.duration > 0) {
+                player.loop = player.duration < SHORT_TRACK_SECONDS;
+            }
+            syncLoopButton();
         });
+        player.addEventListener('emptied', syncLoopButton);
         seek.addEventListener('input', function () {
             if (player.duration) player.currentTime = (seek.value / 1000) * player.duration;
         });
+        syncLoopButton();
     }
 
     document.addEventListener('DOMContentLoaded', initAudioControls);

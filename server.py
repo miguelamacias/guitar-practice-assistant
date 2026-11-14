@@ -29,10 +29,12 @@ from db import (
     export_csv, get_settings_prefix,
 )
 import db as dbmod
+import lastfm
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAIN_DB = os.path.join(HERE, 'practice.db')
 SANDBOX_DB = os.path.join(HERE, 'practice_sandbox.db')
+LASTFM_WORKER = None
 
 
 def _sandbox_mode():
@@ -509,13 +511,44 @@ class Handler(SimpleHTTPRequestHandler):
             if path == '/api/song/key-check' and method == 'GET':
                 return self._song_key_check(conn)
 
+            if path == '/api/lastfm/status' and method == 'GET':
+                return self._send_json(lastfm.status(conn))
+            if path == '/api/lastfm/config' and method == 'POST':
+                return self._send_json(lastfm.set_config(conn, data))
+            if path == '/api/lastfm/auth/start' and method == 'POST':
+                r = lastfm.auth_start(conn)
+                return self._send_json(r, 200 if r.get('ok') else 400)
+            if path == '/api/lastfm/auth/status' and method == 'GET':
+                r = lastfm.auth_status(conn)
+                if r.get('auth_state') == 'connected' and LASTFM_WORKER:
+                    LASTFM_WORKER.wake()
+                return self._send_json(r)
+            if path == '/api/lastfm/disconnect' and method == 'POST':
+                return self._send_json(lastfm.disconnect(conn))
+            if path == '/api/lastfm/track-meta' and method == 'GET':
+                qs = parse_qs(urlparse(self.path).query)
+                value = (qs.get('url') or qs.get('path') or [''])[0]
+                duration = (qs.get('duration') or [None])[0]
+                return self._send_json(lastfm.track_meta(conn, value, duration))
+            if path == '/api/lastfm/scrobble' and method == 'POST':
+                r = lastfm.prepare_scrobble(conn, data)
+                if r.get('queued') and LASTFM_WORKER:
+                    LASTFM_WORKER.wake()
+                return self._send_json(r)
+
             if path == '/api/shutdown' and method == 'POST':
-                threading.Thread(target=self.server.shutdown, daemon=True).start()
+                def _shutdown():
+                    if LASTFM_WORKER:
+                        LASTFM_WORKER.stop()
+                    self.server.shutdown()
+                threading.Thread(target=_shutdown, daemon=True).start()
                 return self._send_json({'ok': True})
 
             m = re.fullmatch(r'/api/settings/([A-Za-z0-9_\-]+)', path)
             if m:
                 key = m.group(1)
+                if key in lastfm.SECRET_SETTINGS:
+                    return self._send_json({'error': 'forbidden'}, 403)
                 if method == 'GET':
                     return self._send_json({'key': key, 'value': get_setting(conn, key)})
                 if method in ('PUT', 'POST'):
@@ -632,6 +665,9 @@ def main():
         dbmod.set_db_path(os.environ['GPH_DB'])
 
     init_db()
+    global LASTFM_WORKER
+    LASTFM_WORKER = lastfm.LastfmWorker(sandbox=_sandbox_mode())
+    LASTFM_WORKER.start()
     handler = functools.partial(Handler, directory=ROOT)
     with ThreadingHTTPServer(('127.0.0.1', port), handler) as httpd:
         extra = '  [SANDBOX ' + os.path.basename(dbmod.DB_PATH) + ']' if _sandbox_mode() else ''
@@ -640,6 +676,9 @@ def main():
             httpd.serve_forever()
         except KeyboardInterrupt:
             pass
+        finally:
+            if LASTFM_WORKER:
+                LASTFM_WORKER.stop()
 
 
 if __name__ == '__main__':

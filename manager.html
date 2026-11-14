@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=39">
+    <link rel="stylesheet" href="css/manager.css?v=40">
 </head>
 <body>
 <div class="mgr">
@@ -266,6 +266,37 @@
     </div>
 
     <div class="about-card">
+        <h2>Last.fm scrobbling</h2>
+        <p style="margin:0 0 10px;color:#9a9a9a;font-size:0.8rem;">
+            Scrobbles local MP3s played in the integrated player. Tracks need ID3 artist, title and album,
+            and must be at least <b>2:00</b> long. Short practice loops are never scrobbled.
+            Create an API account at
+            <a href="https://www.last.fm/api/account/create" target="_blank" rel="noopener">last.fm/api/account/create</a>.
+            The API secret and session key are stored in the local database and never returned to the browser.
+        </p>
+        <div class="field">
+            <label>API key</label>
+            <div class="field-row">
+                <input type="text" id="lastfmApiKey" class="api-key-input" placeholder="Last.fm API key" autocomplete="off">
+            </div>
+        </div>
+        <div class="field">
+            <label>API secret</label>
+            <div class="field-row">
+                <input type="password" id="lastfmApiSecret" class="api-key-input" placeholder="Last.fm API secret" autocomplete="off">
+                <button id="lastfmSecretShow" class="btn small" title="Show / hide the secret">Show</button>
+            </div>
+        </div>
+        <div class="field-row">
+            <button id="lastfmSaveBtn" class="btn small">Save</button>
+            <button id="lastfmConnectBtn" class="btn small">Connect Last.fm</button>
+            <button id="lastfmDisconnectBtn" class="btn small">Disconnect</button>
+            <label class="sub-check"><input type="checkbox" id="lastfmEnabled" checked> Enable scrobbling</label>
+        </div>
+        <div id="lastfmStatus" class="api-key-status"></div>
+    </div>
+
+    <div class="about-card">
         <h2>Developer</h2>
         <p style="margin:0 0 10px;color:#9a9a9a;font-size:0.8rem;">
             <b>Debug mode</b> (dry run) keeps the app fully working but blocks every write, so nothing reaches the database —
@@ -328,6 +359,7 @@
 <div id="toast" class="toast"></div>
 <script src="js/debug.js?v=2"></script>
 <script src="js/settings.js?v=1"></script>
+<script src="js/managerLastfm.js?v=2"></script>
 <script src="js/icons.js?v=12"></script>
 <script src="js/theory.js?v=19"></script>
 <script src="js/chords.js?v=3"></script>
