@@ -431,6 +431,7 @@
                 </label>
             </div>
             <div id="transposeCapo" class="transposer-capo" aria-live="polite">Enter chords to transpose.</div>
+            <div id="transposeBest" class="transposer-best" aria-live="polite" hidden></div>
         </div>`;
 
     // ---- Chord transposer ---------------------------------------------------
@@ -504,11 +505,66 @@
         return n > 0 ? '+' + n : String(n);
     }
 
+    // Common open-position chords in standard tuning. Only exact open shapes
+    // count; the goal is to find a capo that removes barre chords, not one that
+    // merely lowers the fret number of a barre.
+    const OPEN_CHORDS = {};
+    [
+        'C', 'D', 'E', 'G', 'A',
+        'Am', 'Dm', 'Em',
+        'A7', 'B7', 'C7', 'D7', 'E7', 'G7',
+        'Am7', 'Dm7', 'Em7',
+        'Cmaj7', 'Emaj7', 'Gmaj7', 'Amaj7',
+        'Asus2', 'Asus4', 'Dsus2', 'Dsus4', 'Esus4', 'Gsus4',
+        'Cadd9', 'Gadd9',
+        'C6', 'D6', 'E6', 'G6'
+    ].forEach(function (name) { OPEN_CHORDS[name] = true; });
+
+    function openChordKey(shape) {
+        const chord = parseChord(shape);
+        if (!chord) return '';
+        let q = chord.suffix;
+        if (q === 'M' || q === 'maj' || q === 'major' || !q) q = '';
+        else if (q === 'M7' || q === 'maj7' || q === 'Δ7') q = 'maj7';
+        else if (q === 'm' || q === 'min' || q === 'mi' || q === '-') q = 'm';
+        else if (q === 'm7' || q === 'min7' || q === 'mi7' || q === '-7') q = 'm7';
+        else q = q.toLowerCase();
+        const key = chord.root + q;
+        return OPEN_CHORDS[key] ? key : '';
+    }
+
+    function findBestCapo(text) {
+        const src = String(text || '');
+        const parts = src.split(/(\s+|[|,;])/);
+        const chords = parts.map(parseChord).filter(Boolean);
+        if (!chords.length) return null;
+        const firstRoot = noteIndex(chords[0].root);
+        let best = null;
+        // Common capo range; 0 means "no capo".
+        for (let capo = 0; capo <= 7; capo++) {
+            const flats = preferFlats(src, firstRoot, -capo);
+            let openCount = 0;
+            const openChords = [];
+            chords.forEach(function (chord) {
+                const shape = transposeChord(chord, -capo, flats);
+                if (!openChordKey(shape)) return;
+                openCount++;
+                if (openChords.indexOf(shape) < 0) openChords.push(shape);
+            });
+            if (!best || openCount > best.openCount ||
+                (openCount === best.openCount && capo < best.capo)) {
+                best = { capo: capo, openCount: openCount, total: chords.length, openChords: openChords };
+            }
+        }
+        return best;
+    }
+
     function initTransposerWidget(content) {
         const input = content.querySelector('.transpose-input');
         const output = content.querySelector('.transpose-output');
         const value = content.querySelector('#transposeVal');
         const capoEl = content.querySelector('#transposeCapo');
+        const bestEl = content.querySelector('#transposeBest');
         const reset = content.querySelector('#transposeReset');
         const stepBtns = content.querySelectorAll('[data-transpose]');
         if (!input || !output || !value || !capoEl) return;
@@ -555,10 +611,51 @@
             }
         }
 
+        function renderBest() {
+            if (!bestEl) return;
+            const best = findBestCapo(input.value);
+            if (!best) {
+                bestEl.hidden = true;
+                bestEl.textContent = '';
+                return;
+            }
+            bestEl.hidden = false;
+            bestEl.innerHTML = '';
+            const title = document.createElement('strong');
+            title.textContent = best.capo
+                ? 'Best open-chord capo: ' + best.capo
+                : 'Best open-chord position: no capo';
+            bestEl.appendChild(title);
+            const detail = document.createElement('span');
+            if (!best.openCount) {
+                detail.textContent = ' — no open chords found in this progression.';
+            } else {
+                detail.textContent = ' — ' + best.openCount + '/' + best.total + ' open' +
+                    (best.openChords.length ? ': ' + best.openChords.join(' · ') : '');
+            }
+            bestEl.appendChild(detail);
+            bestEl.classList.toggle('is-neutral', !best.openCount);
+            if (best.capo > 0) {
+                bestEl.appendChild(document.createTextNode(' '));
+                const use = document.createElement('button');
+                use.type = 'button';
+                use.className = 'metro-btn transposer-use-best';
+                const applied = semitones === -best.capo;
+                use.textContent = applied ? 'Applied' : 'Use capo ' + best.capo;
+                use.disabled = applied;
+                use.addEventListener('click', function () {
+                    semitones = -best.capo;
+                    render();
+                });
+                bestEl.appendChild(use);
+            }
+        }
+
         function render() {
             value.textContent = transposeLabel(semitones);
             output.value = transposeText(input.value, semitones);
             renderCapo();
+            renderBest();
             updateButtons();
             try {
                 localStorage.setItem('gph_transpose_semitones', String(semitones));

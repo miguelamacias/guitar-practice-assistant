@@ -1578,6 +1578,16 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
     font-size: 0.82rem; line-height: 1.4; color: #ccc;
 }
 .transposer-capo.is-neutral { border-left-color: #555; color: #8f8f8f; }
+.transposer-best {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 8px; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.035);
+    font-size: 0.8rem; line-height: 1.4; color: #ccc;
+}
+.transposer-best strong { color: var(--sec-color, var(--accent)); }
+.transposer-best.is-neutral { color: #8f8f8f; }
+.transposer-best .transposer-use-best { margin-left: auto; padding: 4px 8px; font-size: 0.72rem; }
+.transposer-best[hidden] { display: none; }
 @media (max-width: 700px) { .transposer-panes { grid-template-columns: 1fr; } }
 
 /* ---- Fretboard Theory: one more item inside the section ---- */
