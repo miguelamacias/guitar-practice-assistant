@@ -109,9 +109,11 @@ h2 { font-size:15px; margin:0; letter-spacing:-.01em; }
 .chart { border-top:1px solid var(--line-soft); margin-top:2px; padding-top:11px; }
 .chart-section-title { color:var(--accent); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.12em; margin:11px 0 5px; }
 .chart-section-title:first-child { margin-top:0; }
-.lyric-line { margin:0 0 8px; line-height:2.05; font-size:12px; color:#c8ced8; }
-.chord { color:var(--yellow); font-weight:800; font-size:10.5px; margin-right:3px; }
+.chart-line { margin:0 0 8px; }
+.chord-row { display:grid; grid-template-columns:repeat(12,1fr); column-gap:2px; min-height:14px; }
+.chord { display:inline-block; color:var(--yellow); font-weight:800; font-size:10.5px; justify-self:start; }
 .chord:hover { color:#ffe095; cursor:pointer; }
+.lyric-text { font-size:12px; line-height:1.65; color:#c8ced8; white-space:pre-wrap; }
 .chart-free { border:1px dashed var(--line); border-radius:7px; min-height:120px; padding:10px; color:var(--muted); font-size:11px; line-height:1.8; }
 .practice-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 0; border-bottom:1px solid var(--line-soft); }
 .practice-row:last-child { border-bottom:0; }
@@ -327,19 +329,28 @@ h2 { font-size:15px; margin:0; letter-spacing:-.01em; }
                             <h2>Chord chart</h2>
                             <div class="chart-tabs">
                                 <button class="active">Lyrics</button>
-                                <button>Bars</button>
                                 <button>Free</button>
                             </div>
                         </div>
                         <div class="chart">
                             <div class="chart-section-title">Verse 1 · 0:14</div>
-                            <div class="lyric-line"><span class="chord">D</span>First line of the verse goes here</div>
-                            <div class="lyric-line"><span class="chord">Bm</span>Second line follows in the same bar</div>
-                            <div class="lyric-line"><span class="chord">G</span>Third line shows another chord change</div>
-                            <div class="lyric-line"><span class="chord">D</span>Fourth line closes the phrase</div>
+                            <div class="chart-line">
+                                <div class="chord-row"><span class="chord" style="grid-column:1">D</span><span class="chord" style="grid-column:5">Bm</span></div>
+                                <div class="lyric-text">First line of the verse goes here</div>
+                            </div>
+                            <div class="chart-line">
+                                <div class="chord-row"><span class="chord" style="grid-column:1">G</span><span class="chord" style="grid-column:6">D</span></div>
+                                <div class="lyric-text">Second line follows in the same phrase</div>
+                            </div>
                             <div class="chart-section-title">Chorus · 0:45</div>
-                            <div class="lyric-line"><span class="chord">G</span>Chorus line with the lift in the harmony</div>
-                            <div class="lyric-line"><span class="chord">D</span>Second chorus line back to the tonic</div>
+                            <div class="chart-line">
+                                <div class="chord-row"><span class="chord" style="grid-column:1">G</span><span class="chord" style="grid-column:5">D</span></div>
+                                <div class="lyric-text">Chorus line with the lift in the harmony</div>
+                            </div>
+                            <div class="chart-line">
+                                <div class="chord-row"><span class="chord" style="grid-column:1">D</span></div>
+                                <div class="lyric-text">Second chorus line back to the tonic</div>
+                            </div>
                         </div>
                         <div class="chart-free" hidden>Free chart / tab area</div>
                     </section>
