@@ -1357,7 +1357,7 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
     display: inline-flex; align-items: center; justify-content: center;
     color: #777; cursor: default;
 }
-.ap-scrobble .ico { width: 16px; height: 16px; }
+.ap-scrobble .ico { width: 18px; height: 18px; }
 .ap-scrobble.is-on { color: var(--accent-green); }
 .ap-scrobble.is-pending { color: var(--accent-orange); }
 .ap-scrobble.is-error { color: var(--accent-red); }
