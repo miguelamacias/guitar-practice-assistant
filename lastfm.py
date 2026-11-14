@@ -20,7 +20,7 @@ import db
 
 API_URL = 'https://ws.audioscrobbler.com/2.0/'
 AUTH_URL = 'https://www.last.fm/api/auth/'
-USER_AGENT = 'GuitarPracticeHub/1.0 (https://github.com/miguelamacias/guitar-practice-assistant)'
+USER_AGENT = 'GuitarPracticeHub/1.1 (https://github.com/miguelamacias/guitar-practice-assistant)'
 MIN_DURATION = 120                 # "more than 1:59": a 2:00 track is eligible
 MAX_BATCH = 50
 AUTH_TIMEOUT = 300
