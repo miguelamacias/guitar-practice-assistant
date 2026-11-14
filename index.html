@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎸</text></svg>">
+    <title>Guitar Practice Hub</title>
+    <link rel="stylesheet" href="css/styles.css?v=77">
+
+    <!-- App modules (classic scripts, in dependency order) -->
+    <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
+         so its fetch wrapper can block writes from the very first request. -->
+    <script defer src="js/debug.js?v=2"></script>
+    <script defer src="js/audioEngine.js?v=12"></script>
+    <script defer src="js/players.js"></script>
+    <script defer src="js/icons.js?v=12"></script>
+    <script defer src="js/ui.js?v=4"></script>
+    <script defer src="js/metronome.js?v=6"></script>
+    <script defer src="js/drumMachine.js?v=12"></script>
+    <script defer src="js/practiceAssistant.js?v=54"></script>
+    <script defer src="js/api.js?v=1"></script>
+    <script defer src="js/settings.js?v=2"></script>
+    <script defer src="js/prefs.js?v=1"></script>
+    <script defer src="js/chords.js?v=3"></script>
+    <script defer src="js/chordDiagrams.js?v=2"></script>
+    <script defer src="js/widgets.js?v=15"></script>
+    <script defer src="js/fretboardBoard.js?v=3"></script>
+    <script defer src="js/fretboard.js?v=11"></script>
+    <script defer src="js/theory.js?v=19"></script>
+    <script defer src="js/sections.js?v=46"></script>
+    <script defer src="js/main.js?v=28"></script>
+</head>
+<body>
+
+<div class="container">
+    <header class="main-header">
+        <a id="manageBtn" class="manage-link" href="manager.html" target="_blank">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 7h9M17 7h3"></path>
+                <circle cx="15" cy="7" r="2"></circle>
+                <path d="M4 12h3M11 12h9"></path>
+                <circle cx="9" cy="12" r="2"></circle>
+                <path d="M4 17h9M17 17h3"></path>
+                <circle cx="15" cy="17" r="2"></circle>
+            </svg>
+            Manage
+        </a>
+        <h1>
+            <svg class="ico-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M6.6 3.6H17.4L17.6 20.6H6.4Z" stroke-width="1.4"></path>
+                <path d="M6.6 3.6H17.4" stroke-width="2.4"></path>
+                <path d="M6.5 9.2H17.5M6.5 15.2H17.5" stroke-width="1.2"></path>
+                <path d="M8.8 3.6 8.6 20.6M10.9 3.6V20.6M13.1 3.6V20.6M15.2 3.6 15.4 20.6" stroke-width="0.8"></path>
+                <circle cx="12" cy="6.4" r="0.7" fill="currentColor" stroke="none"></circle>
+                <circle cx="12" cy="17.9" r="0.7" fill="currentColor" stroke="none"></circle>
+            </svg>
+            <span>Guitar Practice Hub</span>
+            <svg class="ico-logo" viewBox="0 0 24 24" aria-hidden="true">
+                <g transform="translate(12 12) scale(1.15) translate(-12 -12)">
+                    <path d="M5.4 15.1H18.6M5.4 17H18.6M5.4 18.9H18.6" fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round"></path>
+                    <path d="M12 5.1c2.9 0 5.2 2.1 5.2 4.7 0 4.3-3.5 9.1-5.2 9.1s-5.2-4.8-5.2-9.1c0-2.6 2.3-4.7 5.2-4.7z" fill="currentColor" transform="rotate(18 12 12)"></path>
+                </g>
+            </svg>
+        </h1>
+    </header>
+
+    <div class="grid-layout">
+        <!-- PRACTICE ASSISTANT SECTION -->
+        <div class="section-card practice-assistant-section" id="practiceAssistantSection">
+            <h2 class="assistant-title">Practice Assistant</h2>
+            <div class="assistant-container assistant-content">
+
+                <!-- 1. Welcome screen -->
+                <div id="welcomeCard" class="card-panel welcome-card">
+            <!-- Discreet shortcut to the practice log: opens the Manager on History -->
+            <a id="welcomeHistBtn" class="welcome-hist" href="manager.html?view=history" target="_blank"
+               title="Practice history" aria-label="Practice history">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+                    <path d="M5.5 20V11M12 20V4.5M18.5 20V14.5"></path>
+                </svg>
+            </a>
+                    <div id="welcomeRoutineName" class="welcome-name">Loading routine...</div>
+                    <div id="welcomeRoutineDesc" class="welcome-desc">Ready to start your practice routine?</div>
+                    <button id="startRoutineBtn" class="start-btn">
+                        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="8.4"></circle>
+                            <path d="M10.2 8.6l5.2 3.4-5.2 3.4z" fill="currentColor" stroke="none"></path>
+                        </svg>
+                        Start Practicing
+                    </button>
+                </div>
+
+                <!-- 2. Current exercise card -->
+                <div id="exerciseCard" class="card-panel exercise-card is-hidden">
+                    <div class="exercise-body">
+                        <div id="exerciseListSidebar" class="exercise-sidebar"></div>
+
+                        <div class="exercise-main">
+                            <!-- Panel toolbar: start time · exercise counter · Reset -->
+                            <div class="exercise-head">
+                                <span id="practiceStartTime" class="exercise-start-time"><svg class="start-time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg><span id="practiceStartTimeText">Start time: --:--</span></span>
+                                <div id="exIndex" class="ex-index">-</div>
+                                <button id="exResetBtn" class="metro-btn exercise-reset-btn" title="Reset the exercise timer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg><span>Reset exercise</span></button>
+                            </div>
+                            <!-- Everything else is centred in the space left under the toolbar -->
+                            <div class="exercise-content">
+                                <!-- Name + description + resource: one tight block about the same exercise -->
+                                <div class="ex-info">
+                                    <div id="exTitle" class="ex-title">-</div>
+                                    <div id="exDescription" class="ex-desc">-</div>
+                                    <div id="exResource" class="ex-resource-tag"></div>
+                                </div>
+                                <div id="exTimer" class="ex-timer">00:00</div>
+                                <div class="ex-progress">
+                                    <div id="exProgressBar" class="ex-progress-bar"></div>
+                                </div>
+                                <div class="ex-controls">
+                                    <button id="exPlayBtn" class="ex-play-btn">
+                                        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 5.4v13.2L19 12z" fill="currentColor" stroke="none"></path></svg> Play
+                                    </button>
+                                    <button id="exNextBtn" class="ex-next-btn">Mark done</button>
+                                    <button id="exSkipBtn" class="ex-skip-btn" title="Skip this exercise (not practiced)">
+                                        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.6 6.6L13 12l-5.4 5.4"></path><path d="M13.4 6.6L18.8 12l-5.4 5.4"></path></svg> Skip
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="section-card fretboard-section" id="fretboardSection" style="display:none; --sec-color:#607d8b;">
+            <h2>Theory</h2>
+            <div class="fretboard-body" id="fretboardBody">
+                <div class="theory-card">
+                    <ul class="link-list">
+                        <li class="link-item" id="sub-fretboard-trainer">
+                            <div class="subfolder-toggle" data-sub-key="fretboard-trainer">
+                                <span><span class="tag">Theory</span> - Fretboard Trainer</span>
+                            </div>
+                            <div class="subfolder-content fk-panel">
+                                <div class="fretboard-mount" id="fretboardMount"></div>
+                            </div>
+                        </li>
+                        <li class="link-item" id="sub-fretboard-theory">
+                            <div class="subfolder-toggle collapsed" data-sub-key="fretboard-theory">
+                                <span><span class="tag">Theory</span> - Scales &amp; Chords</span>
+                            </div>
+                            <div class="subfolder-content fk-panel collapsed">
+                                <div class="theory-controls">
+                                    <select class="theory-root" title="Root note"></select>
+                                    <select class="theory-type" title="Scale or chord"></select>
+                                    <label class="theory-opt"><input type="checkbox" class="theory-all"> All notes</label>
+                                    <label class="theory-opt"><input type="checkbox" class="theory-notes"> Note names</label>
+                                    <label class="theory-opt"><input type="checkbox" class="theory-overlay"> Scale under chord</label>
+                                    <select class="theory-bg" title="Background scale" hidden></select>
+                                </div>
+                                <div class="theory-shapes" hidden></div>
+                                <div class="theory-board"></div>
+                                <div class="theory-legend"></div>
+                                <div class="theory-msg"></div>
+                            </div>
+                        </li>
+                        <li class="link-item" id="sub-fretboard-chords">
+                            <div class="subfolder-toggle collapsed" data-sub-key="fretboard-chords">
+                                <span><span class="tag">Theory</span> - Chords in Key</span>
+                            </div>
+                            <div class="subfolder-content fk-panel collapsed">
+                                <div class="chords-widget" id="chordsPanel">
+                                    <div class="chords-controls">
+                                        <label class="chords-field">Key <select class="chords-root"></select></label>
+                                        <label class="chords-field">Mode <select class="chords-mode"></select></label>
+                                        <label class="chords-opt"><input type="checkbox" class="chords-seventh"> 7ths</label>
+                                    </div>
+                                    <div class="chords-scale"></div>
+                                    <div class="chords-grid"></div>
+                                </div>
+                            </div>
+                        </li>
+                        <li class="link-item" id="sub-fretboard-chord-diagrams">
+                            <div class="subfolder-toggle collapsed" data-sub-key="fretboard-chord-diagrams">
+                                <span><span class="tag">Theory</span> - Chord Diagrams</span>
+                            </div>
+                            <div class="subfolder-content fk-panel collapsed">
+                                <div id="chordDiagramsPanel" class="chord-diagrams-panel">
+                                    <div class="chord-diag-controls">
+                                        <label class="chord-diag-field">Root <select class="diag-root"></select></label>
+                                        <label class="chord-diag-field">Quality <select class="diag-quality"></select></label>
+                                    </div>
+                                    <div class="chord-diag-preview">
+                                        <img class="chord-diag-img" src="" alt="Chord diagram" hidden>
+                                        <div class="chord-diag-msg" hidden>Diagram not found for this chord.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="sections-masonry">
+            <div class="masonry-col" id="sectionsColA"></div>
+            <div class="masonry-col" id="sectionsColB"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Floating YouTube player -->
+<div id="youtubeModal" class="youtube-modal">
+    <div class="youtube-header">
+        <span id="ytModalTitle">Youtube Video</span>
+        <div>
+            <a id="ytExternalLink" class="yt-external" href="#" target="_blank" title="Open in YouTube" aria-label="Open in YouTube">
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.4 4.6h6v6"></path><path d="M19.4 4.6l-8.6 8.6"></path><path d="M18.4 14.2V18a1.6 1.6 0 0 1-1.6 1.6H5.8A1.6 1.6 0 0 1 4.2 18V7.2a1.6 1.6 0 0 1 1.6-1.6H9.4"></path></svg>
+            </a>
+            <button id="ytCloseBtn" class="youtube-close-btn" title="Close" aria-label="Close">
+                <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            </button>
+        </div>
+    </div>
+    <iframe id="ytIframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+</div>
+
+<!-- Floating audio player (left panel, YouTube style) -->
+<div id="audioPanel" class="audio-panel">
+    <div class="audio-titlebar">
+        <div class="audio-title-wrap">
+            <span id="current-playing" class="audio-title-text">No audio selected</span>
+        </div>
+        <button id="closeAudioBtn" class="audio-close-btn" title="Close" aria-label="Close">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+    </div>
+    <div class="audio-center">
+        <button id="apPlay" class="ap-play-big" title="Play/Pause"></button>
+    </div>
+    <div class="audio-bottom">
+        <input id="apSeek" type="range" min="0" max="1000" value="0">
+        <span id="apTime" class="ap-time">0:00</span>
+    </div>
+    <audio id="audioPlayer" loop></audio>
+</div>
+
+<!-- Manager floating layer (iframe) -->
+<div id="managerOverlay" class="manager-overlay">
+    <div class="manager-backdrop" id="managerBackdrop"></div>
+    <div class="manager-panel">
+        <div class="manager-bar">
+            <span class="manager-bar-title">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 7h9M17 7h3"></path>
+                <circle cx="15" cy="7" r="2"></circle>
+                <path d="M4 12h3M11 12h9"></path>
+                <circle cx="9" cy="12" r="2"></circle>
+                <path d="M4 17h9M17 17h3"></path>
+                <circle cx="15" cy="17" r="2"></circle>
+            </svg>
+            Manager
+        </span>
+            <div class="manager-bar-actions">
+                <a class="manager-open-tab" href="manager.html" target="_blank">Open in tab
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.4 4.6h6v6"></path><path d="M19.4 4.6l-8.6 8.6"></path><path d="M18.4 14.2V18a1.6 1.6 0 0 1-1.6 1.6H5.8A1.6 1.6 0 0 1 4.2 18V7.2a1.6 1.6 0 0 1 1.6-1.6H9.4"></path></svg>
+        </a>
+                <button id="managerCloseBtn" class="manager-close-btn" title="Close" aria-label="Close">
+                    <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                </button>
+            </div>
+        </div>
+        <iframe id="managerFrame" class="manager-frame" title="Manager" src=""></iframe>
+    </div>
+</div>
+
+</body>
+</html>
+

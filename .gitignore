@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+
+# Live SQLite database, WAL/SHM sidecars, daily backups and sandbox DBs
+practice.db
+practice.db-*
+practice-backup-*.db
+practice_sandbox.db*
+
+# Local / temporary files
+_tmp_*
+*.log
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*~
+*.swp
+
+# OS / editor / Google Drive artefacts
+.DS_Store
+Thumbs.db
+desktop.ini
+~$*
+*.lnk
+
+# Dependencies (if ever added)
+node_modules/

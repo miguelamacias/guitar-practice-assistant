@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Routine Manager - Guitar Practice Hub</title>
+    <link rel="stylesheet" href="css/manager.css?v=38">
+</head>
+<body>
+<div class="mgr">
+    <div class="topbar">
+        <div class="tabs">
+            <button id="tabRoutines" class="tab active">Routines</button>
+            <button id="tabSections" class="tab">Sections</button>
+            <button id="tabHistory" class="tab">History</button>
+            <button id="tabAbout" class="tab">Settings</button>
+        </div>
+        <div class="topbar-actions">
+            <button id="stopServerBtn" class="btn danger small" title="Stop the local server">🛑 Stop server</button>
+        </div>
+    </div>
+</div>
+
+<div class="mgr" id="viewRoutines">
+    <div class="mgr-header">
+        <h1 class="view-title">
+            <svg class="view-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 6.6l1.6 1.6 2.8-2.9"></path>
+                <path d="M4 12.6l1.6 1.6 2.8-2.9"></path>
+                <path d="M4 18.6l1.6 1.6 2.8-2.9"></path>
+                <path d="M11.6 6.6h8.4M11.6 12.6h8.4M11.6 18.6h8.4"></path>
+            </svg>
+            <span>Routine Manager</span>
+        </h1>
+    </div>
+
+    <div class="layout">
+        <div class="panel">
+            <h2>Routines</h2>
+            <div id="routineList"></div>
+            <button id="newRoutineBtn" class="btn primary block">+ New routine</button>
+        </div>
+
+        <div class="panel">
+            <div id="editorEmpty" class="empty">Select or create a routine.</div>
+
+            <div id="editor" hidden>
+                <div class="field">
+                    <label>Name</label>
+                    <input type="text" id="rName">
+                </div>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea id="rDesc"></textarea>
+                </div>
+                <div class="routine-head-row">
+                    <div class="field routine-finish-field">
+                        <label>On routine finish</label>
+                        <div class="row">
+                            <select id="finishResource"></select>
+                            <input type="number" id="finishBpm" class="ex-res-bpm" min="40" max="240" placeholder="BPM" style="display:none;">
+                        </div>
+                    </div>
+                    <div class="editor-actions routine-head-actions">
+                        <button id="saveRoutineBtn" class="btn primary" title="Save the routine and all exercise changes">Save routine</button>
+                        <button id="activateBtn" class="btn">Set as active</button>
+                        <button id="dupRoutineBtn" class="btn">Duplicate</button>
+                        <button id="deleteRoutineBtn" class="btn danger">Delete</button>
+                        <span id="activeBadge" class="badge" hidden>Active</span>
+                    </div>
+                </div>
+
+                <h2>Exercises <span class="sub" id="exCount"></span></h2>
+                <div id="exTotal" class="routine-total">Total: 0 min</div>
+                <div id="exerciseList"></div>
+
+                <div class="exercise add-ex">
+                    <div class="ex-fields">
+                        <input type="text" id="newExName" placeholder="Name">
+                        <input type="text" id="newExDesc" placeholder="Description">
+                        <input type="number" id="newExDur" placeholder="min" min="0" step="0.5">
+                        <button id="addExBtn" class="btn primary small">+ Add</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mgr view-hidden" id="viewHistory">
+    <div class="mgr-header">
+        <h1 class="view-title">
+            <svg class="view-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M3.4 19.4h17.2"></path>
+                <rect x="5.6" y="12.4" width="3.4" height="7"></rect>
+                <rect x="10.8" y="8.2" width="3.4" height="11.2"></rect>
+                <rect x="16" y="4.6" width="3.4" height="14.8"></rect>
+            </svg>
+            <span>Practice History</span>
+        </h1>
+        <div class="hist-range">
+            <button class="btn small hist-range-btn" data-days="30">30 days</button>
+            <button class="btn small hist-range-btn" data-days="90">90 days</button>
+            <button class="btn small hist-range-btn" data-days="365">1 year</button>
+        </div>
+    </div>
+
+    <div id="histBody" class="hist-body">
+        <div class="hist-empty">Loading…</div>
+    </div>
+</div>
+
+<div class="mgr view-hidden" id="viewSections">
+    <div class="mgr-header">
+        <h1 class="view-title">
+            <svg class="view-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true">
+                <rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2.2"></rect>
+                <path d="M3.2 8.4h17.6"></path>
+                <path d="M6.4 12.3h8.2M6.4 15.7h11.2"></path>
+            </svg>
+            <span>Sections</span>
+        </h1>
+    </div>
+
+    <div class="layout">
+        <div class="panel">
+            <h2>Sections</h2>
+            <div id="sectionList"></div>
+            <button id="newSectionBtn" class="btn primary block">+ New section</button>
+        </div>
+        <div class="panel">
+            <div id="sectionEmpty" class="empty">Select or create a section.</div>
+            <div id="sectionEditor" hidden>
+                <div class="section-head-row">
+                    <div class="field section-title-field">
+                        <label>Title</label>
+                        <input type="text" id="sTitle">
+                    </div>
+                    <div class="field section-color-field">
+                        <label>Color</label>
+                        <select id="sColor"></select>
+                    </div>
+                    <div class="editor-actions section-head-actions">
+                        <button id="saveSectionBtn" class="btn primary" title="Save the section and all item changes">Save</button>
+                        <button id="delSectionBtn" class="btn danger">Delete</button>
+                    </div>
+                </div>
+
+                <h2>Items <span class="sub" id="itemCount"></span></h2>
+                <div id="itemList"></div>
+
+                <div class="add-item">
+                    <div class="item-row add-row">
+                        <div class="add-head" id="newItemHead">
+                            <select id="newItemKind">
+                                <option value="youtube">YouTube</option>
+                                <option value="external">External link</option>
+                                <option value="audio">Web audio</option>
+                                <option value="divider">Divider</option>
+                                <option value="folder">Local folder</option>
+                                <option value="song">Local song</option>
+                                <option value="file">Local file</option>
+                                <option value="widget">Widget</option>
+                            </select>
+                            <div class="add-slot" id="newItemTag"></div>
+                            <div class="add-slot" id="newItemLabel"></div>
+                            <div class="item-actions">
+                                <button id="addItemBtn" class="btn primary small">+ Add item</button>
+                            </div>
+                        </div>
+                        <div class="item-foot">
+                            <div class="add-main" id="newItemMain"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mgr view-hidden" id="viewAbout">
+    <div class="mgr-header">
+        <h1 class="view-title">
+            <svg class="view-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true">
+                <path d="M4 7h9M17 7h3"></path>
+                <circle cx="15" cy="7" r="2"></circle>
+                <path d="M4 12h3M11 12h9"></path>
+                <circle cx="9" cy="12" r="2"></circle>
+                <path d="M4 17h9M17 17h3"></path>
+                <circle cx="15" cy="17" r="2"></circle>
+            </svg>
+            <span>Settings</span>
+        </h1>
+    </div>
+
+    <div class="about-card">
+        <h2>Appearance</h2>
+        <div class="field">
+            <label>App color (accent)</label>
+            <div class="field-row">
+                <input type="color" id="accentColor" value="#ff8040">
+                <button id="resetAccentBtn" class="btn small" title="Restore the default color (#ff8040)">Reset</button>
+            </div>
+        </div>
+        <div class="field">
+            <label>Fretboard Trainer color</label>
+            <div class="field-row">
+                <input type="color" id="fbColor" value="#607d8b">
+                <button id="resetFbColorBtn" class="btn small" title="Restore the default color (#607d8b)">Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="about-card">
+        <h2>Practice Assistant</h2>
+        <div class="field">
+            <label class="sub-check"><input type="checkbox" id="assistantEnabled" checked> Show Practice Assistant</label>
+        </div>
+    </div>
+
+    <div class="about-card">
+        <h2>Theory Section</h2>
+        <div class="field">
+            <label class="sub-check"><input type="checkbox" id="fbEnabled" checked> Show Theory section</label>
+        </div>
+
+        <div class="sub-block">
+            <div class="sub-title">Items in the section</div>
+            <label class="sub-check"><input type="checkbox" id="fbTrainerEnabled" checked> Show Trainer - Find notes on the fretboard</label>
+            <label class="sub-check"><input type="checkbox" id="fbTheoryEnabled" checked> Show Theory - Scales &amp; chords</label>
+            <label class="sub-check"><input type="checkbox" id="fbChordsEnabled" checked> Show Theory - Chords in Key</label>
+            <label class="sub-check"><input type="checkbox" id="fbChordDiagramsEnabled" checked> Show Theory - Chord Diagrams</label>
+        </div>
+        <div class="sub-block">
+            <div class="sub-title">Trainer settings</div>
+            <div class="field">
+                <label>Strings enabled in the trainer</label>
+                <div style="display:flex;gap:12px;flex-wrap:wrap;">
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 1 — high E"><input type="checkbox" class="fb-str" value="1" checked> 1 · E</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 2 — B"><input type="checkbox" class="fb-str" value="2" checked> 2 · B</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 3 — G"><input type="checkbox" class="fb-str" value="3" checked> 3 · G</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 4 — D"><input type="checkbox" class="fb-str" value="4" checked> 4 · D</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 5 — A"><input type="checkbox" class="fb-str" value="5" checked> 5 · A</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 6 — low E"><input type="checkbox" class="fb-str" value="6" checked> 6 · E</label>
+                </div>
+            </div>
+            <div class="field">
+                <label>Frets shown in the trainer</label>
+                <input type="number" id="fbFrets" min="1" max="24" value="12">
+            </div>
+        </div>
+    </div>
+
+    <div class="about-card">
+        <h2>FreqBlog API (Song Info)</h2>
+        <p style="margin:0 0 10px;color:#9a9a9a;font-size:0.8rem;">Used by the <b>Song Info (BPM/Key)</b> widget. Stored locally in the database and never sent to the browser.</p>
+        <div class="field">
+            <label>API key</label>
+            <div class="field-row">
+                <input type="password" id="fbApiKey" class="api-key-input" placeholder="fb_live_…" autocomplete="off">
+                <button id="fbApiKeyShow" class="btn small" title="Show / hide the key">Show</button>
+                <button id="fbApiKeyTest" class="btn small" title="Check the key against FreqBlog">Test key</button>
+            </div>
+            <div id="fbApiKeyStatus" class="api-key-status"></div>
+        </div>
+    </div>
+
+    <div class="about-card">
+        <h2>Developer</h2>
+        <p style="margin:0 0 10px;color:#9a9a9a;font-size:0.8rem;">
+            <b>Debug mode</b> (dry run) keeps the app fully working but blocks every write, so nothing reaches the database —
+            ideal for testing without polluting it. Toggling reloads the app with <code>?debug=1</code> or <code>?debug=0</code>.
+        </p>
+        <div class="field">
+            <label>Debug mode (no logging)</label>
+            <div class="field-row">
+                <button id="debugToggleBtn" class="btn small">Enable debug mode</button>
+                <span id="debugState" style="font-size:0.8rem;color:#9a9a9a;">OFF</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="about-card">
+        <h2>Data &amp; backups</h2>
+        <p style="margin:0 0 10px;color:#9a9a9a;font-size:0.8rem;">
+            A copy of the database is written next to it on every server start
+            (<code>practice-backup-YYYYMMDD.db</code>, the last 7 are kept). You can also export the
+            practice history to a spreadsheet.
+        </p>
+        <div class="field">
+            <label>Export history</label>
+            <div class="field-row">
+                <button id="exportSessionsBtn" class="btn small" title="One row per practice session">Sessions (CSV)</button>
+                <button id="exportItemsBtn" class="btn small" title="One row per exercise">Exercises (CSV)</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="about-card">
+        <h2>About</h2>
+        <p>A personal practice companion to organize your daily guitar routine. It combines a step-by-step practice assistant with a countdown timer, a metronome, a drum machine and your backing tracks &amp; resources — all in one place.</p>
+        <ul class="about-list">
+            <li><b>Practice Assistant</b> — guided routine with a per-exercise timer, progress bar, and an end-of-time chime + flash.</li>
+            <li><b>Sections</b> — tools, rhythm, backing tracks and notes, fully editable from this Manager.</li>
+            <li><b>Widgets</b> — metronome, drum machine, quick notes, delay calculator and a fretboard trainer (identify / locate notes).</li>
+        </ul>
+    </div>
+
+    <div class="about-card">
+        <h2>Technologies</h2>
+        <ul class="about-list">
+            <li><b>Frontend</b>: HTML5, CSS3 and vanilla JavaScript (no frameworks). All sound is synthesized with the Web Audio API.</li>
+            <li><b>Backend</b>: Python (standard library <code>http.server</code>) exposing a small local REST API.</li>
+            <li><b>Database</b>: SQLite (routines, sections, items and settings).</li>
+        </ul>
+    </div>
+
+    <div class="about-card">
+        <h2>Credits</h2>
+        <ul class="about-list">
+            <li><b>Author</b>: Miguel Ángel Macías</li>
+            <li><b>Built with</b>: DeepSeek through Cline</li>
+            <li><b>Version</b>: 1.0</li>
+            <li><b>Audio analysis by FreqBlog</b> — BPM &amp; key of the "Song Info" widget</li>
+        </ul>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script src="js/debug.js?v=2"></script>
+<script src="js/settings.js?v=1"></script>
+<script src="js/icons.js?v=12"></script>
+<script src="js/theory.js?v=19"></script>
+<script src="js/chords.js?v=3"></script>
+<script src="js/chordDiagrams.js?v=2"></script>
+<script src="js/managerCommon.js?v=5"></script>
+<!-- the drum preset catalog comes from the widget itself (single source of truth) -->
+<script src="js/drumMachine.js?v=12"></script>
+<script src="js/manager.js?v=25"></script>
+<script src="js/managerSections.js?v=20"></script>
+<script src="js/managerHistory.js?v=21"></script>
+</body>
+</html>

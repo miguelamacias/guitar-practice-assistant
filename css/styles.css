@@ -1,0 +1,1676 @@
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --accent-blue: #2196f3;
+            --accent-orange: #ff9800;
+            --hover-bg: #2a2a2a;
+            /* Hover background for list rows (links, folders, widgets):
+               it must contrast with rgba(255,255,255,0.03-0.05) over #1e1e1e */
+            --row-hover: #363636;
+			--accent-red: #f44336;
+            --accent-green: #4caf50;
+            --accent: #e91e63;
+            --accent-pink: var(--accent);
+            color-scheme: dark;
+        }
+
+        /* Dark, thin scrollbars (no arrows) */
+        ::-webkit-scrollbar { width: 9px; height: 9px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 5px; }
+        ::-webkit-scrollbar-thumb:hover { background: #666; }
+        ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+        * { scrollbar-width: thin; scrollbar-color: #4a4a4a transparent; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 16px;
+            padding-bottom: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        /* Cabecera Principal Integrada */
+        .main-header {
+            text-align: center;
+            margin-bottom: 18px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .main-header h1 {
+            margin: 0;
+            color: #ffffff;
+            font-size: 1.5rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .main-header p {
+            margin: 6px 0 0 0;
+            color: #888;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+        }
+
+        .grid-layout {
+            display: block;
+        }
+
+        .sections-masonry {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .masonry-col {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        @media (max-width: 900px) {
+            .sections-masonry { flex-direction: column; }
+        }
+
+        .section-card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            padding: 6px 14px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            box-sizing: border-box;
+        }
+
+        .section-card:has(> h2.collapsed) { padding-bottom: 4px; }
+        .fretboard-section { margin-top: 16px; }
+        .fretboard-section h2 { color: var(--sec-color, #607d8b); border-bottom-color: var(--sec-color, #607d8b); }
+        .fretboard-mount.collapsed { display: none; }
+
+        h2 {
+            margin-top: 0;
+            padding-bottom: 5px;
+            border-bottom: 2px solid;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h2::after {
+            content: '▼';
+            font-size: 0.8rem;
+            transition: transform 0.3s;
+        }
+
+        h2.collapsed::after { transform: rotate(-90deg); }
+
+        /* Subtle hover on collapsible headers (main page cards only) */
+        .section-card > h2 {
+            margin: 0 -8px;
+            padding: 4px 8px 5px;
+            border-radius: 6px 6px 0 0;
+            transition: background-color 0.2s ease, filter 0.2s ease;
+        }
+
+        .section-card > h2:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+            filter: brightness(1.12);
+        }
+
+
+        .link-list {
+            list-style: none;
+            /* Room for the hover shift (translateX(5px)): without it the row is
+               clipped by the list's overflow and loses its rounded corners. */
+            padding: 0 6px 0 0;
+            margin: 8px 0 0 0;
+            max-height: 2000px;
+            overflow: hidden;
+            transition: max-height 0.3s ease-in-out;
+        }
+
+        .link-list.collapsed {
+            max-height: 0;
+            margin: 0;
+        }
+
+        .link-item { margin-bottom: 10px; }
+
+        .link-item a, .audio-trigger {
+            display: block;
+            color: var(--text-color);
+            text-decoration: none;
+            padding: 10px 15px;
+            border-radius: 6px;
+            background-color: rgba(255, 255, 255, 0.03);
+            transition: background-color 0.2s, transform 0.1s;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        .link-item a:hover, .audio-trigger:hover {
+            background-color: var(--row-hover);
+            transform: translateX(5px);
+        }
+
+        .link-item a span.tag, .audio-trigger span.tag {
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+        .subfolder-toggle span.tag {
+            font-weight: bold;
+            color: #ffffff;
+        }
+
+		
+        .list-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 12px 10px 6px 10px;
+            color: #777777;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .list-divider::before, .list-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
+        }
+        .list-divider:not(:empty)::before { margin-right: 15px; }
+        .list-divider:not(:empty)::after { margin-left: 15px; }
+
+        /* If the first item is a divider, it should not add top margin */
+        .link-list > .list-divider:first-child { margin-top: 0; }
+		
+		/* Metronome and Drum Machine UI */
+        .metronome-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 15px;
+            margin: 5px 0 10px 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .metronome-box:focus {
+            border-color: var(--sec-color, var(--accent-red));
+            box-shadow: 0 0 8px rgba(244, 67, 54, 0.3);
+            outline: none;
+        }
+
+        .metro-bpm-display {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--sec-color, var(--accent-red));
+        }
+
+        .metro-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .metro-btn {
+            background: var(--hover-bg);
+            color: #fff;
+            border: 1px solid #444;
+            padding: 8px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .metro-btn:hover { background: #3a3a3a; }
+
+        .metro-play-btn {
+            background: var(--hover-bg);
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+			transition: background 0.2s;
+        }
+        .metro-play-btn.playing { background: var(--sec-color, var(--accent-red)); }
+
+        .metro-slider {
+            width: 80%;
+            accent-color: var(--sec-color, var(--accent-red));
+            cursor: pointer;
+        }
+
+        /* Drum Machine grid */
+        .drum-grid-container {
+            width: 100%;
+            overflow-x: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 5px 0;
+        }
+
+        .drum-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .drum-label {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: #ccc;
+            width: 65px;
+            flex-shrink: 0;
+            text-align: left;
+        }
+
+        .drum-label[data-inst] {
+            cursor: pointer;
+            user-select: none;
+            transition: color 0.15s, text-shadow 0.15s;
+        }
+        .drum-label[data-inst]:hover {
+            color: #fff;
+            text-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+        }
+        .drum-label[data-inst]:active {
+            transform: translateY(1px);
+        }
+
+        .drum-steps {
+            display: flex;
+            gap: 5px;
+            flex-grow: 1;
+            justify-content: space-between;
+        }
+
+        .drum-step-btn {
+            width: 28px;
+            height: 32px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid #444;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .drum-step-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .drum-step-btn.active {
+            background: var(--sec-color, var(--accent-red));
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .drum-step-btn.playing-step {
+            border-color: #ffffff !important;
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.7);
+        }
+
+        /* Collapsible subfolders and inner scroll */
+        .subfolder-toggle {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px 15px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .subfolder-toggle:hover {
+            background-color: var(--row-hover);
+            transform: translateX(5px);
+        }
+
+        /* Section accent on the left, same as links and audio rows */
+        .link-item > .subfolder-toggle:hover {
+            box-shadow: inset 3px 0 0 var(--sec-color, transparent);
+        }
+        .subfolder-toggle::after {
+            content: '▼';
+            font-size: 0.75rem;
+            transition: transform 0.3s;
+        }
+        .subfolder-toggle.collapsed::after {
+            transform: rotate(-90deg);
+        }
+        
+        .subfolder-content {
+            margin-top: 8px;
+            max-height: 380px;
+            overflow-y: auto;
+            padding-left: 10px;
+            padding-right: 5px;
+            transition: max-height 0.3s ease-in-out;
+        }
+		
+		.subfolder-content-drum-machine {
+            margin-top: 8px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding-left: 10px;
+            padding-right: 5px;
+            transition: max-height 0.3s ease-in-out;
+        }
+		
+        .subfolder-content.collapsed {
+            max-height: 0;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+		.subfolder-content-drum-machine.collapsed {
+            max-height: 0;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Songs inside folders: thinner rows with light spacing */
+        .subfolder-content .audio-trigger {
+            margin-bottom: 6px;
+            padding: 7px 12px;
+            font-size: 0.9rem;
+            line-height: 1.35;
+        }
+        .subfolder-content .audio-trigger:last-child {
+            margin-bottom: 2px;
+        }
+        .subfolder-content .audio-trigger:hover {
+            transform: none;
+        }
+
+        /* Inner scrollbar customization */
+        .subfolder-content::-webkit-scrollbar {
+            width: 6px;
+        }
+        .subfolder-content::-webkit-scrollbar-thumb {
+            background: #444;
+            border-radius: 3px;
+        }
+
+#current-playing {
+            font-size: 0.9rem;
+            color: var(--accent-orange);
+            white-space: nowrap;
+        }
+
+        /* Reproductor Flotante de YouTube */
+        .youtube-modal {
+            position: fixed;
+            bottom: 80px;
+            right: 20px;
+            width: 400px;
+            height: 265px;
+            background: #000;
+            border: 2px solid var(--accent-red);
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+            z-index: 1100;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .youtube-header {
+            background: #222;
+            padding: 6px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: #fff;
+            border-bottom: 1px solid #333;
+            flex-shrink: 0;
+        }
+        /* The title truncates instead of pushing "Open in YT" and × off line */
+        #ytModalTitle {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        /* Actions block (link + close) never shrinks */
+        .youtube-header > div {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
+        }
+        .youtube-close-btn {
+            background: transparent;
+            border: none;
+            color: #ff5555;
+            font-size: 1.1rem;
+            cursor: pointer;
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px;
+            flex: 0 0 auto;
+        }
+        .youtube-modal iframe {
+            width: 100%;
+            flex: 1 1 auto;
+            min-height: 0;
+            border: none;
+        }
+		
+		.assistant-title { color: var(--accent); border-bottom-color: var(--accent); }
+		.practice-assistant-section a:hover { box-shadow: inset 4px 0 0 var(--accent); }
+		
+		.assistant-container {
+			max-height: 1000px;
+			overflow: hidden;
+			transition: max-height 0.3s ease-in-out, padding 0.3s ease;
+		}
+
+		.assistant-container.collapsed {
+			max-height: 0;
+			padding-top: 0 !important;
+			padding-bottom: 0 !important;
+			margin: 0;
+		}
+
+/* ===================================================================
+   Classes added in the refactor to remove inline styles.
+   State is handled with classes (element.classList), not with
+   element.style.* in the markup.
+   =================================================================== */
+
+/* Inline SVG icons (sized in em so they follow the surrounding text) */
+.ico { width: 1.15em; height: 1.15em; flex: 0 0 auto; vertical-align: -0.15em; }
+.ico-logo { width: 1.55em; height: 1.55em; color: var(--accent); flex: 0 0 auto; }
+
+.is-hidden { display: none !important; }
+
+/* Assistant card */
+.practice-assistant-section { grid-column: span 2; }
+.assistant-content { padding-top: 4px; }
+
+.card-panel {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+
+/* Pantalla de bienvenida */
+.welcome-card {
+    padding: 30px 20px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    position: relative;
+}
+/* Discreet History shortcut in the card's top-right corner (same idea as the
+   header's Manage link). Absolute, so the card's rhythm does not move. */
+.welcome-hist {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border-radius: 6px;
+    color: #6f6f6f;
+    transition: color 0.15s, background 0.15s;
+}
+.welcome-hist svg { width: 15px; height: 15px; display: block; }
+.welcome-hist:hover,
+.welcome-hist:focus-visible { color: var(--accent); background: rgba(255, 255, 255, 0.05); outline: none; }
+/* The assistant section paints a left bar on every link hover
+   (.practice-assistant-section a:hover). Not for this icon: it must stay quiet. */
+.practice-assistant-section a.welcome-hist:hover,
+.practice-assistant-section a.welcome-hist:focus-visible { box-shadow: none; }
+.welcome-name { font-size: 1.4rem; font-weight: bold; color: var(--accent); }
+.welcome-mins { font-size: 0.66em; }
+.welcome-desc { font-size: 0.95rem; color: #aaa; max-width: 500px; }
+/* Anything with a custom tooltip: help cursor (+ focus ring for keyboard) */
+.has-tip { cursor: help; }
+.has-tip:focus-visible { outline: 1px dotted rgba(255, 255, 255, 0.35); outline-offset: 3px; }
+.welcome-desc.has-tip {
+    text-decoration: underline dotted rgba(255, 255, 255, 0.25);
+    text-underline-offset: 3px;
+}
+
+/* Dark panel with one exercise per row (replaces the native title tooltip) */
+.ex-tip {
+    position: fixed;
+    z-index: 1200;
+    min-width: 260px;
+    max-width: 420px;
+    padding: 8px 10px;
+    background: #1b1b1b;
+    color: #e6e6e6;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
+    font-size: 0.84rem;
+    line-height: 1.35;
+    pointer-events: none;
+}
+.ex-tip-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; }
+.ex-tip-n { min-width: 1.7em; text-align: right; font-weight: 700; color: var(--accent); }
+/* name + optional description, stacked */
+.ex-tip-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ex-tip-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ex-tip-desc {
+    color: #9a9a9a;
+    font-size: 0.92em;
+    line-height: 1.3;
+    /* clamp to two lines so the panel stays compact */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ex-tip-dur { white-space: nowrap; color: #8f8f8f; }
+/* Single-line variant (Start button) */
+.ex-tip--line { min-width: 0; max-width: 340px; }
+.ex-tip-line { line-height: 1.35; }
+
+.start-btn {
+    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 78%, #000));
+    color: #fff;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 30px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 1.1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 40%, transparent);
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-top: 5px;
+}
+.start-btn:hover { transform: scale(1.03); }
+
+/* Exercise card */
+.exercise-card {
+    padding: 10px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    position: relative;
+    /* Single source of truth for the two-column body, so the header row can
+       indent the start time exactly to the main panel. */
+    --ex-sidebar-w: 340px;
+    --ex-col-gap: 20px;
+}
+
+/* Panel toolbar: start time (left) · exercise counter (dead centre) · Reset
+   (right). A 3-column grid keeps the counter centred whatever the width of the
+   other two. */
+.exercise-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 24px;
+}
+.exercise-head .ex-index { justify-self: center; }
+.exercise-head .exercise-start-time { justify-self: start; }
+.exercise-head .exercise-reset-btn { justify-self: end; }
+
+.exercise-start-time {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 0.85rem;
+    color: #888;
+    font-weight: 500;
+}
+.exercise-start-time #practiceStartTimeText {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* SVG clock icon, painted with the app accent color */
+.exercise-start-time .start-time-icon {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    color: var(--accent);
+    /* +1px: centres the icon on the text optical centre (measured in Edge:
+       text centre 50px vs icon centre 49px) */
+    transform: translateY(1px);
+}
+.exercise-reset-btn {
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    color: #aaa;
+    border-color: #333;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+/* SVG icon (replaces the 🔄 emoji): painted with the app accent */
+.exercise-reset-btn svg { width: 13px; height: 13px; display: block; color: var(--accent); }
+.exercise-reset-btn:hover { color: #fff; }
+/* Exercise already done: the button becomes "Repeat exercise" */
+.exercise-reset-btn.is-repeat { color: #fff; border-color: var(--sec-color, var(--accent)); }
+.exercise-reset-btn.is-repeat svg { color: var(--sec-color, var(--accent)); }
+
+.exercise-body {
+    display: grid;
+    grid-template-columns: var(--ex-sidebar-w) 1fr;
+    gap: var(--ex-col-gap);
+    align-items: stretch;      /* both columns start at the same top edge */
+    text-align: left;
+}
+
+.exercise-sidebar {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 340px;
+    overflow-y: auto;
+}
+.exercise-sidebar > * { flex-shrink: 0; }
+.exercise-sidebar::-webkit-scrollbar { width: 6px; }
+.exercise-sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+/* Sidebar rows (generated by JS) */
+.ex-sidebar-title {
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: #e8e8e8;         /* white text: less accent mass */
+    text-transform: uppercase;
+    margin-bottom: 4px;
+    padding-left: 6px;      /* same left inset as .ex-row */
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+/* The title icon uses the same box as the row checkboxes so both columns line up.
+   The 1px nudge is optical (the clipboard glyph is drawn slightly left of the check). */
+.ex-sidebar-icon { display: inline-flex; align-items: center; font-size: 1.1rem; transform: translateX(1px); color: var(--accent); }
+.ex-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    font-size: 0.85rem;
+    background: rgba(255, 255, 255, 0.02);
+}
+.ex-row.is-current {
+    background: rgba(233, 30, 99, 0.15);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: var(--accent);
+}
+.ex-check { font-size: 1.1rem; color: #888; flex-shrink: 0; }
+.ex-row.is-completed .ex-check { color: var(--accent); }
+/* Skipped: only the glyph changes (grey chevrons) + a dimmed italic name.
+   No border, no background: the row keeps the same box as any other one. */
+.ex-row.is-skipped .ex-check { color: #8f8f8f; }
+.ex-row.is-skipped .ex-name { color: #8d8d8d; font-style: italic; }
+.ex-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #aaa;
+    font-weight: normal;
+}
+.ex-row.is-current .ex-name { color: #fff; font-weight: bold; }
+.ex-duration {
+    font-size: 0.75rem;
+    color: #888;
+    white-space: nowrap;
+    margin-left: auto;
+    flex-shrink: 0;
+}
+.ex-res-icon { flex-shrink: 0; display: inline-flex; align-items: center; color: var(--accent); opacity: 0.9; cursor: help; }
+.ex-res-icon svg { width: 13px; height: 13px; }
+/* Fixed slot: the area is always reserved (16 px) even when the exercise has no
+   resource, so switching exercises never makes the rest of the panel jump. */
+.ex-resource-tag {
+    display: block;
+    text-align: center;
+    font-size: 0.8rem;
+    color: #8a8a8a;
+    margin: 12px 0 0;
+    height: 16px;
+    line-height: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ex-resource-tag svg { width: 12px; height: 12px; color: #8a8a8a; vertical-align: -1px; margin-right: 4px; }
+.ex-sidebar-total {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.75rem;
+    color: #888;
+    text-align: center;
+}
+
+
+/* Exercise right-hand area */
+.exercise-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+}
+
+/* Name + description + resource: a tight block, they describe the same thing. */
+.ex-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Content under the toolbar: the info block sits right under the header and the
+   action row at the bottom. The free space is split by two auto margins (above
+   the timer and above the buttons), so the timer + bar stay together in the
+   middle and nothing else moves. */
+.exercise-content {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 18px;
+    min-height: 0;
+}
+#exTimer { margin-top: auto; }
+.ex-controls { margin-top: auto; }
+.ex-index { font-size: 0.85rem; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+.ex-title { font-size: 1.6rem; font-weight: bold; color: var(--accent); margin-top: 12px; }
+.ex-desc { font-size: 1.2rem; color: #ccc; min-height: 25px; }
+/* line-height 1: the digits box hugs the glyphs, so the air above and below the
+   clock is the same 12 px gap as the rest of the stack. */
+.ex-timer { font-size: 3rem; font-weight: bold; font-family: monospace; color: #fff; line-height: 1; }
+
+.ex-progress {
+    align-self: stretch;
+    margin-right: 5px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+}
+.ex-progress-bar {
+    width: 0%;
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+.ex-progress-bar.is-done { background: var(--accent-green); }
+
+.ex-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    /* Reserve the height of the biggest state ("Next exercise" / "Finish
+       routine" are 5 px taller): the panel must not move when an exercise
+       switches between pending and done. */
+    min-height: 37px;
+}
+/* Play is the primary action: dead centre, with "Mark done" and "Skip"
+   flanking it (the two 1fr columns are equal, so the middle one is exact). */
+#exPlayBtn { grid-column: 2; grid-row: 1; }
+#exNextBtn { grid-column: 1; grid-row: 1; justify-self: end; }
+#exSkipBtn { grid-column: 3; grid-row: 1; justify-self: start; }
+/* Exercise already done (timed out or marked): the only meaningful action is
+   going forward, so Play and Skip disappear and "Next exercise" takes the
+   centre. Clearer than a dead Play button next to it. */
+.ex-controls.is-done #exNextBtn { grid-column: 2; justify-self: center; }
+.ex-controls.is-done #exPlayBtn,
+.ex-controls.is-done #exSkipBtn { display: none; }
+
+.ex-play-btn {
+    background: var(--hover-bg);
+    color: #fff;
+    border: 1px solid var(--accent);
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.2s;
+}
+/* Same hover as the other two controls (accent tint). */
+.ex-play-btn:hover:not(:disabled) {
+    background: rgba(233, 30, 99, 0.14);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.ex-play-btn.is-playing { background: var(--accent); border-color: var(--accent); }
+/* While the timer runs the button is solid accent, so the translucent hover
+   above would break it: hovering only brightens the solid fill.
+   (Same specificity as the hover rule, hence it must stay declared after it.) */
+.ex-play-btn.is-playing:hover:not(:disabled) {
+    background: var(--accent);
+    background: color-mix(in srgb, var(--accent) 86%, #fff);
+}
+.ex-play-btn.is-ended {
+    background: rgba(255, 255, 255, 0.02);
+    color: #555;
+    border-color: #333;
+    cursor: default;
+}
+
+.ex-next-btn {
+    border: 1px dashed var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-color);
+    background: rgba(255, 255, 255, 0.03);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    transition: background 0.2s;
+}
+.ex-next-btn:hover {
+    background: rgba(233, 30, 99, 0.14);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.ex-next-btn .ico { width: 1.05em; height: 1.05em; }
+.ex-next-btn.is-ready {
+    color: var(--accent-green);
+    border: 1px solid var(--accent-green);
+    background: rgba(255, 255, 255, 0.03);
+    padding: 8px 16px;
+    font-size: 0.95rem;
+	font-weight: bold;
+}
+.ex-next-btn.is-finish {
+    color: #fff;
+    border: 1px solid var(--accent-green);
+    background: var(--accent-green);
+    padding: 8px 16px;
+    font-size: 0.95rem;
+}
+
+/* "Skip" means NOT practiced. Grey (but clearly readable: it is a secondary
+   action, not a disabled one), about half the height of the other controls. */
+.ex-skip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: 1px dashed #4d4d4d;
+    border-radius: 4px;
+    background: transparent;
+    color: #b8b8b8;
+    cursor: pointer;
+    padding: 1px 8px;
+    font-size: 0.7rem;
+    line-height: 1.15;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.ex-skip-btn:hover:not(:disabled) {
+    color: #eaeaea;
+    border-color: #777;
+    background: rgba(255, 255, 255, 0.05);
+}
+.ex-skip-btn:disabled {
+    color: #8f8f8f;
+    opacity: 0.4;
+    cursor: default;
+}
+.ex-skip-btn .ico { width: 11px; height: 11px; }
+
+/* Unidad BPM */
+.bpm-unit { font-size: 0.9rem; color: #888; }
+
+/* Drum machine: barras superior/inferior */
+.drum-topbar {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+}
+.drum-bpm { font-size: 1.4rem; }
+.drum-bpm .bpm-unit { font-size: 0.8rem; }
+/* BPM stacked: number on top, unit centred underneath. The width of a 3-digit
+   number is reserved (tabular digits) so the rest of the bar never shifts when
+   the tempo crosses 99 -> 100. */
+.drum-bpm {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    gap: 3px;
+    min-width: 3ch;
+    font-variant-numeric: tabular-nums;
+}
+.drum-bpm .bpm-unit { font-size: 0.62rem; letter-spacing: 0.6px; color: #9a9a9a; }
+.drum-adjust-group { display: flex; gap: 4px; flex: 0 0 auto; align-items: stretch; }
+.drum-adjust-group .metro-btn,
+.drum-play { white-space: nowrap; }
+/* Slightly smaller than the metronome buttons: the drum bar carries more controls */
+.drum-adjust-group .metro-btn { font-size: 0.78rem; line-height: 1.1; }
+.drum-adjust { padding: 5px 7px; }
+.drum-adjust--wide { padding: 5px 9px; }
+.drum-play { padding: 5px 12px; font-size: 0.8rem; }
+.drum-bottombar {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.drum-sig-btn { font-size: 0.75rem; padding: 4px 8px; }
+.drum-swing { display: flex; align-items: center; gap: 6px; }
+/* Metronome: beat indicator, time signature and click pattern controls */
+.metro-beats {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    height: 18px;
+    margin: 3px 0 5px;
+}
+.metro-beat-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.14);
+    transition: background 0.08s, transform 0.08s;
+}
+/* The first beat is tinted with the section accent while the accent on beat 1
+   is on; with it off the dot uses the same neutral colour as the other beats. */
+.metro-beat-dot.is-first {
+    background: color-mix(in srgb, var(--sec-color, var(--accent-red)) 40%, transparent);
+}
+.metro-beat-dot.is-on {
+    background: var(--sec-color, var(--accent-red));
+    transform: scale(1.35);
+}
+.metro-flags {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.metro-select {
+    background: #1b1b1b;
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.75rem;
+    padding: 4px 6px;
+    cursor: pointer;
+}
+.metro-select:hover { border-color: rgba(255, 255, 255, 0.3); color: #fff; }
+
+/* Click pattern picker: compact icon buttons (quarter, 8ths, 16ths, triplets,
+   shuffle) that replace the old subdivision dropdown. The active one is painted
+   with the section accent, like the play button and the slider. */
+.metro-patterns {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.metro-pattern-btn {
+    width: 40px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: #333;
+    border: 1px solid #4a4a4a;
+    border-radius: 6px;
+    color: #cfcfcf;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.metro-pattern-btn .ico { width: 22px; height: 22px; }
+.metro-flag-sep {
+    width: 1px;
+    height: 26px;
+    flex: 0 0 auto;
+    background: rgba(255, 255, 255, 0.16);
+    margin: 0 2px;
+}
+/* Sixteenths pack four notes into the same square: render them a touch larger
+   so their heads do not look smaller than the rest of the patterns. */
+.metro-pattern-btn[data-pattern="4"] .ico { width: 24px; height: 24px; }
+.metro-pattern-btn:hover { background: #3f3f3f; color: #fff; }
+.metro-pattern-btn.is-active {
+    background: var(--sec-color, var(--accent-red));
+    border-color: transparent;
+    color: #fff;
+}
+.metro-pattern-btn:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 1px;
+}
+
+/* Pattern preset + grid resolution (in the top bar, between BPM and the +/-).
+   The group is the only flexible part: on a narrow card the select gives width
+   instead of pushing the buttons onto a second line. */
+.drum-style-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+}
+.drum-style-sel {
+    background: #1b1b1b;
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 0.78rem;
+    padding: 5px 6px;
+    flex: 0 1 150px;
+    min-width: 64px;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.drum-style-sel:hover { border-color: rgba(255, 255, 255, 0.3); color: #fff; }
+.drum-res-btn { font-size: 0.7rem; padding: 4px 7px; }
+.drum-res-btn.is-on { border-color: var(--sec-color, var(--accent-red)); color: #fff; }
+/* 16th grid: tighter cells so sixteen columns still fit the card */
+.drum-grid-container.is-dense .drum-step-btn,
+.drum-grid-container.is-dense .drum-beat,
+.drum-grid-container.is-dense .drum-beat-sub { width: 21px; }
+.drum-grid-container.is-dense .drum-steps { gap: 4px; }
+.drum-swing-label { font-size: 0.75rem; color: #aaa; }
+.drum-swing-btn {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #888;
+    border-color: #444;
+}
+.drum-swing-btn.is-on {
+    background: var(--sec-color, var(--accent-red));
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.3);
+}
+.drum-act-group { display: flex; gap: 8px; }
+.drum-reset-btn { font-size: 0.75rem; padding: 4px 8px; }
+.drum-clear-btn { font-size: 0.75rem; padding: 4px 8px; color: #ff8888; }
+
+/* Drum grid header (generated by JS) */
+.drum-beat-row { margin-bottom: 4px; }
+.drum-beat-head { font-size: 0.75rem; color: #888; }
+.drum-beat {
+    width: 28px;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: var(--sec-color, var(--accent-red));
+}
+.drum-beat-sub {
+    width: 28px;
+    text-align: center;
+    font-size: 0.6rem;
+    color: #666;
+}
+
+/* YouTube modal: shown by adding the is-open class */
+.youtube-modal.is-open { display: flex; }
+
+/* Icon-only external link of the YouTube modal */
+.yt-external {
+    color: var(--accent-orange);
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 1.1rem;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 4px;
+    border-radius: 4px;
+    line-height: 1;
+}
+.yt-external:hover { background: rgba(255, 255, 255, 0.1); }
+
+
+
+
+/* Injected song items (used to be set with inline style) */
+.song-empty { color: #777; padding: 10px; font-size: 0.85rem; }
+
+/* "Manage" button in the header */
+.main-header { position: relative; }
+.manage-link {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #cfcfcf;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 0.9rem;
+    padding: 6px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+}
+.manage-link:hover { background: var(--hover-bg); color: #fff; }
+
+/* Dynamic sections (from the DB) */
+.dyn-section { width: 100%; }
+.dyn-section h2 { color: var(--sec-color, #e0e0e0); border-bottom-color: var(--sec-color, #e0e0e0); }
+.dyn-section .link-item a:hover,
+.dyn-section .audio-trigger:hover { box-shadow: inset 4px 0 0 var(--sec-color, transparent); }
+
+/* Type icon shown on hover */
+.has-icon { position: relative; }
+a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
+/* Type icon shown on hover (SVG, painted with the section accent) */
+.type-icon {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--sec-color, var(--accent));
+    display: inline-flex;
+    align-items: center;
+}
+.type-icon .ico { width: 1.18em; height: 1.18em; }
+/* Small inline icon in front of a song name / warning text */
+.song-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--sec-color, var(--accent));
+    vertical-align: -0.15em;
+    margin-right: 2px;
+}
+.song-icon .ico { width: 1.15em; height: 1.15em; }
+.has-icon:hover .type-icon { opacity: 1; }
+
+/* Floating audio panel (bottom-left, YouTube style), only visible while playing */
+.audio-panel {
+    position: fixed;
+    right: 20px;
+    bottom: 80px;
+    width: 400px;
+    height: 265px;
+    max-width: 80vw;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+    box-sizing: border-box;
+    z-index: 1100;
+    display: none;
+    flex-direction: column;
+}
+.audio-panel.is-open { display: flex; }
+
+.audio-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #222;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+.audio-title-wrap { flex: 1; overflow: hidden; }
+.audio-title-text {
+    display: inline-block;
+    white-space: nowrap;
+    color: var(--accent-orange);
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+.audio-title-text.scrolling { animation: audio-marquee var(--dur, 8s) linear infinite; }
+@keyframes audio-marquee {
+    0%, 12% { transform: translateX(0); }
+    88%, 100% { transform: translateX(var(--shift, 0px)); }
+}
+.audio-close-btn {
+    background: transparent; border: none; color: #ff5555;
+    font-size: 1.1rem; cursor: pointer; font-weight: bold; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center; padding: 2px;
+}
+
+.audio-center { flex: 1; display: flex; align-items: center; justify-content: center; }
+.ap-play-big {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: var(--hover-bg); border: 2px solid var(--accent-red); color: #fff;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    position: relative;
+}
+.ap-play-big:hover { background: #3a3a3a; }
+/* Play icon (triangle) optically centered */
+.ap-play-big::before {
+    content: '';
+    display: block;
+    width: 0; height: 0;
+    border-left: 18px solid #fff;
+    border-top: 11px solid transparent;
+    border-bottom: 11px solid transparent;
+    transform: translateX(3px);
+}
+/* Icono Pausa (dos barras) */
+.ap-play-big::after {
+    content: '';
+    display: none;
+    width: 18px; height: 20px;
+    background:
+        linear-gradient(#fff, #fff) left center / 6px 100% no-repeat,
+        linear-gradient(#fff, #fff) right center / 6px 100% no-repeat;
+}
+.ap-play-big.is-playing::before { display: none; }
+.ap-play-big.is-playing::after { display: block; }
+
+.audio-bottom {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-top: 1px solid #333; flex-shrink: 0;
+}
+.audio-bottom #apSeek { flex: 1; min-width: 0; accent-color: var(--accent-red); cursor: pointer; }
+.ap-time { font-size: 0.72rem; color: #aaa; white-space: nowrap; }
+.audio-panel audio { display: none; }
+
+/* Manager floating layer (iframe) */
+.manager-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+.manager-overlay.is-open { display: flex; }
+.manager-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.65); }
+.manager-panel {
+    position: relative;
+    width: 85vw;
+    height: 90vh;
+    background: #121212;
+    border: 1px solid #333;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.manager-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #333;
+    flex-shrink: 0;
+}
+.manager-bar-title { font-weight: bold; display: inline-flex; align-items: center; gap: 8px; }
+.manager-bar-actions { display: flex; align-items: center; gap: 14px; }
+.manager-open-tab { color: var(--accent-blue); text-decoration: none; font-size: 0.85rem; }
+.manager-open-tab:hover { text-decoration: underline; }
+.manager-close-btn { background: transparent; border: none; color: #ff5555; font-size: 1.2rem; cursor: pointer; font-weight: bold; display: inline-flex; align-items: center; justify-content: center; padding: 2px; }
+.manager-frame { flex: 1; width: 100%; border: none; background: #121212; }
+/* White flash at the end of an exercise (camera-like, several shots) */
+@keyframes alarm-flash {
+    0%   { opacity: 0; }
+    6%   { opacity: 0.95; }
+    12%  { opacity: 0; }
+    26%  { opacity: 0.95; }
+    32%  { opacity: 0; }
+    46%  { opacity: 0.95; }
+    52%  { opacity: 0; }
+    66%  { opacity: 0.95; }
+    72%  { opacity: 0; }
+    86%  { opacity: 0.9; }
+    100% { opacity: 0; }
+}
+.exercise-card.alarm-flash::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: #ffffff;
+    border-radius: inherit;
+    opacity: 0;
+    pointer-events: none;
+    animation: alarm-flash 1.1s ease-out 1;
+}
+
+/* Notes widget */
+.notes-widget { padding: 8px 10px 6px; }
+.notes-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 150px;
+    resize: vertical;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    color: var(--text-color);
+    padding: 10px 12px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.notes-textarea::placeholder { color: #666; }
+.notes-textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(233, 30, 99, 0.25);
+}
+.notes-hint { margin-top: 6px; text-align: right; font-size: 0.72rem; color: #777; }
+
+/* Widget calculadora de delay */
+.delay-widget { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 12px 14px; margin: 5px 0; }
+.delay-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.delay-controls label { font-size: 0.85rem; color: #aaa; }
+.delay-bpm { width: 90px; background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 6px 8px; font-size: 0.95rem; }
+.delay-table-wrap { overflow-x: auto; }
+.delay-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.delay-table th, .delay-table td { padding: 5px 8px; text-align: center; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.delay-table th { color: var(--sec-color, #ccc); font-weight: bold; }
+.delay-table th:first-child, .delay-table td:first-child { text-align: left; color: var(--sec-color, #ccc); }
+.delay-note .note-icon { vertical-align: middle; }
+.delay-table td { color: #eee; font-variant-numeric: tabular-nums; }
+.delay-table tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+
+/* BPM display: click = tap tempo, no text selection */
+.metro-bpm-display { user-select: none; -webkit-user-select: none; cursor: pointer; }
+
+
+
+/* ---- Widget Fretboard Trainer ---- */
+.fb { padding: 6px 8px 4px; }
+.fb-topbar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+/* .fb-modes / .fb-mode-btn removed: the mode is chosen on the welcome screen (home button) */
+.fb-score { font-size: 0.85rem; color: #999; }
+.fb-prompt { display: flex; align-items: baseline; justify-content: center; gap: 10px; text-align: center; font-size: 1rem; font-weight: bold; color: var(--text-color); margin: 6px 0 10px; min-height: 2.1em; }
+.fb-prompt-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #9a9a9a; }
+.fb-prompt-note { font-size: 1.9rem; font-weight: 800; line-height: 1; color: var(--fb-light, #f2f7f9); }
+.fb-board-wrap { overflow-x: auto; padding-bottom: 4px; }
+.fb-note-palette { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin: 10px 0 4px; }
+.fb-palette-btn { background: var(--hover-bg); color: var(--text-color); border: 1px solid #444; border-radius: 6px; cursor: pointer; font-weight: bold; width: 52px; height: 52px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 0.74rem; line-height: 1; white-space: nowrap; }
+.fb-palette-btn:hover { background: #3a3a3a; }
+.fb-prompt.ok { color: var(--accent-green); }
+.fb-prompt.bad { color: var(--accent-red); }
+
+/* ---- Widget Song Info (BPM/Key) ---- */
+.song-widget { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 12px 14px; margin: 5px 0; }
+.song-search { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.song-input { flex: 1 1 auto; min-width: 0; background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 7px 9px; font-size: 0.9rem; }
+.song-go { flex: 0 0 auto; }
+.song-candidates { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.song-cand { text-align: left; font-weight: normal; font-size: 0.82rem; }
+.song-result { margin-top: 4px; }
+.song-matched { font-size: 0.78rem; color: #9a9a9a; margin-bottom: 8px; }
+.song-numbers { display: flex; align-items: center; gap: 26px; margin-bottom: 10px; }
+.song-bpm-box { display: flex; align-items: baseline; gap: 6px; }
+.song-bpm { font-size: 2.1rem; font-weight: 800; line-height: 1; color: var(--sec-color, var(--accent)); }
+.song-bpm-unit { font-size: 0.7rem; letter-spacing: 0.12em; color: #9a9a9a; text-transform: uppercase; }
+.song-tools { display: flex; gap: 4px; margin-left: 6px; }
+.song-tools .metro-btn { padding: 2px 7px; font-size: 0.72rem; }
+.song-key-box { display: flex; align-items: baseline; gap: 6px; }
+.song-key { font-size: 1.5rem; font-weight: 700; line-height: 1; color: var(--sec-color, var(--accent)); }
+/* "?" only when there really is a tooltip (see setKey in widgets.js) */
+.song-key[title]:not([title=""]) { cursor: help; }
+.song-key.is-low { opacity: 0.55; text-decoration: underline dotted rgba(255, 255, 255, 0.35); }
+.song-key-unit { font-size: 0.7rem; letter-spacing: 0.12em; color: #9a9a9a; text-transform: uppercase; }
+.song-apply { font-size: 0.82rem; }
+.song-msg { font-size: 0.78rem; color: #9a9a9a; margin: 0 0 6px; min-height: 1em; }
+.song-msg.err { color: #ff8888; }
+.song-foot { font-size: 0.66rem; color: #6a6a6a; text-align: right; margin-top: 6px; }
+.song-result[hidden], .song-candidates[hidden] { display: none; }
+
+/* ---- Fretboard Theory: one more item inside the section ---- */
+.fretboard-body.collapsed { display: none; }
+.theory-card { margin-top: 12px; --deg-0: var(--sec-color, var(--accent)); --deg-1: #c9c9c9; --deg-2: #9aa0a6; --deg-3: #7bd88f; --deg-4: #4fc3f7; --deg-5: #ffd54f; --deg-6: #8f8f8f; --deg-7: #64b5f6; --deg-8: #a0a0a0; --deg-9: #ba68c8; --deg-10: #ffb74d; --deg-11: #ff8a65; }
+.theory-card .link-list { margin: 0; }
+.theory-card .subfolder-content:not(.collapsed) { max-height: 640px; overflow: visible; }
+/* The theory board spans the full width and starts where the controls and legend do */
+.theory-board .fb2 { max-width: none; margin: 8px 0 2px; }
+/* Slightly taller board so strings 1 and 6 do not touch the edge with 20 px dots */
+.theory-board .fb2-board { height: 200px; }
+.theory-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.theory-controls select { background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 8px; font-size: 0.85rem; }
+.theory-controls select:disabled { opacity: 0.32; cursor: not-allowed; border-color: rgba(255, 255, 255, 0.06); }
+.theory-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #bbb; cursor: pointer; }
+.theory-opt[hidden] { display: none; }
+.theory-shapes { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.theory-shapes[hidden] { display: none; }
+.th-chip { background: var(--hover-bg); color: var(--text-color); border: 1px solid #444; border-radius: 999px; padding: 3px 10px; font-size: 0.76rem; cursor: pointer; }
+.th-chip:hover { background: #3a3a3a; }
+.th-chip.active { border-color: var(--sec-color, var(--accent)); box-shadow: inset 0 0 0 1px var(--sec-color, var(--accent)); }
+.theory-board { margin: 4px 0; }
+.th-dot { position: absolute; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #101010; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.65), 0 0 6px rgba(0, 0, 0, 0.5); }
+.th-dot b { font-size: 10px; line-height: 1; pointer-events: none; font-weight: 700; }
+.th-dot.d0 { background: var(--deg-0); color: #fff; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 0 10px var(--deg-0); }
+.th-dot.d1 { background: var(--deg-1); }
+.th-dot.d2 { background: var(--deg-2); }
+.th-dot.d3 { background: var(--deg-3); }
+.th-dot.d4 { background: var(--deg-4); }
+.th-dot.d5 { background: var(--deg-5); }
+.th-dot.d6 { background: var(--deg-6); color: #f0f0f0; }
+.th-dot.d7 { background: var(--deg-7); }
+.th-dot.d8 { background: var(--deg-8); color: #f0f0f0; }
+.th-dot.d9 { background: var(--deg-9); }
+.th-dot.d10 { background: var(--deg-10); }
+.th-dot.d11 { background: var(--deg-11); }
+.th-dot.small { width: 11px; height: 11px; opacity: 0.5; box-shadow: none; }
+.th-dot.small b { display: none; }
+/* "All notes" mode: naturals light, accidentals dark */
+.th-dot.th-all { width: 19px; height: 19px; }
+.th-dot.th-all b { font-size: 9px; }
+.th-dot.th-nat { background: #e6e6e6; color: #111; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); }
+.th-dot.th-acc { background: #242424; color: #e8e8e8; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5); }
+.th-sw.th-nat { background: #e6e6e6; }
+.th-sw.th-acc { background: #242424; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5); }
+.th-mute { position: absolute; color: #ff8888; font-size: 14px; font-weight: 700; line-height: 1; }
+.th-barre { position: absolute; width: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.16); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22); }
+.theory-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; font-size: 0.78rem; color: #bbb; }
+.th-leg { display: inline-flex; align-items: center; gap: 5px; }
+.th-leg-note { color: #ff8888; }
+.th-sw { width: 11px; height: 11px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.theory-msg { font-size: 0.78rem; color: #ff8888; margin-top: 6px; min-height: 1em; }
+
+/* ---- Scale: dimming of notes outside the selected CAGED shape ----
+   `--th-dim` / `--th-dim-gray` can be raised/lowered to see the shape better
+   inside the global picture without losing the contrast with the shape notes. */
+.th-dot.shape-off { opacity: var(--th-dim, 0.33); filter: grayscale(var(--th-dim-gray, 0.55)); }
+.th-dot.shape-on { opacity: 1; }
+
+/* ---- Chord Diagrams: panel de imagenes JPG dentro de Theory ---- */
+.chord-diagrams-panel { padding: 8px 0; }
+.chord-diag-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; }
+.chord-diag-field { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: #ddd; }
+.chord-diag-field select { background: #1b1b1b; color: #eee; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 5px 8px; font-size: 0.85rem; cursor: pointer; }
+.chord-diag-field select:focus { outline: none; border-color: var(--sec-color, var(--accent)); }
+.chord-diag-preview { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.chord-diag-img { max-width: 340px; height: auto; border: 1px solid #333; border-radius: 6px; background: #111; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.chord-diag-msg { font-size: 0.8rem; color: #ff8888; min-height: 1.2em; text-align: center; }
+.chord-diag-img[hidden], .chord-diag-msg[hidden] { display: none; }
+
+/* ---- Fretboard: results panel (automatic mode) ---- */
+.fb-results { text-align: center; padding: 22px 10px; }
+.fb-results[hidden] { display: none; }
+.fb-results-msg { font-size: 1.05rem; font-weight: bold; color: var(--sec-color, var(--accent)); letter-spacing: 0.5px; margin-bottom: 6px; }
+.fb-results-score { font-size: 3rem; font-weight: bold; line-height: 1.1; color: var(--text-color); }
+.fb-results-norm { font-size: 0.9rem; color: #9a9a9a; margin: 4px 0 16px; }
+.fb-results-norm span { font-weight: bold; color: #cfcfcf; }
+.fb-res-band-norm.ok { color: var(--accent-green); }
+.fb-res-band-norm.bad { color: var(--accent-red); }
+.fb-results-norm .fb-res-avg { font-size: 0.72rem; color: #9a9a9a; font-weight: normal; margin-left: 8px; }
+.fb-keep { font-size: 1rem; padding: 9px 24px; }
+.fb-results-actions { display: flex; gap: 10px; align-items: center; justify-content: center; }
+.ex-stats { color: #9a9a9a; font-weight: normal; }
+
+/* ---- Fretboard: vista de estadisticas (heatmap + tablas) ---- */
+.fb-stats { padding: 6px 8px; }
+.fb-stats-title { font-weight: bold; font-size: 1.05rem; color: var(--text-color); }
+.fb-heatmap { overflow-x: auto; margin: 10px 0; text-align: center; }
+.fb-heat { border-collapse: collapse; margin: 0 auto; table-layout: fixed; width: 100%; }
+.fb-heat th { font-size: 0.62rem; color: #9a9a9a; font-weight: normal; padding: 1px 0; overflow: hidden; }
+.fb-heat td { height: 16px; border: 1px solid #0a0a0a; border-radius: 2px; }
+.fb-heat-legend { font-size: 0.72rem; color: #9a9a9a; margin-bottom: 6px; }
+.fb-heat-bar { display: inline-block; width: 140px; height: 10px; border-radius: 5px; vertical-align: middle; margin: 0 8px; background: linear-gradient(90deg, #b71c1c, #e53935, #f4511e, #fb8c00, #fdd835, #aed581, #43a047, #2e7d32, #1b5e20); }
+.fb-stat-tables { display: flex; flex-wrap: nowrap; gap: 12px; justify-content: center; align-items: flex-start; margin-top: 12px; }
+.fb-stat-block { flex: 1 1 0; min-width: 0; }
+.fb-stat-block h4 { margin: 0 0 6px; font-size: 0.78rem; color: var(--sec-color, var(--accent)); }
+.fb-stat-table { border-collapse: collapse; font-size: 0.72rem; width: 100%; }
+.fb-stat-table th, .fb-stat-table td { padding: 2px 6px; text-align: right; border-bottom: 1px solid #262626; }
+.fb-stat-table th:first-child, .fb-stat-table td:first-child { text-align: left; }
+.fb-stat-table thead th { color: #9a9a9a; font-weight: normal; }
+.fb-grade { font-weight: bold; }
+.fb-grade.ok { color: var(--accent-green); }
+.fb-grade.bad { color: var(--accent-red); }
+
+/* ---- Realistic fretboard (Fretboard Trainer v2) ---- */
+.fb2 { position: relative; margin: 8px auto 2px; max-width: 1100px; }
+.fb2-board { position: relative; height: 180px; border-radius: 6px; background: radial-gradient(120% 150% at 50% -10%, rgba(255,255,255,0.06), transparent 55%), repeating-linear-gradient(90deg, #17130f 0px, #1d1812 3px, #17130f 6px), linear-gradient(#141110, #0a0908); box-shadow: inset 0 0 0 1px #2a2620, inset 0 0 46px rgba(0,0,0,0.9), 0 2px 10px rgba(0,0,0,0.55); overflow: hidden; }
+.fb2-string { position: absolute; height: 2px; transform: translateY(-50%); border-radius: 2px; background: #c8c8c8; box-shadow: 0 1px 2px rgba(0,0,0,0.55); }
+.fb2-fretwire { position: absolute; top: 1%; bottom: 1%; width: 2px; transform: translateX(-50%); background: linear-gradient(#8f8f8f, #dcdcdc, #8f8f8f); box-shadow: 0 0 2px rgba(0,0,0,0.85); }
+.fb2-nut { width: 7px; top: 0; bottom: 0; background: linear-gradient(#f4efe2, #cfc6ad); border-radius: 2px; }
+.fb2-inlay { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.5), rgba(255,255,255,0.08)); box-shadow: 0 0 3px rgba(0,0,0,0.6); }
+.fb2-nums { position: relative; height: 20px; margin-top: 4px; }
+.fb2-fretnum { position: absolute; transform: translateX(-50%); font-size: 0.8rem; color: #9a9a9a; }
+.fb2-hotspots { position: absolute; inset: 0; }
+.fb2-hot { position: absolute; display: flex; align-items: center; justify-content: center; cursor: pointer; border-radius: 3px; }
+.fb2-hot:hover { background: var(--fb-a12, rgba(90,176,255,0.12)); }
+.fb2-rowhl { position: absolute; left: 0; right: 0; border-radius: 6px; background: var(--fb-a30, rgba(90,176,255,0.30)); border-top: 2px solid var(--fb-a70, rgba(90,176,255,0.7)); border-bottom: 2px solid var(--fb-a70, rgba(90,176,255,0.7)); box-shadow: 0 0 10px 2px var(--fb-a30, rgba(90,176,255,0.3)); pointer-events: none; }
+/* Zone mode: 3 strings x 3 frets box with exactly one target note */
+.fb2-zonehl {
+    position: absolute;
+    box-sizing: border-box;
+    border: 3px solid var(--fb-accent, var(--sec-color, var(--accent)));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--fb-accent, var(--accent)) 20%, transparent);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 16px 4px var(--fb-a40, rgba(96, 125, 139, 0.4));
+    animation: fbZonePulse 1.8s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes fbZonePulse {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 10px 2px var(--fb-a30, rgba(96, 125, 139, 0.3)); }
+    50%      { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 18px 6px var(--fb-a55, rgba(96, 125, 139, 0.55)); }
+}
+.fb2-pt { width: 6px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.13); transition: all 0.1s; }
+.fb2-hot:hover .fb2-pt { background: rgba(255,255,255,0.6); box-shadow: 0 0 6px rgba(255,255,255,0.5); }
+.fb2-dots { position: absolute; inset: 0; pointer-events: none; }
+.fb2-glow { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle at 38% 32%, #ffffff 0%, #f2f7f9 24%, var(--fb-light, #a8b8bf) 52%, var(--fb-accent, #607d8b) 78%, rgba(0,0,0,0) 82%); box-shadow: 0 0 0 1px rgba(0,0,0,0.8), 0 0 0 2px rgba(255,255,255,0.92), 0 0 10px 3px var(--fb-a70, rgba(96,125,139,0.7)), 0 0 16px 5px var(--fb-a40, rgba(96,125,139,0.4)); animation: fbPulse 1.4s ease-in-out infinite; }
+.fb2-mark { position: absolute; width: 22px; height: 22px; border-radius: 50%; }
+.fb2-mark.ok { background: radial-gradient(circle, #6fe08a 0%, #2e9e4f 60%, rgba(46,158,79,0) 72%); box-shadow: 0 0 16px 5px rgba(67,200,120,0.7); }
+.fb2-mark.bad { background: radial-gradient(circle, #ff7b6b 0%, #c62828 60%, rgba(198,40,40,0) 72%); box-shadow: 0 0 16px 5px rgba(244,67,54,0.7); }
+@keyframes fbPulse { 0%,100% { transform: translate(-50%,-50%); opacity: 1; box-shadow: 0 0 0 1px rgba(0,0,0,0.8), 0 0 0 2px rgba(255,255,255,0.92), 0 0 10px 3px var(--fb-a70, rgba(96,125,139,0.7)), 0 0 16px 5px var(--fb-a40, rgba(96,125,139,0.4)); } 50% { transform: translate(-50%,-50%); opacity: 0.88; box-shadow: 0 0 0 1px rgba(0,0,0,0.8), 0 0 0 2px rgba(255,255,255,0.92), 0 0 5px 1px var(--fb-a40, rgba(96,125,139,0.45)), 0 0 9px 2px var(--fb-a20, rgba(96,125,139,0.2)); } }
+.fb-palette-btn.acc { color: var(--fb-light, #5ab0ff); border-color: var(--fb-a55, #2c4a6e); background: var(--fb-a20, #14243a); }
+.fb-palette-btn.acc:hover { background: var(--fb-a30, #1b2f4a); }
+
+/* ---- Fretboard: panel de bienvenida + juego ---- */
+.fb-welcome { text-align: center; padding: 16px 8px 8px; }
+.fb-welcome-title { font-size: 1.15rem; font-weight: bold; color: var(--text-color); }
+.fb-welcome-sub { font-size: 0.85rem; color: #9a9a9a; margin: 2px 0 14px; }
+.fb-mode-pick { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 16px; }
+.fb-mode-card { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 168px; padding: 14px 12px; border-radius: 10px; border: 1px solid #333; background: var(--hover-bg); color: var(--text-color); cursor: pointer; transition: all 0.15s; }
+.fb-mode-card:hover { border-color: #555; }
+.fb-mode-card.active { border-color: var(--sec-color, var(--accent)); background: rgba(255,255,255,0.05); box-shadow: inset 0 0 0 1px var(--sec-color, var(--accent)), 0 0 12px var(--fb-a30, rgba(233,30,99,0.25)); }
+.fb-mc-ico { display: flex; align-items: center; justify-content: center; line-height: 1; color: var(--fb-accent, var(--sec-color, #cfcfcf)); transition: color 0.15s; }
+.fb-mc-ico svg { width: 26px; height: 26px; display: block; }
+.fb-mode-card:hover .fb-mc-ico, .fb-mode-card.active .fb-mc-ico { color: var(--fb-light, var(--sec-color, #e8e8e8)); }
+.fb-mc-name { font-weight: bold; font-size: 1rem; }
+.fb-mc-desc { font-size: 0.72rem; color: #9a9a9a; }
+.fb-play { font-size: 1rem; padding: 9px 30px; }
+.fb-game[hidden] { display: none; }
+.fb-topbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.fb-home { padding: 3px 10px; font-size: 0.95rem; line-height: 1; }
+
+/* ---- Widget Chords by Key ---- */
+/* ---- Panel Chords in Key (dentro de Theory) ---- */
+.theory-card .chords-widget { background: none; border: 0; padding: 0; margin: 0; }
+.theory-card .chords-widget .chords-scale { margin-top: 2px; }
+
+.chords-widget { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 12px 14px; margin: 5px 0; }
+.chords-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.chords-field { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: #9a9a9a; text-transform: uppercase; letter-spacing: 0.09em; }
+.chords-field select { background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 6px; padding: 5px 8px; font-size: 0.9rem; text-transform: none; letter-spacing: 0; max-width: 195px; }
+.chords-opt { display: flex; align-items: center; gap: 5px; font-size: 0.85rem; color: #bbb; cursor: pointer; }
+.chords-scale { font-size: 0.78rem; color: #8f8f8f; margin-bottom: 10px; letter-spacing: 0.04em; }
+.chords-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(86px, 1fr)); gap: 8px; }
+.chord-card { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 6px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(255, 255, 255, 0.04); color: var(--text-color); cursor: pointer; font-family: inherit; transition: background-color 0.15s, border-color 0.15s, transform 0.1s; }
+.chord-card:hover { background: var(--row-hover); border-color: rgba(255, 255, 255, 0.22); transform: translateY(-1px); }
+.chord-card:active { transform: translateY(0); }
+.chord-card.is-primary { border-color: var(--sec-color, var(--accent)); background: rgba(255, 255, 255, 0.07); }
+.chord-roman { font-size: 0.68rem; letter-spacing: 0.1em; color: #9a9a9a; }
+.chord-card.is-primary .chord-roman { color: var(--sec-color, var(--accent)); font-weight: 700; }
+.chord-name { font-size: 1.05rem; font-weight: 800; line-height: 1.15; }
+.chord-tones { font-size: 0.67rem; color: #7f7f7f; letter-spacing: 0.04em; white-space: nowrap; }
+
+
