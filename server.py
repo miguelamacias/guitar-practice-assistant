@@ -190,6 +190,25 @@ def pick_dialog(mode):
         return None
 
 
+def _dialog_file_payload(path):
+    """Result of the native file picker, with ID3 tags when it is an MP3.
+
+    The manager uses ``artist``/``title`` to prefill the Tag and Label inputs
+    of a Local song / Local file item. Reading the file here avoids a second
+    request and works even before the item exists in the database (the
+    /api/media allow-list only knows saved items).
+    """
+    out = {'path': path}
+    if path and path.lower().endswith('.mp3') and os.path.isfile(path):
+        tags = lastfm.read_mp3_tags(path)
+        out.update({
+            'artist': (tags.get('artist') or '').strip(),
+            'title': (tags.get('title') or '').strip(),
+            'album': (tags.get('album') or '').strip(),
+        })
+    return out
+
+
 class Handler(SimpleHTTPRequestHandler):
     """Sirve estaticos desde ROOT y atiende /api/* con JSON."""
 
@@ -497,7 +516,7 @@ class Handler(SimpleHTTPRequestHandler):
             if path == '/api/dialog/folder' and method == 'POST':
                 return self._send_json({'path': pick_dialog('folder')})
             if path == '/api/dialog/file' and method == 'POST':
-                return self._send_json({'path': pick_dialog('file')})
+                return self._send_json(_dialog_file_payload(pick_dialog('file')))
 
             m = re.fullmatch(r'/api/routines/(\d+)/duplicate', path)
             if m and method == 'POST':

@@ -400,7 +400,7 @@
     }
 
     function renderNewItemFields(kind) {
-        newFields = { chosenPath: null };
+        newFields = { chosenPath: null, autoTag: '', autoLabel: '' };
         const head = $('newItemHead');
         const tagSlot = $('newItemTag');
         const labelSlot = $('newItemLabel');
@@ -454,7 +454,32 @@
             if (!r || !r.path) { toast('Cancelled'); return; }
             newFields.chosenPath = r.path;
             if (newFields.pathInfo) newFields.pathInfo.textContent = r.path;
+            if (kind === 'song' || kind === 'file') applyPickedTags(r);
         } catch (e) { toast('Error: ' + e.message, true); }
+    }
+
+    // The server reads ID3 tags when the native file dialog closes. Fill Tag with
+    // the artist and Label with the title, but never overwrite something the user
+    // typed by hand. Tracking the last auto-filled values also clears them if a
+    // new file has no tags.
+    function applyPickedTags(r) {
+        const tagInp = newFields.tag;
+        const labelInp = newFields.label;
+        const prevTag = newFields.autoTag || '';
+        const prevLabel = newFields.autoLabel || '';
+        const artist = (r.artist || '').trim();
+        const title = (r.title || '').trim();
+        const fillTag = tagInp && (!tagInp.value || tagInp.value === prevTag);
+        const fillLabel = labelInp && (!labelInp.value || labelInp.value === prevLabel);
+        if (fillTag) tagInp.value = artist;
+        if (fillLabel) labelInp.value = title;
+        // Only remember values we wrote ourselves: a value typed by hand must
+        // survive the next file selection.
+        newFields.autoTag = fillTag ? tagInp.value : prevTag;
+        newFields.autoLabel = fillLabel ? labelInp.value : prevLabel;
+        if (!artist && !title && /\.mp3$/i.test(r.path || '')) {
+            toast('No ID3 artist/title found in this MP3');
+        }
     }
 
     function baseName(p) {
