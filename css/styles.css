@@ -1657,8 +1657,9 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 
 /* ---- Scale: dimming of notes outside the selected CAGED shape ----
    `--th-dim` / `--th-dim-gray` can be raised/lowered to see the shape better
-   inside the global picture without losing the contrast with the shape notes. */
-.th-dot.shape-off { opacity: var(--th-dim, 0.33); filter: grayscale(var(--th-dim-gray, 0.55)); }
+   inside the global picture without losing the contrast with the shape notes.
+   Slightly more subdued than the previous 0.33 / 0.55 defaults. */
+.th-dot.shape-off { opacity: var(--th-dim, 0.29); filter: grayscale(var(--th-dim-gray, 0.62)); }
 .th-dot.shape-on { opacity: 1; }
 
 /* ---- Chord Diagrams: panel de imagenes JPG dentro de Theory ---- */
