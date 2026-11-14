@@ -179,13 +179,13 @@
     };
 
     const SCALE_SHAPES_ORDER = ['all', 'C', 'A', 'G', 'E', 'D'];
-    const THEORY_FRETS = 15;        // fixed: positions starting at fret 12 need to reach fret 14
-    const DEFAULTS = { kind: 'scale', type: 'Ionian (major)', bg: 'Minor pentatonic', root: 0, labels: 'degrees', overlay: false, shape: 0, allNotes: false, scaleShape: 'all' };
+    const THEORY_FRETS = 17;        // fixed: 3NPS can reach fret 17 in some keys
+    const DEFAULTS = { kind: 'scale', type: 'Ionian (major)', bg: 'Minor pentatonic', root: 0, labels: 'degrees', overlay: false, shape: 0, allNotes: false, scaleShape: 'all', shapeSystem: 'caged', npsPattern: 1 };
 
     let state = Object.assign({}, DEFAULTS);
     let built = false, bd = null;
     let boardEl = null, rootSel = null, typeSel = null, notesChk = null;
-    let overlayChk = null, bgSel = null, shapesEl = null, legendEl = null, msgEl = null, allChk = null;
+    let overlayChk = null, bgSel = null, shapesEl = null, legendEl = null, msgEl = null, allChk = null, systemSel = null;
 
     function loadState() {
         try {
@@ -200,6 +200,8 @@
         function hasScale(k) { return Object.prototype.hasOwnProperty.call(SCALES, k); }
         if (state.kind === 'scale' && !hasScale(state.type)) state.type = DEFAULTS.type;
         if (!hasScale(state.bg)) state.bg = DEFAULTS.bg;
+        if (state.shapeSystem !== '3nps') state.shapeSystem = 'caged';
+        if (!(state.npsPattern >= 1 && state.npsPattern <= 7)) state.npsPattern = 1;
     }
     function saveState() {
         try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { /* noop */ }
@@ -215,6 +217,48 @@
     }
     function degLabel(semis, pc) {
         return (state.labels === 'notes') ? NOTE[pc] : DEG[semis];
+    }
+
+    // ---------- 3NPS (major scale only) ----------
+    // A 3NPS pattern is a continuous run of the major scale with exactly
+    // three notes on each string. P1 starts on degree 1 on low E, P2 on
+    // degree 2, etc. Following MIDI pitches (instead of fret offsets) makes
+    // the G -> B string shift automatic.
+    function nextScaleMidi(from, rootPc) {
+        let midi = Math.max(0, from);
+        const major = SCALES['Ionian (major)'];
+        while (major.indexOf((midi - rootPc + 12) % 12) < 0) midi++;
+        return midi;
+    }
+
+    function npsPatternSet(rootPc, pattern) {
+        const set = {};
+        const degree = Math.max(0, Math.min(6, (pattern || 1) - 1));
+        const degreePc = (rootPc + SCALES['Ionian (major)'][degree]) % 12;
+        let startFret = 0;
+        for (let f = 0; f <= 11; f++) {
+            if ((OPEN[0] + f) % 12 === degreePc) { startFret = f; break; }
+        }
+        let cursor = OPEN[0] + startFret - 1;   // OPEN is low E -> high e
+        for (let s = 0; s < 6; s++) {
+            for (let n = 0; n < 3; n++) {
+                let midi = nextScaleMidi(cursor + 1, rootPc);
+                while (midi < OPEN[s]) midi += 12;
+                const fret = midi - OPEN[s];
+                const row = 5 - s;
+                set[row + '|' + fret] = true;
+                cursor = midi;
+            }
+        }
+        return set;
+    }
+
+    function isMajorScale() {
+        return state.kind === 'scale' && state.type === 'Ionian (major)';
+    }
+
+    function npsAvailable() {
+        return !state.allNotes && isMajorScale();
     }
     function playNote(midi) {
         try {
@@ -327,9 +371,10 @@
         return ((rootPc - off) % 12 + 12) % 12;
     }
 
-    function paintScale(ivals, rootPc, cls, small, shapeName, anchorPc) {
+    function paintScale(ivals, rootPc, cls, small, shapeName, anchorPc, npsPattern) {
         const shapeRoot = (typeof anchorPc === 'number') ? anchorPc : rootPc;
-        const startFret = (shapeName && shapeName !== 'all') ? scaleShapeStart(shapeName, shapeRoot) : null;
+        const npsSet = npsPattern ? npsPatternSet(shapeRoot, npsPattern) : null;
+        const startFret = (!npsSet && shapeName && shapeName !== 'all') ? scaleShapeStart(shapeName, shapeRoot) : null;
 
         for (let row = 0; row < 6; row++) {
             for (let f = 0; f <= bd.frets; f++) {
@@ -339,9 +384,10 @@
 
                 let dotCls = cls + ' d' + semis;
 
-                // Only notes of the selected scale reach this point: the shape is decided by the
-                // 5-fret window (+ unison rule), with no per-scale matrices.
-                if (startFret !== null) {
+                // CAGED uses a 5-fret window; 3NPS lights exactly its 18 notes.
+                if (npsSet) {
+                    dotCls += npsSet[row + '|' + f] ? ' shape-on' : ' shape-off';
+                } else if (startFret !== null) {
                     dotCls += inScaleShape(row, f, startFret, ivals, rootPc) ? ' shape-on' : ' shape-off';
                 }
 
@@ -421,6 +467,11 @@
         if (!shapesEl) return;
         shapesEl.innerHTML = '';
         const isChord = (state.kind === 'chord');
+        const nps = npsAvailable();
+        if (systemSel) {
+            systemSel.hidden = !nps;
+            if (nps) systemSel.value = state.shapeSystem;
+        }
         // CAGED chips: chords with their own fingering; scales and arpeggios with the 5
         // major shapes (an arpeggio only lights up the chord degrees).
         const hasShapes = isChord || shapeAnchorPc(rootPc, state.kind, state.type) !== null;
@@ -444,6 +495,19 @@
                 });
                 shapesEl.appendChild(b);
             });
+        } else if (nps && state.shapeSystem === '3nps') {
+            for (let p = 1; p <= 7; p++) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                const active = (state.npsPattern === p);
+                b.className = 'th-chip' + (active ? ' active' : '');
+                b.textContent = 'P' + p;
+                b.title = '3 notes per string · starts on degree ' + p;
+                b.addEventListener('click', function () {
+                    state.npsPattern = p; saveState(); render();
+                });
+                shapesEl.appendChild(b);
+            }
         } else {
             SCALE_SHAPES_ORDER.forEach(function (name) {
                 const b = document.createElement('button');
@@ -487,6 +551,8 @@
         // lights up the chord degrees inside the shape). null = not applicable (chords).
         const shapeAnchor = shapeAnchorPc(rootPc, kind, state.type);
         const shapeName = (shapeAnchor !== null) ? (state.scaleShape || 'all') : 'all';
+        const useNps = npsAvailable() && state.shapeSystem === '3nps';
+        const npsPattern = useNps ? state.npsPattern : null;
 
         if (all) {
             paintAllNotes();
@@ -497,9 +563,10 @@
                 paintScale(bgIvals, rootPc, 'th-dot small', true);
             }
             if (isChord) paintChord(rootPc);
-            // scale or arpeggio: all positions. The shape is anchored on its parent major
-            // (same 5 shapes as the major scale) and only what falls inside is lit.
-            else paintScale(ivals, rootPc, 'th-dot', false, shapeName, shapeAnchor);
+            // scale or arpeggio: all positions. CAGED uses a 5-fret window; 3NPS
+            // lights exactly the 18 notes of the selected pattern.
+            else paintScale(ivals, rootPc, 'th-dot', false,
+                useNps ? null : shapeName, shapeAnchor, npsPattern);
             renderLegend(ivals, rootPc, isChord);
         }
         renderShapes(rootPc);
@@ -557,6 +624,7 @@
         });
         typeSel.appendChild(g1); typeSel.appendChild(g2); typeSel.appendChild(g3);
         typeSel.value = state.kind + '|' + state.type;
+        if (systemSel) systemSel.value = state.shapeSystem;
 
         // background scale
         bgSel.innerHTML = '';
@@ -580,6 +648,12 @@
             state.shape = 0;
             saveState(); render();
         });
+        if (systemSel) {
+            systemSel.addEventListener('change', function () {
+                state.shapeSystem = (this.value === '3nps') ? '3nps' : 'caged';
+                saveState(); render();
+            });
+        }
         notesChk.addEventListener('change', function () {
             state.labels = this.checked ? 'notes' : 'degrees';
             saveState(); render();
@@ -605,6 +679,7 @@
         overlayChk = wrap.querySelector('.theory-overlay');
         bgSel = wrap.querySelector('.theory-bg');
         shapesEl = wrap.querySelector('.theory-shapes');
+        systemSel = wrap.querySelector('.theory-system');
         legendEl = wrap.querySelector('.theory-legend');
         msgEl = wrap.querySelector('.theory-msg');
         allChk = wrap.querySelector('.theory-all');

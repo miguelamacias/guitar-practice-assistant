@@ -27,7 +27,7 @@
     <script defer src="js/widgets.js?v=19"></script>
     <script defer src="js/fretboardBoard.js?v=3"></script>
     <script defer src="js/fretboard.js?v=11"></script>
-    <script defer src="js/theory.js?v=19"></script>
+    <script defer src="js/theory.js?v=20"></script>
     <script defer src="js/sections.js?v=47"></script>
     <script defer src="js/main.js?v=28"></script>
 </head>
@@ -153,6 +153,10 @@
                                 <div class="theory-controls">
                                     <select class="theory-root" title="Root note"></select>
                                     <select class="theory-type" title="Scale or chord"></select>
+                                    <select class="theory-system" title="Shape system" hidden>
+                                        <option value="caged">CAGED</option>
+                                        <option value="3nps">3NPS</option>
+                                    </select>
                                     <label class="theory-opt"><input type="checkbox" class="theory-all"> All notes</label>
                                     <label class="theory-opt"><input type="checkbox" class="theory-notes"> Note names</label>
                                     <label class="theory-opt"><input type="checkbox" class="theory-overlay"> Scale under chord</label>
