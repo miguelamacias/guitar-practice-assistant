@@ -1,4 +1,4 @@
-// HTML widgets (metronome, drums, notes and delay calculator) + initializers.
+// HTML widgets (metronome, drums, notes, delay, song info, chord transposer) + initializers.
 (function (GPH) {
     'use strict';
 
@@ -408,9 +408,180 @@
             <div class="song-foot">Audio analysis by FreqBlog</div>
         </div>`;
 
+    const TRANSPOSER_HTML = `
+        <div class="transposer-widget">
+            <div class="transposer-top">
+                <div class="transposer-controls" role="group" aria-label="Transpose semitones">
+                    <button type="button" class="metro-btn transpose-step" data-transpose="-12" title="Down an octave">&minus;12</button>
+                    <button type="button" class="metro-btn transpose-step" data-transpose="-1" title="Down one semitone">&minus;1</button>
+                    <span id="transposeVal" class="transpose-val" aria-live="polite">0</span>
+                    <button type="button" class="metro-btn transpose-step" data-transpose="1" title="Up one semitone">+1</button>
+                    <button type="button" class="metro-btn transpose-step" data-transpose="12" title="Up an octave">+12</button>
+                </div>
+                <button type="button" id="transposeReset" class="metro-btn transpose-reset" title="Back to the original chords">Reset</button>
+            </div>
+            <div class="transposer-panes">
+                <label class="transposer-pane" for="transposeInput">
+                    <span class="transposer-label">Chords</span>
+                    <textarea id="transposeInput" class="transpose-input" rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="G# C#m D#7"></textarea>
+                </label>
+                <label class="transposer-pane" for="transposeOutput">
+                    <span class="transposer-label">Transposed</span>
+                    <textarea id="transposeOutput" class="transpose-output" rows="4" readonly spellcheck="false" placeholder="—"></textarea>
+                </label>
+            </div>
+            <div id="transposeCapo" class="transposer-capo" aria-live="polite">Enter chords to transpose.</div>
+        </div>`;
+
+    // ---- Chord transposer ---------------------------------------------------
+    const NOTE_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const NOTE_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+    const NOTE_INDEX = {};
+    NOTE_SHARP.forEach(function (n, i) { NOTE_INDEX[n] = i; });
+    NOTE_FLAT.forEach(function (n, i) { NOTE_INDEX[n] = i; });
+    NOTE_INDEX.Cb = 11;
+    NOTE_INDEX['B#'] = 0;
+    NOTE_INDEX['E#'] = 5;
+    NOTE_INDEX.Fb = 4;
+    const CHORD_RE = /^([A-Ga-g])([#b]?)(.*?)(?:\/([A-Ga-g])([#b]?))?$/;
+    const FLAT_KEY_PCS = [1, 3, 5, 8, 10];      // Db, Eb, F, Ab, Bb
+    const SHARP_KEY_PCS = [2, 4, 6, 7, 9, 11];   // D, E, F#, G, A, B
+
+    function noteIndex(name) {
+        return Object.prototype.hasOwnProperty.call(NOTE_INDEX, name) ? NOTE_INDEX[name] : -1;
+    }
+
+    function noteName(index, flats) {
+        return (flats ? NOTE_FLAT : NOTE_SHARP)[(index % 12 + 12) % 12];
+    }
+
+    function parseChord(token) {
+        const text = String(token || '').replace(/\u266f/g, '#').replace(/\u266d/g, 'b');
+        const m = CHORD_RE.exec(text);
+        if (!m) return null;
+        const root = m[1].toUpperCase() + m[2];
+        const bass = m[4] ? m[4].toUpperCase() + m[5] : '';
+        if (noteIndex(root) < 0 || (bass && noteIndex(bass) < 0)) return null;
+        return { root: root, suffix: m[3] || '', bass: bass };
+    }
+
+    // The first chord usually carries the key context. Use it to choose
+    // between sharp and flat spellings for the transposed root; when it is
+    // ambiguous, preserve the accidental style already present in the input.
+    function preferFlats(text, firstRootPc, semitones) {
+        if (firstRootPc >= 0) {
+            const pc = ((firstRootPc + semitones) % 12 + 12) % 12;
+            if (FLAT_KEY_PCS.indexOf(pc) >= 0) return true;
+            if (SHARP_KEY_PCS.indexOf(pc) >= 0) return false;
+        }
+        const flats = (text.match(/[A-Ga-g]b/g) || []).length;
+        const sharps = (text.match(/[A-Ga-g]#/g) || []).length;
+        return flats > sharps;
+    }
+
+    function transposeChord(chord, semitones, flats) {
+        const root = noteName(noteIndex(chord.root) + semitones, flats);
+        const bass = chord.bass ? '/' + noteName(noteIndex(chord.bass) + semitones, flats) : '';
+        return root + chord.suffix + bass;
+    }
+
+    function transposeText(text, semitones) {
+        const src = String(text || '');
+        if (!src || semitones === 0) return src;
+        const parts = src.split(/(\s+|[|,;])/);
+        const parsed = parts.map(parseChord);
+        let firstRoot = -1;
+        for (let i = 0; i < parsed.length; i++) {
+            if (parsed[i]) { firstRoot = noteIndex(parsed[i].root); break; }
+        }
+        const flats = preferFlats(src, firstRoot, semitones);
+        return parts.map(function (part, i) {
+            return parsed[i] ? transposeChord(parsed[i], semitones, flats) : part;
+        }).join('');
+    }
+
+    function transposeLabel(n) {
+        return n > 0 ? '+' + n : String(n);
+    }
+
+    function initTransposerWidget(content) {
+        const input = content.querySelector('.transpose-input');
+        const output = content.querySelector('.transpose-output');
+        const value = content.querySelector('#transposeVal');
+        const capoEl = content.querySelector('#transposeCapo');
+        const reset = content.querySelector('#transposeReset');
+        const stepBtns = content.querySelectorAll('[data-transpose]');
+        if (!input || !output || !value || !capoEl) return;
+
+        let semitones = 0;
+        try {
+            const saved = parseInt(localStorage.getItem('gph_transpose_semitones'), 10);
+            if (saved >= -12 && saved <= 12) semitones = saved;
+            const savedText = localStorage.getItem('gph_transpose_input');
+            if (savedText) input.value = savedText;
+        } catch (e) {}
+
+        function updateButtons() {
+            stepBtns.forEach(function (btn) {
+                const delta = parseInt(btn.dataset.transpose, 10);
+                btn.disabled = semitones + delta < -12 || semitones + delta > 12;
+            });
+        }
+
+        function renderCapo() {
+            if (!input.value.trim()) {
+                capoEl.textContent = 'Enter chords to transpose.';
+                capoEl.classList.add('is-neutral');
+                return;
+            }
+            capoEl.classList.remove('is-neutral');
+            if (semitones === 0) {
+                capoEl.textContent = 'No capo — these are the original chords.';
+                return;
+            }
+            if (semitones < 0) {
+                const fret = Math.abs(semitones) % 12 || 12;
+                capoEl.textContent = 'Capo ' + fret + ' — put the capo on fret ' + fret +
+                    ' and play these shapes to sound in the original key.';
+            } else {
+                const fret = (12 - (semitones % 12)) % 12;
+                if (!fret) {
+                    capoEl.textContent = 'No capo — these shapes sound an octave higher.';
+                } else {
+                    capoEl.textContent = 'Capo ' + fret + ' — these shapes are ' + semitones +
+                        ' semitone' + (semitones === 1 ? '' : 's') +
+                        ' higher; use capo ' + fret + ' to return to the original key.';
+                }
+            }
+        }
+
+        function render() {
+            value.textContent = transposeLabel(semitones);
+            output.value = transposeText(input.value, semitones);
+            renderCapo();
+            updateButtons();
+            try {
+                localStorage.setItem('gph_transpose_semitones', String(semitones));
+                localStorage.setItem('gph_transpose_input', input.value);
+            } catch (e) {}
+        }
+
+        stepBtns.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                semitones = Math.max(-12, Math.min(12, semitones + parseInt(btn.dataset.transpose, 10)));
+                render();
+            });
+        });
+        if (reset) reset.addEventListener('click', function () { semitones = 0; render(); });
+        input.addEventListener('input', render);
+        render();
+    }
+
     GPH.widgets = {
         METRONOME_HTML: METRONOME_HTML, DRUM_HTML: DRUM_HTML,
         NOTES_HTML: NOTES_HTML, DELAY_HTML: DELAY_HTML, SONG_HTML: SONG_HTML,
-        initNotes: initNotesWidget, initDelay: initDelayWidget, initSong: initSongWidget
+        TRANSPOSER_HTML: TRANSPOSER_HTML,
+        initNotes: initNotesWidget, initDelay: initDelayWidget, initSong: initSongWidget,
+        initTransposer: initTransposerWidget
     };
 })(window.GPH = window.GPH || {});

@@ -1555,6 +1555,31 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .song-foot { font-size: 0.66rem; color: #6a6a6a; text-align: right; margin-top: 6px; }
 .song-result[hidden], .song-candidates[hidden] { display: none; }
 
+/* ---- Widget Chord Transposer ---- */
+.transposer-widget { background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px; padding: 12px 14px; margin: 5px 0; }
+.transposer-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.transposer-controls { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.transpose-step { padding: 4px 8px; font-size: 0.76rem; }
+.transpose-val { min-width: 42px; text-align: center; font-size: 1.05rem; font-weight: 700; line-height: 1; color: var(--sec-color, var(--accent)); }
+.transpose-reset { margin-left: auto; padding: 4px 8px; font-size: 0.72rem; }
+.transposer-panes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.transposer-pane { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.transposer-label { font-size: 0.7rem; letter-spacing: 0.08em; color: #9a9a9a; text-transform: uppercase; }
+.transpose-input, .transpose-output {
+    width: 100%; box-sizing: border-box; min-height: 86px; resize: vertical;
+    background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px; padding: 8px 9px; font: inherit; font-size: 0.95rem; line-height: 1.45;
+}
+.transpose-input:focus { outline: none; border-color: var(--sec-color, var(--accent)); }
+.transpose-output { color: var(--sec-color, var(--accent)); background: rgba(255, 255, 255, 0.03); cursor: default; }
+.transposer-capo {
+    margin-top: 10px; padding: 8px 10px; border-left: 3px solid var(--sec-color, var(--accent));
+    border-radius: 4px; background: rgba(255, 255, 255, 0.04);
+    font-size: 0.82rem; line-height: 1.4; color: #ccc;
+}
+.transposer-capo.is-neutral { border-left-color: #555; color: #8f8f8f; }
+@media (max-width: 700px) { .transposer-panes { grid-template-columns: 1fr; } }
+
 /* ---- Fretboard Theory: one more item inside the section ---- */
 .fretboard-body.collapsed { display: none; }
 .theory-card { margin-top: 12px; --deg-0: var(--sec-color, var(--accent)); --deg-1: #c9c9c9; --deg-2: #9aa0a6; --deg-3: #7bd88f; --deg-4: #4fc3f7; --deg-5: #ffd54f; --deg-6: #8f8f8f; --deg-7: #64b5f6; --deg-8: #a0a0a0; --deg-9: #ba68c8; --deg-10: #ffb74d; --deg-11: #ff8a65; }

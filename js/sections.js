@@ -54,6 +54,7 @@
         else if (it.url === 'notes') html = GPH.widgets.NOTES_HTML;
         else if (it.url === 'delay') html = GPH.widgets.DELAY_HTML;
         else if (it.url === 'song') html = GPH.widgets.SONG_HTML;
+        else if (it.url === 'transposer') html = GPH.widgets.TRANSPOSER_HTML;
         if (!html) { li.textContent = 'Unknown widget: ' + it.url; return li; }
         if (rendered[it.url]) {
             const warn = document.createElement('span');
@@ -79,6 +80,7 @@
         if (it.url === 'notes') GPH.widgets.initNotes(content);
         if (it.url === 'delay') GPH.widgets.initDelay(content);
         if (it.url === 'song') GPH.widgets.initSong(content);
+        if (it.url === 'transposer') GPH.widgets.initTransposer(content);
         return li;
     }
 

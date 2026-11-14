@@ -842,6 +842,7 @@ WIDGETS = [
     {'key': 'drums', 'name': 'Drum Machine'},
     {'key': 'notes', 'name': 'Notes'},
     {'key': 'delay', 'name': 'Delay Calculator'},
+    {'key': 'transposer', 'name': 'Chord Transposer'},
     {'key': 'song', 'name': 'Song Info (BPM/Key)'},
 ]
 AUDIO_EXTS = ('.mp3', '.m4a', '.wav', '.ogg', '.flac')
