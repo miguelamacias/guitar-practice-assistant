@@ -39,6 +39,7 @@
 
 ## Git
 - No hacer `git add`, `commit`, `merge`, `push`, `tag`, `rebase`, `amend` ni `force push` sin petición explícita del usuario.
+- Todo `commit` solicitado incluye `push` de la misma rama, sin pedir permiso adicional para el push.
 - Sí se puede usar `git status`, `git diff` y `git log` para informar.
 - Para cambios medios/altos: sugerir rama nueva y esperar confirmación antes de crearla o cambiar de rama.
 - Antes de commit o merge con la rama principal, preguntar si se cambia la versión interna de la app con opciones claras: no cambiar, patch, minor o major.
