@@ -1455,6 +1455,13 @@ def session_stats(conn, days=30):
         "SELECT date(started_at, 'localtime') d, COUNT(*) n, COALESCE(SUM(practiced_seconds),0) sec"
         " FROM routine_sessions WHERE status='finished' AND started_at >= ?"
         " GROUP BY d ORDER BY d", (since,)).fetchall()]
+    # One row per calendar day with any session, whatever its status, counting
+    # the real practice time: the activity calendar must light the same days
+    # as the "days practised" figure below (real_seconds > 0).
+    activity = [{'date': r['d'], 'sessions': r['n'], 'seconds': r['sec']} for r in conn.execute(
+        "SELECT date(started_at, 'localtime') d, COUNT(*) n, COALESCE(SUM(real_seconds),0) sec"
+        " FROM routine_sessions WHERE started_at >= ?"
+        " GROUP BY d ORDER BY d", (since,)).fetchall()]
     # Days with real practice vs natural days of the window (never more days
     # than the log actually covers, so a 1 year range on a new log is honest).
     days_practised = conn.execute(
@@ -1501,6 +1508,7 @@ def session_stats(conn, days=30):
                    'done': t['nd'], 'partial': t['npart'],
                    'total': t['nt'] + t['nu'] + t['ns']},
         'daily': daily,
+        'activity': activity,
         'heatmap': heatmap,
         'top_skipped': top_skipped,
         'top_time': top_time,

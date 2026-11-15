@@ -138,6 +138,182 @@
         }).join('') + '</div>';
     }
 
+    // ---------------------------- Activity calendar ----------------------------
+    // Two shapes, both covering exactly the selected window:
+    //  - 30 / 90 days: one strip of day chips, so the card width is used.
+    //  - 1 year: GitHub style grid (rows Mon..Sun, one column per week).
+    // Colour comes from real seconds, so a lit cell means "days practised".
+    const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    function actLabel(d) {
+        return d.toLocaleDateString('en-GB',
+            { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    // "0 min" looks like a bug for a 40 s session, so say what it is.
+    function actDur(seconds) {
+        const s = Math.round(seconds || 0);
+        if (s > 0 && s < 60) return 'under 1 min';
+        return fmtDur(s);
+    }
+
+    function actLevel(seconds, max) {
+        if (!seconds) return 0;
+        const ratio = max ? seconds / max : 1;
+        if (ratio >= 0.75) return 4;
+        if (ratio >= 0.45) return 3;
+        if (ratio >= 0.2) return 2;
+        return 1;
+    }
+
+    // Grey when idle, accent in 5 steps when practised.
+    function actStyle(seconds, max) {
+        const level = actLevel(seconds, max);
+        return level
+            ? ' style="background:var(--accent);opacity:' + (0.3 + 0.17 * level).toFixed(2) + '"'
+            : '';
+    }
+
+    function actTip(entry) {
+        const n = entry.day.sessions || 0;
+        return actLabel(entry.d) + ' · ' + (n
+            ? actDur(entry.day.seconds) + ' · ' + n + (n === 1 ? ' session' : ' sessions')
+            : 'no practice');
+    }
+
+    function isToday(d) {
+        return dayKey(d) === dayKey(new Date());
+    }
+
+    // 1 year: the grid the panel already had, now sized from the available
+    // width (--cols) with a 26px ceiling, so a wide card is not half empty.
+    function activityGrid(list, max) {
+        const byKey = {};
+        list.forEach(function (e) { byKey[dayKey(e.d)] = e; });
+        const first = new Date(list[0].d);
+        first.setDate(first.getDate() - ((first.getDay() + 6) % 7));     // Monday
+        const last = new Date(list[list.length - 1].d);
+        last.setDate(last.getDate() + (6 - ((last.getDay() + 6) % 7)));  // Sunday
+
+        const weeks = [];
+        const cursor = new Date(first);
+        while (cursor <= last) {
+            const cells = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(cursor);
+                d.setDate(d.getDate() + i);
+                cells.push(byKey[dayKey(d)] || null);
+            }
+            weeks.push(cells);
+            cursor.setDate(cursor.getDate() + 7);
+        }
+
+        // Month label over the first column of every month.
+        let months = '<div class="hist-act-row hist-act-months"><span class="hist-act-label"></span>';
+        let prev = -1;
+        weeks.forEach(function (week) {
+            let ref = null;
+            for (let i = 0; i < 7 && !ref; i++) ref = week[i];
+            const m = ref ? ref.d.getMonth() : prev;
+            months += '<span class="hist-act-month">' + (ref && m !== prev ? MONTH_SHORT[m] : '') +
+                '</span>';
+            if (ref) prev = m;
+        });
+        months += '</div>';
+
+        // Labels only on Mon / Thu / Sun, like a compact calendar axis.
+        const rowLabels = ['Mon', '', '', 'Thu', '', '', 'Sun'];
+        let rows = '';
+        rowLabels.forEach(function (label, i) {
+            rows += '<div class="hist-act-row"><span class="hist-act-label">' + label + '</span>' +
+                weeks.map(function (week) {
+                    const e = week[i];
+                    if (!e) return '<i class="hist-act-cell is-out"></i>';
+                    return '<i class="hist-act-cell' + (isToday(e.d) ? ' is-today' : '') + '"' +
+                        ' title="' + esc(actTip(e)) + '"' + actStyle(e.day.seconds, max) + '></i>';
+                }).join('') + '</div>';
+        });
+        return '<div class="hist-act" style="--cols:' + weeks.length + '">' + months + rows + '</div>';
+    }
+
+    // 30 / 90 days: one strip, oldest on the left, a wider gap on Mondays and
+    // the day number when the chips are big enough to hold it.
+    function activityStrip(list, max) {
+        // Week groups depend on the weekday the window starts on, not only on
+        // its length: the CSS subtracts one --act-week gap per group after the
+        // first.
+        const offset = (list[0].d.getDay() + 6) % 7;      // 0 = Monday
+        const weeks = Math.ceil((offset + list.length) / 7);
+        const numbered = list.length <= 45;
+        const weekStart = i => i > 0 && list[i].d.getDay() === 1;   // Monday
+
+        let labels = '';
+        if (numbered) {
+            let prev = -1;
+            labels = '<div class="hist-act-strip hist-act-months">' +
+                list.map(function (e, i) {
+                    const m = e.d.getMonth();
+                    const show = m !== prev;
+                    prev = m;
+                    return '<span class="hist-act-slot' + (weekStart(i) ? ' is-week' : '') + '">' +
+                        (show ? MONTH_SHORT[m] : '') + '</span>';
+                }).join('') + '</div>';
+        }
+
+        const chips = list.map(function (e, i) {
+            return '<i class="hist-act-slot' + (weekStart(i) ? ' is-week' : '') +
+                (numbered ? ' is-numbered' : '') + (isToday(e.d) ? ' is-today' : '') +
+                '" title="' + esc(actTip(e)) + '"' + actStyle(e.day.seconds, max) + '>' +
+                (numbered ? '<span>' + e.d.getDate() + '</span>' : '') + '</i>';
+        }).join('');
+        return '<div class="hist-act-strip-wrap" style="--n:' + list.length +
+            ';--w:' + weeks + '">' + labels +
+            '<div class="hist-act-strip">' + chips + '</div></div>';
+    }
+
+    function activityChart(activity, totals) {
+        const byDay = {};
+        (activity || []).forEach(function (a) {
+            const key = String(a.date == null ? '' : a.date).slice(0, 10);
+            if (!key) return;
+            const day = byDay[key] || (byDay[key] = { sessions: 0, seconds: 0 });
+            day.sessions += a.sessions || 0;
+            day.seconds += a.seconds || 0;
+        });
+        const end = new Date();
+        end.setHours(12, 0, 0, 0);
+        const start = new Date(end);
+        start.setDate(start.getDate() - (days - 1));
+
+        // Every day of the window, oldest first, with the busiest day as the
+        // 100% of the colour scale.
+        const list = [];
+        let max = 0;
+        for (let i = 0; i < days; i++) {
+            const d = new Date(start);
+            d.setDate(d.getDate() + i);
+            const day = byDay[dayKey(d)] || { sessions: 0, seconds: 0 };
+            if (day.seconds > max) max = day.seconds;
+            list.push({ d: d, day: day });
+        }
+
+        const practised = (totals && totals.days_practised) || 0;
+        const total = (totals && totals.days_total) || days;
+        const swatches = [0, 1, 2, 3, 4].map(function (level) {
+            return '<i class="hist-act-swatch"' + (level
+                ? ' style="background:var(--accent);opacity:' + (0.3 + 0.17 * level).toFixed(2) + '"'
+                : '') + '></i>';
+        }).join('');
+        return '<div class="hist-act-scroll">' +
+            (days <= 90 ? activityStrip(list, max) : activityGrid(list, max)) + '</div>' +
+            '<div class="hist-act-foot">' +
+            '<span>' + esc(fmtDay(start.toISOString())) + ' → ' + esc(fmtDay(end.toISOString())) + ' ' +
+            end.getFullYear() + ' · ' + practised + ' of ' + total + ' days</span>' +
+            '<span class="hist-act-legend">Less<span class="hist-act-swatches">' + swatches +
+            '</span>More</span></div>';
+    }
+
     function dailyChart(daily) {
         const byDay = {};
         (daily || []).forEach(function (d) { byDay[d.date] = d.seconds || 0; });
@@ -381,6 +557,8 @@
         }
         return kpiCards(stats) +
             '<div class="hist-charts">' +
+            '<div class="hist-chart hist-chart-wide"><h3>Activity</h3>' +
+            activityChart(stats.activity || stats.daily, stats.totals) + '</div>' +
             '<div class="hist-chart hist-chart-wide"><h3>Practice per ' + (days <= 60 ? 'day' : 'week') + '</h3>' +
             dailyChart(stats.daily) + '</div>' +
             '<div class="hist-chart hist-chart-wide"><h3>How exercises are closed</h3>' +
