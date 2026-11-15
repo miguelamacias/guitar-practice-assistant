@@ -192,6 +192,7 @@
         loadSessionId();
         flushSessionQueue();
         hideTip();
+        wireTimerFloat();
         const desc = document.getElementById('welcomeRoutineDesc');
         if (!rActiva().ejercicios.length) {
             document.getElementById('welcomeRoutineName').innerHTML = GPH.icons.get('alert') + ' No active routine loaded';
@@ -263,6 +264,7 @@
         updateStartBtnTip();
         document.getElementById('welcomeCard').classList.remove('is-hidden');
         document.getElementById('exerciseCard').classList.add('is-hidden');
+        syncTimerFloat();
     }
 
     function startRoutineSession() {
@@ -583,11 +585,54 @@
         if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
     }
 
+    // ---- Floating clock ---------------------------------------------------
+    // A second copy of the countdown, shown only while the real clock is out
+    // of view (a resource below the card can push it off screen). It is a
+    // visual duplicate: aria-hidden in the markup, pointer-events none in CSS.
+    let timerFloatShown = false;
+    let mainTimerVisible = true;
+    let timerFloatWired = false;
+
+    function mainTimerRendered() {
+        const main = document.getElementById('exTimer');
+        return !!(main && main.getClientRects().length);   // false inside display:none
+    }
+
+    function syncTimerFloat() {
+        const card = document.getElementById('exerciseCard');
+        const pill = document.getElementById('exTimerFloat');
+        if (!card || !pill) return;
+        // Hidden when the assistant is not showing the running card, when its
+        // section is collapsed, or when the card is not rendered at all.
+        const hidden = card.classList.contains('is-hidden') ||
+            !!card.closest('.collapsed') || !mainTimerRendered();
+        const show = !hidden && !mainTimerVisible;
+        if (show === timerFloatShown) return;
+        timerFloatShown = show;
+        pill.classList.toggle('is-visible', show);
+    }
+
+    function wireTimerFloat() {
+        if (timerFloatWired) return;
+        const main = document.getElementById('exTimer');
+        if (!main || !('IntersectionObserver' in window)) return;   // no support: never shows
+        timerFloatWired = true;
+        new IntersectionObserver(function (entries) {
+            mainTimerVisible = entries[entries.length - 1].isIntersecting;
+            syncTimerFloat();
+        }, { threshold: 0 }).observe(main);
+    }
+
     function updateTimerDisplay() {
         const minutes = Math.floor(exerciseTimeLeft / 60);
         const seconds = Math.floor(exerciseTimeLeft % 60);
-        document.getElementById('exTimer').textContent =
-            String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+        const text = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+        document.getElementById('exTimer').textContent = text;
+        const float = document.getElementById('exTimerFloatValue');
+        if (float) float.textContent = text;
+        // Re-evaluating once per tick keeps the pill honest when the section is
+        // collapsed or expanded while the clock is out of view.
+        syncTimerFloat();
     }
 
     function updateProgressBar() {

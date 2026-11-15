@@ -836,6 +836,40 @@
    clock is the same 12 px gap as the rest of the stack. */
 .ex-timer { font-size: 3rem; font-weight: bold; font-family: monospace; color: #fff; line-height: 1; }
 
+/* Floating copy of the assistant countdown, bottom-right (the audio player and
+   the YouTube panel live at bottom: 80px, so the strip below them stays free).
+   pointer-events is disabled so it can never steal a click from the content. */
+.ex-timer-float {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 1050;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 11px;
+    background: rgba(12, 12, 12, 0.82);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+    font-family: monospace;
+}
+.ex-timer-float.is-visible { display: flex; }
+.ex-timer-float-icon { width: 20px; height: 20px; flex: 0 0 auto; color: var(--accent); }
+.ex-timer-float-value {
+    font-size: 1.7rem;
+    font-weight: bold;
+    line-height: 1;
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+    min-width: 4.2ch;            /* keeps the pill from resizing as digits change */
+}
+@media (max-width: 600px) {
+    .ex-timer-float { right: 12px; bottom: 12px; padding: 7px 12px 7px 10px; }
+    .ex-timer-float-value { font-size: 1.4rem; }
+}
+
 .ex-progress {
     align-self: stretch;
     margin-right: 5px;
