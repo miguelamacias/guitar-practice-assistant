@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎸</text></svg>">
     <title>Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/styles.css?v=89">
+    <link rel="stylesheet" href="css/styles.css?v=100">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
          so its fetch wrapper can block writes from the very first request. -->
     <script defer src="js/debug.js?v=2"></script>
     <script defer src="js/audioEngine.js?v=12"></script>
-    <script defer src="js/players.js?v=3"></script>
+    <script defer src="js/players.js?v=8"></script>
     <script defer src="js/scrobbler.js?v=3"></script>
     <script defer src="js/icons.js?v=12"></script>
     <script defer src="js/ui.js?v=4"></script>
@@ -28,7 +28,8 @@
     <script defer src="js/fretboardBoard.js?v=3"></script>
     <script defer src="js/fretboard.js?v=11"></script>
     <script defer src="js/theory.js?v=22"></script>
-    <script defer src="js/sections.js?v=47"></script>
+    <script defer src="js/sections.js?v=48"></script>
+    <script defer src="js/sectionLayout.js?v=2"></script>
     <script defer src="js/main.js?v=28"></script>
 </head>
 <body>
@@ -66,6 +67,7 @@
     </header>
 
     <div class="grid-layout">
+        <div class="layout-left">
         <!-- PRACTICE ASSISTANT SECTION -->
         <div class="section-card practice-assistant-section" id="practiceAssistantSection">
             <h2 class="assistant-title">Practice Assistant</h2>
@@ -206,10 +208,15 @@
             </div>
         </div>
 
-        <div class="sections-masonry">
+        <div class="section-lanes">
             <div class="masonry-col" id="sectionsColA"></div>
             <div class="masonry-col" id="sectionsColB"></div>
         </div>
+        </div><!-- /.layout-left -->
+
+        <div class="layout-right">
+            <div class="masonry-col" id="sectionsColC"></div>
+        </div><!-- /.layout-right -->
     </div>
 </div>
 
@@ -229,37 +236,41 @@
     <iframe id="ytIframe" src="" allow="autoplay; encrypted-media" allowfullscreen></iframe>
 </div>
 
-<!-- Floating audio player (bottom-right, square album-art card) -->
-<div id="audioPanel" class="audio-panel">
+<!-- MP3 player: fixed bar across the bottom. It only exists while a track is
+     loaded, so it costs no space (and no body padding) the rest of the time. -->
+<div id="audioPanel" class="audio-panel" role="region" aria-label="Audio player">
     <div id="apCover" class="audio-cover" aria-hidden="true"></div>
-    <div class="audio-titlebar">
-        <div class="audio-title-wrap">
-            <span id="current-playing" class="audio-title-text">No audio selected</span>
-        </div>
-        <button id="closeAudioBtn" class="audio-close-btn" title="Close" aria-label="Close">
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
-        </button>
+    <div class="audio-title-wrap">
+        <span id="current-playing" class="audio-title-text">No audio selected</span>
     </div>
-    <div class="audio-center">
-        <button id="apPlay" class="ap-play-big" title="Play/Pause"></button>
+    <button id="apPlay" class="ap-play" type="button" title="Play/Pause" aria-label="Play/Pause"></button>
+    <span id="apCurrent" class="ap-time">0:00</span>
+    <div class="ap-seek-wrap">
+        <input id="apSeek" class="ap-seek" type="range" min="0" max="1000" value="0" aria-label="Seek">
+        <span id="apMarkAView" class="ap-seek-mark is-a" aria-hidden="true" hidden></span>
+        <span id="apMarkBView" class="ap-seek-mark is-b" aria-hidden="true" hidden></span>
     </div>
-    <div class="audio-bottom">
-        <input id="apSeek" type="range" min="0" max="1000" value="0">
-        <button id="apLoop" class="ap-icon-btn" type="button" title="Loop: off" aria-label="Loop" aria-pressed="false" disabled>
-            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M17 8.5A6 6 0 0 0 6.5 10.5"></path>
-                <path d="M17 4.5v4h-4"></path>
-                <path d="M7 15.5A6 6 0 0 0 17.5 13.5"></path>
-                <path d="M7 19.5v-4h4"></path>
-            </svg>
-        </button>
-        <span id="apScrobble" class="ap-scrobble is-off" role="img" aria-label="Last.fm: no local track" title="Last.fm: no local track">
-            <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M10.584 17.21l-.88-2.392s-1.43 1.594-3.573 1.594c-1.897 0-3.244-1.649-3.244-4.288 0-3.382 1.704-4.591 3.381-4.591 2.42 0 3.189 1.567 3.849 3.574l.88 2.749c.88 2.666 2.529 4.81 7.285 4.81 3.409 0 5.718-1.044 5.718-3.793 0-2.227-1.265-3.381-3.63-3.931l-1.758-.385c-1.21-.275-1.567-.77-1.567-1.595 0-.934.742-1.484 1.952-1.484 1.32 0 2.034.495 2.144 1.677l2.749-.33c-.22-2.474-1.924-3.492-4.729-3.492-2.474 0-4.893.935-4.893 3.932 0 1.87.907 3.051 3.189 3.601l1.87.44c1.402.33 1.869.907 1.869 1.704 0 1.017-.99 1.43-2.86 1.43-2.776 0-3.93-1.457-4.59-3.464l-.907-2.75c-1.155-3.573-2.997-4.893-6.653-4.893C2.144 5.333 0 7.89 0 12.233c0 4.18 2.144 6.434 5.993 6.434 3.106 0 4.591-1.457 4.591-1.457z"></path>
-            </svg>
-        </span>
-        <span id="apTime" class="ap-time">0:00</span>
-    </div>
+    <button id="apLoop" class="ap-icon-btn" type="button" title="Loop: off" aria-label="Loop" aria-pressed="false" disabled>
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M17 8.5A6 6 0 0 0 6.5 10.5"></path>
+            <path d="M17 4.5v4h-4"></path>
+            <path d="M7 15.5A6 6 0 0 0 17.5 13.5"></path>
+            <path d="M7 19.5v-4h4"></path>
+        </svg>
+    </button>
+    <!-- A-B practice loop: two marks + this track's range (click the range to turn it on/off). -->
+    <button id="apMarkA" class="ap-ab" type="button" title="Set loop start (A)" aria-label="Set loop start A" aria-pressed="false" disabled>A</button>
+    <button id="apMarkB" class="ap-ab" type="button" title="Set loop end (B)" aria-label="Set loop end B" aria-pressed="false" disabled>B</button>
+    <button id="apRange" class="ap-range-tag" type="button" title="A-B loop: click to turn it on/off" aria-label="Toggle A-B loop" aria-pressed="false" hidden></button>
+    <span id="apScrobble" class="ap-scrobble is-off" role="img" aria-label="Last.fm: no local track" title="Last.fm: no local track">
+        <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M10.584 17.21l-.88-2.392s-1.43 1.594-3.573 1.594c-1.897 0-3.244-1.649-3.244-4.288 0-3.382 1.704-4.591 3.381-4.591 2.42 0 3.189 1.567 3.849 3.574l.88 2.749c.88 2.666 2.529 4.81 7.285 4.81 3.409 0 5.718-1.044 5.718-3.793 0-2.227-1.265-3.381-3.63-3.931l-1.758-.385c-1.21-.275-1.567-.77-1.567-1.595 0-.934.742-1.484 1.952-1.484 1.32 0 2.034.495 2.144 1.677l2.749-.33c-.22-2.474-1.924-3.492-4.729-3.492-2.474 0-4.893.935-4.893 3.932 0 1.87.907 3.051 3.189 3.601l1.87.44c1.402.33 1.869.907 1.869 1.704 0 1.017-.99 1.43-2.86 1.43-2.776 0-3.93-1.457-4.59-3.464l-.907-2.75c-1.155-3.573-2.997-4.893-6.653-4.893C2.144 5.333 0 7.89 0 12.233c0 4.18 2.144 6.434 5.993 6.434 3.106 0 4.591-1.457 4.591-1.457z"></path>
+        </svg>
+    </span>
+    <span id="apTime" class="ap-time">0:00</span>
+    <button id="closeAudioBtn" class="ap-icon-btn ap-close" type="button" title="Close player" aria-label="Close player">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+    </button>
     <audio id="audioPlayer"></audio>
 </div>
 

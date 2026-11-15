@@ -141,6 +141,21 @@ textarea { resize: vertical; min-height: 44px; }
 .section-item.selected { background: rgba(233, 30, 99, 0.12); border-color: var(--accent); }
 .section-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .section-item .sname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Dashboard lane badge (L1/L2 = left column, R = right rail) */
+.section-item .lane-badge {
+    flex: 0 0 auto;
+    font-size: 0.64rem;
+    font-weight: bold;
+    letter-spacing: 0.4px;
+    color: var(--muted);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 0 5px;
+    line-height: 1.5;
+}
+.section-item .lane-badge.is-rail { color: var(--accent); border-color: rgba(233, 30, 99, 0.45); }
+.section-head-row .section-lane-field { flex: 0 0 auto; }
+#resetLayoutBtn { margin-top: 8px; }
 /* Section editor header: title + color + actions on a single line */
 .section-head-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .section-head-row .field { margin-bottom: 0; }
@@ -471,12 +486,19 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
     text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.6px;
     color: var(--muted); padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
-.hist-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.hist-table tbody tr:hover { background: rgba(255, 255, 255, 0.035); }
+.hist-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+/* Only session rows react to the pointer: the detail row spans the table and
+   would otherwise light up the whole block at once. */
+.hist-table tbody tr.hist-row:hover { background: rgba(255, 255, 255, 0.035); }
+/* The whole row toggles its details, so it has to look clickable. */
+.hist-table tbody tr.hist-row { cursor: pointer; }
+.hist-table tbody tr.hist-row.is-open { background: rgba(255, 255, 255, 0.045); }
 .hist-nowrap { white-space: nowrap; }
 .hist-wall-txt { color: var(--muted); font-size: 0.8rem; }
 .hist-th-sub { color: var(--muted); font-weight: normal; }
-.hist-plan { display: flex; align-items: center; gap: 8px; }
+/* Inside the cell: the flex box must not be the <td> itself, or the cell stops
+   being a table-cell and its bottom border no longer lines up with the row. */
+.hist-plan { display: inline-flex; align-items: center; gap: 8px; }
 .hist-plan-bar { width: 64px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .hist-plan-bar i { display: block; height: 100%; background: var(--green); }
 .hist-plan-txt { font-size: 0.74rem; color: var(--muted); }
@@ -498,7 +520,15 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 
 .hist-detail-row td { background: rgba(0, 0, 0, 0.25); }
 .hist-detail-list { margin: 0; padding: 4px 0; list-style: none; display: grid; gap: 3px; }
-.hist-detail-item { display: flex; align-items: center; gap: 10px; font-size: 0.78rem; }
+/* Zebra: the exercise name and its time sit at opposite ends of a wide row, so
+   alternating bands are what lets you follow one line across. */
+.hist-detail-item {
+    display: flex; align-items: center; gap: 10px; font-size: 0.78rem;
+    padding: 3px 6px; border-radius: 4px;
+}
+.hist-detail-item:nth-child(odd) { background: rgba(255, 255, 255, 0.05); }
+/* Following one line across beats lighting the whole block: only this item. */
+.hist-detail-item:hover { background: rgba(255, 255, 255, 0.1); }
 .hist-detail-state { width: 108px; flex: 0 0 auto; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.4px; color: var(--muted); }
 .hist-detail-item.is-timed .hist-detail-state { color: var(--accent); }
 .hist-detail-item.is-untimed .hist-detail-state { color: var(--green); }

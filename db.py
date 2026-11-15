@@ -317,6 +317,17 @@ def _migrate(conn):
     scols = [r[1] for r in conn.execute('PRAGMA table_info(sections)').fetchall()]
     if 'full_width' not in scols:
         conn.execute('ALTER TABLE sections ADD COLUMN full_width INTEGER DEFAULT 0')
+    if 'lane' not in scols:
+        # Dashboard lane 1..3 (1-2 = left column, 3 = right rail).
+        conn.execute('ALTER TABLE sections ADD COLUMN lane INTEGER NOT NULL DEFAULT 0')
+    # Existing sections get a starting lane; the user can move them afterwards.
+    # The first two (short ones: Tools, Rhythm) go to the right rail, the rest
+    # alternate between the two left lanes. Idempotent: only rows still
+    # unassigned are touched.
+    conn.execute(
+        'UPDATE sections SET lane = CASE WHEN position < 2 THEN 3 ELSE 1 + (position % 2) END'
+        ' WHERE lane NOT IN (1, 2, 3)'
+    )
     # Session log: wall clock and per-exercise clock (added after 3-b).
     def add_cols(table, pairs):
         try:
@@ -891,7 +902,8 @@ def _is_media_allowed(conn, target):
 
 def api_sections(conn):
     secs = conn.execute(
-        'SELECT id, title, subtitle, accent_color, position, full_width FROM sections ORDER BY position, id'
+        'SELECT id, title, subtitle, accent_color, position, full_width, lane FROM sections'
+        ' ORDER BY lane, position, id'
     ).fetchall()
     out = []
     for s in secs:
@@ -902,6 +914,7 @@ def api_sections(conn):
         out.append({
             'id': s['id'], 'title': s['title'], 'description': s['subtitle'],
             'color': s['accent_color'], 'position': s['position'], 'full_width': s['full_width'],
+            'lane': s['lane'],
             'items': [
                 {'id': i['id'], 'kind': i['kind'], 'label': i['label'], 'tag': i['tag'],
                  'url': i['url'], 'position': i['position'],
@@ -917,10 +930,17 @@ def create_section(conn, data):
     desc = data.get('description') or ''
     color = data.get('color') or COLORS[0]
     fw = 1 if data.get('full_width') else 0
+    try:
+        lane = int(data.get('lane') or 1)
+    except (TypeError, ValueError):
+        lane = 1
+    if lane not in (1, 2, 3):
+        lane = 1
     pos = conn.execute('SELECT COALESCE(MAX(position), -1) + 1 FROM sections').fetchone()[0]
     cur = conn.execute(
-        'INSERT INTO sections(title, subtitle, accent_color, position, full_width) VALUES(?,?,?,?,?)',
-        (title, desc, color, pos, fw),
+        'INSERT INTO sections(title, subtitle, accent_color, position, full_width, lane)'
+        ' VALUES(?,?,?,?,?,?)',
+        (title, desc, color, pos, fw, lane),
     )
     conn.commit()
     return {'id': cur.lastrowid}
@@ -937,6 +957,12 @@ def update_section(conn, sid, data):
         conn.execute('UPDATE sections SET accent_color=? WHERE id=?', (data['color'], sid))
     if data.get('full_width') is not None:
         conn.execute('UPDATE sections SET full_width=? WHERE id=?', (1 if data['full_width'] else 0, sid))
+    if data.get('lane') is not None:
+        try:
+            lane = int(data['lane'])
+        except (TypeError, ValueError):
+            lane = 1
+        conn.execute('UPDATE sections SET lane=? WHERE id=?', (lane if lane in (1, 2, 3) else 1, sid))
     conn.commit()
     return {'updated': sid}
 
@@ -947,9 +973,41 @@ def delete_section(conn, sid):
     return {'deleted': sid}
 
 
-def reorder_sections(conn, order):
-    for idx, sid in enumerate(order):
-        conn.execute('UPDATE sections SET position=? WHERE id=?', (idx, int(sid)))
+def reorder_sections(conn, order=None, layout=None):
+    """Persists the section order.
+
+    `layout` (dashboard) wins when present: [{id, lane, position}, ...] in one
+    transaction, so a half-applied layout is impossible. `order` keeps the old
+    flat list working for the Manager (no lanes involved).
+    """
+    if layout:
+        applied = 0
+        for row in layout:
+            try:
+                sid = int(row.get('id'))
+            except (TypeError, ValueError, AttributeError):
+                continue
+            try:
+                lane = int(row.get('lane') or 1)
+            except (TypeError, ValueError):
+                lane = 1
+            if lane not in (1, 2, 3):
+                lane = 1
+            try:
+                pos = int(row.get('position') or 0)
+            except (TypeError, ValueError):
+                pos = 0
+            conn.execute('UPDATE sections SET lane=?, position=? WHERE id=?',
+                         (lane, max(0, pos), sid))
+            applied += 1
+        conn.commit()
+        return {'ok': True, 'updated': applied}
+    for idx, sid in enumerate(order or []):
+        try:
+            sid = int(sid)
+        except (TypeError, ValueError):
+            continue
+        conn.execute('UPDATE sections SET position=? WHERE id=?', (idx, sid))
     conn.commit()
     return {'ok': True}
 

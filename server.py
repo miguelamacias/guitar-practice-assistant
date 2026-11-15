@@ -475,7 +475,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if method == 'POST':
                     return self._send_json(create_section(conn, data), 201)
             if path == '/api/sections/reorder' and method == 'POST':
-                return self._send_json(reorder_sections(conn, data.get('order', [])))
+                return self._send_json(reorder_sections(conn, data.get('order', []),
+                                                        data.get('layout')))
             m = re.fullmatch(r'/api/sections/(\d+)', path)
             if m:
                 sid = int(m.group(1))

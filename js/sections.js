@@ -171,12 +171,14 @@
         });
     }
 
+    // Three independent lanes: 1-2 are the left column (under Theory), 3 is the
+    // right rail. Each lane stacks on its own, so a tall section never holds up
+    // a short neighbour. The lane comes from the DB (sections.lane).
     function renderDynamicSections(sections) {
-        const colA = document.getElementById('sectionsColA');
-        const colB = document.getElementById('sectionsColB');
-        if (!colA || !colB) return;
-        colA.innerHTML = '';
-        colB.innerHTML = '';
+        const lanes = ['sectionsColA', 'sectionsColB', 'sectionsColC']
+            .map(function (id) { return document.getElementById(id); });
+        if (!lanes[0]) return;
+        lanes.forEach(function (col) { if (col) col.innerHTML = ''; });
         const rendered = {};
         const collapsedMap = loadCollapsed();
         sections.forEach(function (sec) {
@@ -189,7 +191,8 @@
             if (collapsedMap[sec.id]) { h2.classList.add('collapsed'); ul.classList.add('collapsed'); }
             (sec.items || []).forEach(function (it) { ul.appendChild(renderItemLi(it, rendered)); });
             card.appendChild(ul);
-            const target = (colA.offsetHeight <= colB.offsetHeight) ? colA : colB;
+            const idx = (sec.lane >= 1 && sec.lane <= 3) ? sec.lane - 1 : 0;
+            const target = lanes[idx] || lanes[0];
             target.appendChild(card);
         });
     }

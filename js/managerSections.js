@@ -97,11 +97,19 @@
             it.dataset.id = String(s.id);
             it.appendChild(GPH.mgr.dragHandle('Drag to reorder this section'));
             const dot = document.createElement('span'); dot.className = 'section-dot'; dot.style.background = s.color || '#888'; it.appendChild(dot);
+            const lane = document.createElement('span');
+            lane.className = 'lane-badge' + ((s.lane || 1) === 3 ? ' is-rail' : '');
+            lane.textContent = (s.lane || 1) === 3 ? 'R' : 'L' + (s.lane || 1);
+            lane.title = (s.lane || 1) === 3 ? 'Right rail' : ('Left column, lane ' + (s.lane || 1));
+            it.appendChild(lane);
             const nm = document.createElement('span'); nm.className = 'sname'; nm.textContent = s.title; it.appendChild(nm);
+            // Arrows reorder inside the lane only; the column is the select in the editor.
+            const prevSec = sections[index - 1];
+            const nextSec = sections[index + 1];
             const up = mkBtn('↑', 'Move up', null, function (ev) { ev.stopPropagation(); moveSectionById(s.id, -1); });
-            up.disabled = index === 0;
+            up.disabled = !prevSec || (prevSec.lane || 1) !== (s.lane || 1);
             const down = mkBtn('↓', 'Move down', null, function (ev) { ev.stopPropagation(); moveSectionById(s.id, 1); });
-            down.disabled = index === sections.length - 1;
+            down.disabled = !nextSec || (nextSec.lane || 1) !== (s.lane || 1);
             it.appendChild(up); it.appendChild(down);
             it.addEventListener('click', function () { selectSection(s.id); });
             list.appendChild(it);
@@ -125,6 +133,7 @@
         $('sectionEditor').hidden = false;
         $('sTitle').value = current.title || '';
         colorOptions(current.color);
+        $('sLane').value = String(current.lane || 1);
         $('itemCount').textContent = '(' + (current.items ? current.items.length : 0) + ')';
         renderItems();
     }
@@ -134,7 +143,8 @@
     async function newSection() {
         try {
             await savePendingQuiet();
-            const r = await api('POST', '/api/sections', { title: 'New Section', description: '', color: COLORS[0] });
+            const r = await api('POST', '/api/sections', { title: 'New Section', description: '', color: COLORS[0],
+                                                           lane: current ? (current.lane || 1) : 1 });
             notify(); toast('Section created'); await loadSections(r.id);
         } catch (e) { toast('Error: ' + e.message, true); }
     }
@@ -145,7 +155,8 @@
         if (!current) return;
         await api('PUT', '/api/sections/' + current.id, {
             title: $('sTitle').value,
-            color: $('sColor').value
+            color: $('sColor').value,
+            lane: parseInt($('sLane').value, 10) || 1
         });
         const items = current.items || [];
         for (const it of items) {
@@ -203,13 +214,49 @@
         } catch (e) { toast('Error: ' + e.message, true); }
     }
 
-    // Persists a new section order. Used by drag & drop and by the ↑/↓ buttons.
-    async function applySectionOrder(ids) {
+    // Persists a new section order. The lane of every section is kept and only
+    // the section that was actually dragged adopts the lane of its neighbour,
+    // so dragging in this list can also change the column.
+    async function applySectionOrder(ids, movedId) {
+        try { await savePendingQuiet(); } catch (ignore) { /* noop */ }
+        const nums = ids.map(function (id) { return Number(id); });
+        const byId = {};
+        sections.forEach(function (s) { byId[s.id] = s; });
+        const moved = (movedId !== undefined && movedId !== null) ? byId[Number(movedId)] : null;
+        if (moved) {
+            const i = nums.indexOf(Number(movedId));
+            const neighbour = byId[nums[i - 1]] || byId[nums[i + 1]];
+            if (neighbour) moved.lane = neighbour.lane || 1;
+        }
+        const perLane = { 1: [], 2: [], 3: [] };
+        nums.forEach(function (id) {
+            const s = byId[id];
+            if (!s) return;
+            perLane[s.lane || 1].push(id);
+        });
+        const layout = [];
+        [1, 2, 3].forEach(function (lane) {
+            perLane[lane].forEach(function (id, pos) {
+                layout.push({ id: id, lane: lane, position: pos });
+            });
+        });
+        try {
+            await api('POST', '/api/sections/reorder', { layout: layout });
+            notify();
+        } catch (e) { toast('Error: ' + e.message, true); }
+        await loadSections(selectedId);
+    }
+
+    // Spreads the sections over the three lanes by size. It is only a starting
+    // point: they can be dragged again afterwards.
+    async function resetLayout() {
+        if (!sections.length) return;
         try { await savePendingQuiet(); } catch (ignore) { /* noop */ }
         try {
             await api('POST', '/api/sections/reorder',
-                { order: ids.map(function (id) { return Number(id); }) });
+                { layout: GPH.mgr.balanceLanes(sections) });
             notify();
+            toast('Layout reset');
         } catch (e) { toast('Error: ' + e.message, true); }
         await loadSections(selectedId);
     }
@@ -646,6 +693,8 @@
             if (want && ['routines', 'sections', 'history', 'about'].indexOf(want) >= 0) showView(want);
         } catch (e) { /* noop */ }
         $('newSectionBtn').addEventListener('click', newSection);
+        const resetLayoutBtn = $('resetLayoutBtn');
+        if (resetLayoutBtn) resetLayoutBtn.addEventListener('click', resetLayout);
         $('saveSectionBtn').addEventListener('click', saveSection);
         $('delSectionBtn').addEventListener('click', delSection);
         $('newItemKind').addEventListener('change', function () { renderNewItemFields(this.value); });

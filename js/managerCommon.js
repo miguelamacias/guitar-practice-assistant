@@ -31,6 +31,27 @@
 
     function notify() { if (bc) bc.postMessage('changed'); }
 
+    // Spreads sections across the three dashboard lanes: each one goes to the
+    // shortest lane, using +1 header + items as a cheap height proxy. Returns
+    // the layout array the reorder endpoint expects.
+    function balanceLanes(sections) {
+        const lanes = [[], [], []];
+        const totals = [0, 0, 0];
+        (sections || []).forEach(function (s) {
+            let target = 0;
+            for (let i = 1; i < 3; i++) if (totals[i] < totals[target]) target = i;
+            lanes[target].push(s);
+            totals[target] += 1 + ((s.items && s.items.length) || 0);
+        });
+        const layout = [];
+        lanes.forEach(function (list, i) {
+            list.forEach(function (s, pos) {
+                layout.push({ id: s.id, lane: i + 1, position: pos });
+            });
+        });
+        return layout;
+    }
+
     // Grip used as the drag handle of a list row (only the handle is draggable,
     // so the inputs inside the row keep working normally).
     function dragHandle(title) {
@@ -138,7 +159,7 @@
                 return;
             }
             const ids = rows().map(rowId).filter(Boolean);
-            if (cfg.onReorder && ids.length) cfg.onReorder(ids);
+            if (cfg.onReorder && ids.length) cfg.onReorder(ids, rowId(row));
         }
 
         container.addEventListener('drop', function (e) {
@@ -163,6 +184,6 @@
 
     GPH.mgr = {
         $: $, api: api, toast: toast, notify: notify, bc: bc, setDirty: setDirty,
-        dragHandle: dragHandle, makeSortable: makeSortable
+        dragHandle: dragHandle, makeSortable: makeSortable, balanceLanes: balanceLanes
     };
 })(window.GPH = window.GPH || {});

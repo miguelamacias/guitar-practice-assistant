@@ -433,9 +433,11 @@
                     fmtDur(wall) + ')</span>' : '') +
                 (declared ? ' <span class="hist-tag" title="More real time than wall clock: declared without the timer">declared</span>' : '') +
                 '</td>' +
-                '<td class="hist-nowrap hist-plan">' +
+                '<td class="hist-nowrap">' +
+                '<span class="hist-plan">' +
                 '<span class="hist-plan-bar"><i style="width:' + ratio + '%"></i></span>' +
                 '<span><b>' + fmtDur(real) + '</b> <span class="hist-plan-txt">/ ' + fmtDur(planned) + '</span></span>' +
+                '</span>' +
                 '</td>' +
                 '<td class="hist-nowrap">' +
                 '<span class="hist-chip is-done" title="done">' + (s.n_done || 0) + '</span>' +
@@ -474,19 +476,36 @@
             (items || '<li class="hist-empty-row">No exercises recorded.</li>') + '</ul></td></tr>';
     }
 
+    // Toggle the detail row that follows a session row.
+    function toggleDetail(row) {
+        const next = row.nextElementSibling;
+        if (next && next.classList.contains('hist-detail-row')) {
+            next.parentNode.removeChild(next);
+            row.classList.remove('is-open');
+            return;
+        }
+        const id = row.getAttribute('data-id');
+        if (!id) return;
+        api('/api/sessions/' + id).then(function (full) {
+            if (!full || !full.id) return;
+            // The row may have been toggled again while the request was in flight.
+            const already = row.nextElementSibling;
+            if (already && already.classList.contains('hist-detail-row')) return;
+            row.insertAdjacentHTML('afterend', detailRow(full));
+            row.classList.add('is-open');
+        });
+    }
+
+    // One delegated listener on the table body: the whole row is the click target
+    // (the Details button included), while links keep their own behaviour.
     function bindDetails(root) {
-        root.querySelectorAll('.hist-detail-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                const row = btn.closest('tr');
-                const next = row.nextElementSibling;
-                if (next && next.classList.contains('hist-detail-row')) {
-                    next.parentNode.removeChild(next);
-                    return;
-                }
-                api('/api/sessions/' + btn.getAttribute('data-id')).then(function (full) {
-                    if (!full || !full.id) return;
-                    row.insertAdjacentHTML('afterend', detailRow(full));
-                });
+        root.querySelectorAll('.hist-table tbody').forEach(function (tbody) {
+            tbody.addEventListener('click', function (e) {
+                const target = e.target;
+                if (!target || !target.closest) return;
+                if (target.closest('a, .hist-no-toggle')) return;
+                const row = target.closest('tr.hist-row');
+                if (row) toggleDetail(row);
             });
         });
     }
