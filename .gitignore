@@ -24,6 +24,9 @@ _tmp_*
 *~
 *.swp
 
+# Layout mockups used to pick the dashboard design (scratch, not shipped)
+docs/layout-mockups/
+
 # OS / editor / Google Drive artefacts
 .DS_Store
 Thumbs.db
