@@ -112,22 +112,25 @@
     function refreshFromDb() {
         if (refreshing || !(GPH.api && GPH.api.loadState)) return;
         refreshing = true;
+        // The sections and the assistant state are independent payloads: ask for
+        // both now instead of waiting for one to finish before the other starts.
+        const sectionsReady = (GPH.api && GPH.api.getSections)
+            ? GPH.api.getSections().catch(function () { return null; })
+            : Promise.resolve(null);
         GPH.api.loadState().then(async function () {
             if (GPH.settings) GPH.settings.loadAccent();
             loadFretboardFixed();
             loadAssistantPref();
-            if (GPH.api && GPH.api.getSections) {
-                try {
-                    const secs = await GPH.api.getSections();
-                    const js = safeJson(secs || []);
-                    if (js !== lastSectionsJson) {
-                        lastSectionsJson = js;
-                        document.querySelectorAll('.dyn-section').forEach(function (e) { e.remove(); });
-                        GPH.sections.renderDynamicSections(secs || []);
-                        wireMetronome();
-                        wireDrumMachine();
-                    }
-                } catch (e) { /* noop */ }
+            const secs = await sectionsReady;
+            if (secs) {
+                const js = safeJson(secs || []);
+                if (js !== lastSectionsJson) {
+                    lastSectionsJson = js;
+                    document.querySelectorAll('.dyn-section').forEach(function (e) { e.remove(); });
+                    GPH.sections.renderDynamicSections(secs || []);
+                    wireMetronome();
+                    wireDrumMachine();
+                }
             }
             if (GPH.practiceAssistant && GPH.practiceAssistant.refresh) {
                 GPH.practiceAssistant.refresh();
@@ -236,16 +239,23 @@
         // Wired before any await: the Manager overlay (and the History shortcut)
         // must work from the first frame, not only once the data has loaded.
         wireManagerOverlay();
-        try { if (GPH.api && GPH.api.loadState) await GPH.api.loadState(); } catch (e) { /* noop */ }
+        // The accent, the assistant state and the sections are independent, so
+        // the three go out together: the colour lands first (it is the one that
+        // shows) and the sections no longer wait for the routine payload.
         if (GPH.settings) GPH.settings.loadAccent();
+        const stateReady = (GPH.api && GPH.api.loadState)
+            ? GPH.api.loadState().catch(function () { /* noop */ })
+            : Promise.resolve();
+        const sectionsReady = (GPH.api && GPH.api.getSections)
+            ? GPH.api.getSections().catch(function () { return null; })
+            : Promise.resolve(null);
+        await stateReady;
         wireToggles();
         wireGlobalClicks();
-        if (GPH.api && GPH.api.getSections) {
-            try {
-                const secs = await GPH.api.getSections();
-                lastSectionsJson = safeJson(secs || []);
-                if (secs && secs.length) { GPH.sections.renderDynamicSections(secs); }
-            } catch (e) { /* noop */ }
+        const secs = await sectionsReady;
+        if (secs) {
+            lastSectionsJson = safeJson(secs || []);
+            if (secs.length) { GPH.sections.renderDynamicSections(secs); }
         }
         if (GPH.sections) GPH.sections.applyCollapsedStates();
         loadFretboardFixed();

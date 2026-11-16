@@ -10,7 +10,10 @@
             --row-hover: #363636;
 			--accent-red: #f44336;
             --accent-green: #4caf50;
-            --accent: #e91e63;
+            /* Shipped accent (matches settings.DEFAULTS.accent_color): the page
+               paints this one until the stored value lands, so it must be the
+               real default and not a placeholder colour. */
+            --accent: #ff8040;
             --accent-pink: var(--accent);
             color-scheme: dark;
         }

@@ -59,8 +59,15 @@
         return v === '1' || v === 'true' || v === 1 || v === true;
     }
 
+    // The accent can be customised, so it is remembered here: the tiny script in
+    // the <head> of index.html and manager.html reads this key and paints the
+    // colour before the first frame (the CSS default is only the shipped one).
+    const ACCENT_KEY = 'gphAccent';
+
     function applyAccent(color) {
-        if (color) document.documentElement.style.setProperty('--accent', color);
+        if (!color) return;
+        document.documentElement.style.setProperty('--accent', color);
+        try { localStorage.setItem(ACCENT_KEY, String(color)); } catch (e) { /* private mode */ }
     }
     // Applies the stored accent (if any) and returns it.
     function loadAccent() {

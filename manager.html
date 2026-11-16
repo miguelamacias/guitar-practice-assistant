@@ -4,7 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=69">
+    <!-- Same accent trick as the app: paint the stored colour before the
+         stylesheet so the Manager does not flash the shipped one either. -->
+    <script>
+        try {
+            var cachedAccent = localStorage.getItem('gphAccent');
+            if (cachedAccent) {
+                document.documentElement.style.setProperty('--accent', cachedAccent);
+            }
+        } catch (e) { /* private mode: the CSS default is the shipped one */ }
+    </script>
+    <link rel="stylesheet" href="css/manager.css?v=70">
 </head>
 <body>
 <div class="mgr">
@@ -510,7 +520,7 @@
 
 <div id="toast" class="toast"></div>
 <script src="js/debug.js?v=2"></script>
-<script src="js/settings.js?v=2"></script>
+<script src="js/settings.js?v=3"></script>
 <script src="js/managerLastfm.js?v=2"></script>
 <script src="js/icons.js?v=12"></script>
 <script src="js/theory.js?v=20"></script>
