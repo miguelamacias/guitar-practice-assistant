@@ -28,6 +28,19 @@ DB_PATH = os.path.join(HERE, 'practice.db')
 SEED_PATH = os.path.join(HERE, 'seed.json')
 DEFAULT_PORT = 8001
 
+# Controlled vocabulary for slot areas (settings key AREAS_KEY). The defaults are
+# never written to the DB until the user edits areas in the Manager.
+AREAS_KEY = 'practice_areas'
+DEFAULT_AREAS = [
+    {'id': 'knowledge', 'label': 'Knowledge', 'position': 0},
+    {'id': 'technique', 'label': 'Technique', 'position': 1},
+    {'id': 'repertoire', 'label': 'Repertoire', 'position': 2},
+    {'id': 'rhythm', 'label': 'Rhythm', 'position': 3},
+    {'id': 'improvisation', 'label': 'Improvisation', 'position': 4},
+    {'id': 'ear_training', 'label': 'Ear Training', 'position': 5},
+]
+AREA_ID_RE = re.compile(r'^[a-z0-9_]+$')
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS routines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +55,13 @@ CREATE TABLE IF NOT EXISTS routines (
     finish_label TEXT DEFAULT '',
     finish_bpm INTEGER DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS catalog_exercises (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS exercises (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
@@ -53,7 +73,9 @@ CREATE TABLE IF NOT EXISTS exercises (
     resource_url TEXT DEFAULT '',
     resource_bpm INTEGER DEFAULT 0,
     resource_label TEXT DEFAULT '',
-    resources_json TEXT DEFAULT ''
+    resources_json TEXT DEFAULT '',
+    area_id TEXT NOT NULL DEFAULT '',
+    catalog_exercise_id INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS sections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,11 +187,16 @@ CREATE TABLE IF NOT EXISTS routine_session_items (
     elapsed_seconds INTEGER NOT NULL DEFAULT 0,       -- clock (Play -> leave, pauses out)
     started_at      TEXT,                             -- when Play was pressed
     finished_at     TEXT,
+    area_id         TEXT NOT NULL DEFAULT '',         -- snapshot of the slot area
+    catalog_exercise_id INTEGER
+                    REFERENCES catalog_exercises(id) ON DELETE SET NULL,
+    catalog_name    TEXT NOT NULL DEFAULT '',         -- snapshot of the exercise name
     UNIQUE(session_id, position)
 );
 CREATE INDEX IF NOT EXISTS idx_routine_sessions_started ON routine_sessions(started_at);
 CREATE INDEX IF NOT EXISTS idx_session_items_session ON routine_session_items(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_items_name ON routine_session_items(name);
+CREATE INDEX IF NOT EXISTS idx_catalog_exercises_name ON catalog_exercises(name);
 """
 
 
@@ -245,16 +272,20 @@ def export_csv(conn, what='sessions'):
     out = csv.writer(buf, delimiter=';', lineterminator='\n')
     if what == 'items':
         out.writerow(['session_id', 'started_at', 'routine', 'position', 'exercise', 'state',
-                      'planned_seconds', 'played_seconds'])
+                      'planned_seconds', 'played_seconds', 'area_id', 'catalog_exercise_id',
+                      'catalog_name'])
         rows = conn.execute(
             'SELECT i.session_id, s.started_at, s.routine_name, i.position, i.name, i.state,'
-            ' i.planned_seconds, i.played_seconds'
+            ' i.planned_seconds, i.played_seconds, i.area_id, i.catalog_exercise_id,'
+            ' i.catalog_name'
             ' FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
             ' ORDER BY s.started_at, i.position').fetchall()
         for r in rows:
             out.writerow([r['session_id'], _csv_local(r['started_at']), r['routine_name'],
                           r['position'], r['name'], r['state'],
-                          r['planned_seconds'], r['played_seconds']])
+                          r['planned_seconds'], r['played_seconds'],
+                          r['area_id'] or '', r['catalog_exercise_id'],
+                          r['catalog_name'] or ''])
     else:
         out.writerow(['id', 'routine', 'status', 'started_at', 'finished_at', 'planned_seconds',
                       'practiced_seconds', 'n_total', 'n_timed', 'n_untimed', 'n_skipped'])
@@ -346,6 +377,28 @@ def _migrate(conn):
                                   ('wall_seconds', 'INTEGER NOT NULL DEFAULT 0'),
                                   ('n_done', 'INTEGER NOT NULL DEFAULT 0'),
                                   ('n_partial', 'INTEGER NOT NULL DEFAULT 0')])
+    # Slots get an area and a pointer into the global exercise catalog; session
+    # items keep a snapshot of both so the history survives renames/deletions.
+    # Both columns are nullable-with-NULL-default, the only shape SQLite accepts
+    # for ADD COLUMN ... REFERENCES.
+    add_cols('exercises', [('area_id', "TEXT NOT NULL DEFAULT ''"),
+                           ('catalog_exercise_id',
+                            'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL')])
+    add_cols('routine_session_items', [
+        ('area_id', "TEXT NOT NULL DEFAULT ''"),
+        ('catalog_exercise_id',
+         'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL'),
+        ('catalog_name', "TEXT NOT NULL DEFAULT ''"),
+    ])
+    for stmt in ('CREATE INDEX IF NOT EXISTS idx_exercises_area ON exercises(area_id)',
+                 'CREATE INDEX IF NOT EXISTS idx_session_items_area'
+                 ' ON routine_session_items(area_id)',
+                 'CREATE INDEX IF NOT EXISTS idx_session_items_catalog'
+                 ' ON routine_session_items(catalog_exercise_id)'):
+        try:
+            conn.execute(stmt)
+        except sqlite3.Error:
+            pass
     rcols = [r[1] for r in conn.execute('PRAGMA table_info(routines)').fetchall()]
     for rname, rddl in [('finish_kind', "TEXT DEFAULT ''"), ('finish_url', "TEXT DEFAULT ''"),
                         ('finish_label', "TEXT DEFAULT ''"), ('finish_bpm', 'INTEGER DEFAULT 0')]:
@@ -502,16 +555,26 @@ def _with_labels(resources, labels):
     return out
 
 
-def _exercise_payload(e, labels):
-    """Exercise dict for the app: `recursos` plus the legacy single-resource keys."""
+def _exercise_payload(e, labels, catalog=None, areas_map=None):
+    """Exercise dict for the app: `recursos` plus the legacy single-resource keys.
+
+    `catalog` is a {id: {id, name, description}} map and `areas_map` an
+    {area_id: label} map, both resolved once per call by the caller.
+    """
     res = _with_labels(_exercise_resources(e), labels)
     first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
+    cid = e['catalog_exercise_id'] if 'catalog_exercise_id' in e.keys() else None
+    aid = (e['area_id'] if 'area_id' in e.keys() else '') or ''
     return {
         'id': e['id'], 'nombre': e['name'], 'descripcion': e['description'],
         'tiempo': e['duration_seconds'],
         'recursos': res,
         'recurso_kind': first['kind'], 'recurso_url': first['url'],
         'recurso_bpm': first['bpm'], 'recurso_label': first['label'],
+        'area_id': aid,
+        'area': (areas_map or {}).get(aid, ''),
+        'catalog_exercise_id': cid,
+        'catalog_exercise': (catalog or {}).get(cid) if cid is not None else None,
     }
 
 
@@ -532,10 +595,12 @@ def api_state(conn):
         labels = _resource_labels(conn)
         exs = conn.execute(
             'SELECT id, name, description, duration_seconds, resource_kind, resource_url, '
-            'resource_bpm, resource_label, resources_json FROM exercises '
-            'WHERE routine_id=? ORDER BY position, id',
+            'resource_bpm, resource_label, resources_json, area_id, catalog_exercise_id '
+            'FROM exercises WHERE routine_id=? ORDER BY position, id',
             (rid,),
         ).fetchall()
+        catalog = _catalog_map(conn, [e['catalog_exercise_id'] for e in exs])
+        areas_map = area_map(conn)
         active = {
             'id': rid,
             'nombre': name,
@@ -544,7 +609,7 @@ def api_state(conn):
             'finish_url': row['finish_url'] or '',
             'finish_label': _label_for(labels, row['finish_url'], row['finish_label']),
             'finish_bpm': row['finish_bpm'] or 0,
-            'ejercicios': [_exercise_payload(e, labels) for e in exs],
+            'ejercicios': [_exercise_payload(e, labels, catalog, areas_map) for e in exs],
         }
 
     sources = {}
@@ -588,20 +653,26 @@ def _routine_full(conn, rid):
     labels = _resource_labels(conn)
     exs = conn.execute(
         'SELECT id, name, description, duration_seconds, position, '
-        'resource_kind, resource_url, resource_bpm, resource_label, resources_json FROM exercises '
+        'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
+        'area_id, catalog_exercise_id FROM exercises '
         'WHERE routine_id=? ORDER BY position, id',
         (rid,),
     ).fetchall()
+    catalog = _catalog_map(conn, [e['catalog_exercise_id'] for e in exs])
     out_exs = []
     for e in exs:
         res = _with_labels(_exercise_resources(e), labels)
         first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
+        cid = e['catalog_exercise_id']
         out_exs.append({
             'id': e['id'], 'name': e['name'], 'description': e['description'],
             'duration_seconds': e['duration_seconds'], 'position': e['position'],
             'resources': res,
             'resource_kind': first['kind'], 'resource_url': first['url'],
             'resource_bpm': first['bpm'], 'resource_label': first['label'],
+            'area_id': e['area_id'] or '',
+            'catalog_exercise_id': cid,
+            'catalog_exercise': catalog.get(cid) if cid is not None else None,
         })
     return {
         'id': r['id'], 'name': r['name'], 'description': r['description'],
@@ -763,6 +834,9 @@ def _mirror_first(conn, eid, resources):
 def create_exercise(conn, rid, data):
     if conn.execute('SELECT id FROM routines WHERE id=?', (rid,)).fetchone() is None:
         return None
+    meta, err = _slot_meta(conn, data)
+    if err:
+        return {'error': err}
     name = (data.get('name') or 'New Exercise').strip()
     desc = data.get('description') or ''
     dur = int(data.get('duration_seconds') or 0)
@@ -780,11 +854,12 @@ def create_exercise(conn, rid, data):
     first = resources[0] if resources else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     conn.execute(
         'INSERT INTO exercises(routine_id, name, description, duration_seconds, position, '
-        'resource_kind, resource_url, resource_bpm, resource_label, resources_json) '
-        'VALUES(?,?,?,?,?,?,?,?,?,?)',
+        'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
+        'area_id, catalog_exercise_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
         (rid, name, desc, dur, pos,
          first['kind'], first['url'], first['bpm'], first['label'],
-         json.dumps(resources, ensure_ascii=False)),
+         json.dumps(resources, ensure_ascii=False),
+         meta.get('area_id', ''), meta.get('catalog_exercise_id')),
     )
     conn.commit()
     return _routine_full(conn, rid)
@@ -793,6 +868,14 @@ def create_exercise(conn, rid, data):
 def update_exercise(conn, eid, data):
     if conn.execute('SELECT id FROM exercises WHERE id=?', (eid,)).fetchone() is None:
         return None
+    meta, err = _slot_meta(conn, data)
+    if err:
+        return {'error': err}
+    if 'area_id' in meta:
+        conn.execute('UPDATE exercises SET area_id=? WHERE id=?', (meta['area_id'], eid))
+    if 'catalog_exercise_id' in meta:
+        conn.execute('UPDATE exercises SET catalog_exercise_id=? WHERE id=?',
+                     (meta['catalog_exercise_id'], eid))
     if data.get('name') is not None:
         conn.execute('UPDATE exercises SET name=? WHERE id=?', (data['name'], eid))
     if data.get('description') is not None:
@@ -1088,6 +1171,241 @@ def refresh_item_folder(conn, iid):
     return {'songs': new}
 
 
+# ------------------------- Areas + exercise catalog -------------------------
+
+def clean_areas(value):
+    """settings value -> (areas, error). Missing or empty means the defaults."""
+    if value is None or value == '':
+        return [dict(a) for a in DEFAULT_AREAS], None
+    try:
+        data = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return None, 'invalid_json'
+    if not isinstance(data, list):
+        return None, 'invalid_json'
+    out, seen = [], set()
+    for idx, item in enumerate(data):
+        if not isinstance(item, dict):
+            return None, 'invalid_json'
+        aid = str(item.get('id') or '').strip()
+        label = str(item.get('label') or '').strip()
+        if not AREA_ID_RE.match(aid) or aid in seen:
+            return None, 'invalid_area_id'
+        if not label:
+            return None, 'invalid_label'
+        try:
+            pos = int(item.get('position', idx))
+        except (TypeError, ValueError):
+            return None, 'invalid_position'
+        seen.add(aid)
+        out.append({'id': aid, 'label': label[:80], 'position': pos})
+    out.sort(key=lambda a: (a['position'], a['id']))
+    return out, None
+
+
+def areas(conn):
+    """Area list in display order (DEFAULT_AREAS when nothing is stored)."""
+    got, _err = clean_areas(get_setting(conn, AREAS_KEY))
+    return got if got is not None else [dict(a) for a in DEFAULT_AREAS]
+
+
+def area_map(conn):
+    """{area_id: label} for labels shown in the app."""
+    return {a['id']: a['label'] for a in areas(conn)}
+
+
+def areas_in_use(conn):
+    """{area_id: [{exercise_id, routine_id, name}]} for slots with an area."""
+    out = {}
+    for r in conn.execute(
+        "SELECT id, routine_id, name, area_id FROM exercises WHERE area_id <> ''"
+    ).fetchall():
+        out.setdefault(r['area_id'], []).append({
+            'exercise_id': r['id'], 'routine_id': r['routine_id'],
+            'name': r['name'] or '',
+        })
+    return out
+
+
+def _catalog_dict(row):
+    return {'id': row['id'], 'name': row['name'] or '',
+            'description': row['description'] or '',
+            'created_at': row['created_at'], 'updated_at': row['updated_at']}
+
+
+def _catalog_map(conn, ids):
+    """{id: {id, name, description}} for the given ids (None entries dropped)."""
+    clean = sorted({int(i) for i in ids if i is not None})
+    if not clean:
+        return {}
+    marks = ','.join('?' * len(clean))
+    rows = conn.execute(
+        'SELECT id, name, description FROM catalog_exercises WHERE id IN (' + marks + ')',
+        clean).fetchall()
+    return {r['id']: {'id': r['id'], 'name': r['name'] or '',
+                      'description': r['description'] or ''} for r in rows}
+
+
+def get_catalog_exercise(conn, cid):
+    row = conn.execute(
+        'SELECT id, name, description, created_at, updated_at'
+        ' FROM catalog_exercises WHERE id=?', (cid,)).fetchone()
+    return _catalog_dict(row) if row else None
+
+
+def catalog_exists(conn, cid):
+    return conn.execute('SELECT 1 FROM catalog_exercises WHERE id=?',
+                        (cid,)).fetchone() is not None
+
+
+def list_catalog(conn, q=''):
+    """Catalog plus derived metrics, aggregated in SQL (no per-row queries)."""
+    query = (q or '').strip()
+    like = '%' + query + '%'
+    rows = conn.execute(
+        'SELECT c.id, c.name, c.description, c.created_at, c.updated_at,'
+        ' (SELECT COUNT(*) FROM routine_session_items i'
+        '   WHERE i.catalog_exercise_id = c.id AND i.elapsed_seconds > 0) AS practices,'
+        ' (SELECT COALESCE(SUM(i.elapsed_seconds), 0) FROM routine_session_items i'
+        '   WHERE i.catalog_exercise_id = c.id) AS seconds,'
+        " (SELECT MAX(date(s.started_at, 'localtime'))"
+        '   FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
+        '   WHERE i.catalog_exercise_id = c.id) AS last_practiced_on'
+        ' FROM catalog_exercises c'
+        " WHERE (? = '' OR c.name LIKE ?)"
+        ' ORDER BY c.name COLLATE NOCASE, c.id', (query, like)).fetchall()
+    slots = {}
+    for r in conn.execute(
+        'SELECT DISTINCT i.catalog_exercise_id AS cid,'
+        ' COALESCE(e.name, i.name) AS slot_name'
+        ' FROM routine_session_items i LEFT JOIN exercises e ON e.id = i.exercise_id'
+        ' WHERE i.catalog_exercise_id IS NOT NULL ORDER BY slot_name').fetchall():
+        slots.setdefault(r['cid'], []).append(r['slot_name'] or '')
+    used = {}
+    for r in conn.execute(
+        'SELECT DISTINCT catalog_exercise_id AS cid, area_id'
+        ' FROM routine_session_items'
+        " WHERE catalog_exercise_id IS NOT NULL AND area_id <> ''"
+        ' ORDER BY area_id').fetchall():
+        used.setdefault(r['cid'], []).append(r['area_id'])
+    out = []
+    for r in rows:
+        item = _catalog_dict(r)
+        item.update({
+            'practices': r['practices'] or 0,
+            'seconds': r['seconds'] or 0,
+            'last_practiced_on': r['last_practiced_on'] or '',
+            'slots': slots.get(r['id'], []),
+            'areas': used.get(r['id'], []),
+        })
+        out.append(item)
+    return out
+
+
+def catalog_detail(conn, cid):
+    """One catalog exercise with the slots using it and its latest practices."""
+    item = get_catalog_exercise(conn, cid)
+    if item is None:
+        return None
+    used = [{'exercise_id': r['id'], 'routine_id': r['routine_id'],
+             'routine_name': r['routine_name'] or '', 'name': r['name'] or ''}
+            for r in conn.execute(
+                'SELECT e.id, e.routine_id, r.name AS routine_name, e.name'
+                ' FROM exercises e JOIN routines r ON r.id = e.routine_id'
+                ' WHERE e.catalog_exercise_id=? ORDER BY r.position, e.position, e.id',
+                (cid,)).fetchall()]
+    recent = [{'session_id': r['session_id'], 'started_at': _db_to_iso(r['started_at']),
+               'exercise_id': r['exercise_id'], 'name': r['name'] or '',
+               'area_id': r['area_id'] or '', 'seconds': r['elapsed_seconds'] or 0}
+              for r in conn.execute(
+                  'SELECT i.session_id, s.started_at, i.exercise_id, i.name, i.area_id,'
+                  ' i.elapsed_seconds'
+                  ' FROM routine_session_items i'
+                  ' JOIN routine_sessions s ON s.id = i.session_id'
+                  ' WHERE i.catalog_exercise_id=? AND i.elapsed_seconds > 0'
+                  ' ORDER BY s.started_at DESC LIMIT 10', (cid,)).fetchall()]
+    area_ids = []
+    for r in recent:
+        if r['area_id'] and r['area_id'] not in area_ids:
+            area_ids.append(r['area_id'])
+    item['used_in'] = used
+    item['areas'] = area_ids
+    item['recent'] = recent
+    return item
+
+
+def _catalog_fields(data):
+    """Validated name/description of a catalog exercise -> (fields, error)."""
+    name = str(data.get('name') or '').strip()
+    if not name or len(name) > 200:
+        return None, 'invalid_name'
+    desc = str(data.get('description') or '').strip()
+    if len(desc) > 2000:
+        return None, 'invalid_description'
+    return {'name': name, 'description': desc}, None
+
+
+def create_catalog_exercise(conn, data):
+    fields, err = _catalog_fields(data)
+    if err:
+        return {'error': err}
+    cur = conn.execute('INSERT INTO catalog_exercises(name, description) VALUES(?, ?)',
+                       (fields['name'], fields['description']))
+    conn.commit()
+    return get_catalog_exercise(conn, cur.lastrowid)
+
+
+def update_catalog_exercise(conn, cid, data):
+    if not catalog_exists(conn, cid):
+        return None
+    fields, err = _catalog_fields(data)
+    if err:
+        return {'error': err}
+    conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
+                 " updated_at=datetime('now') WHERE id=?",
+                 (fields['name'], fields['description'], cid))
+    conn.commit()
+    return get_catalog_exercise(conn, cid)
+
+
+def delete_catalog_exercise(conn, cid):
+    if not catalog_exists(conn, cid):
+        return None
+    slots = conn.execute('SELECT COUNT(*) n FROM exercises WHERE catalog_exercise_id=?',
+                         (cid,)).fetchone()['n']
+    # ON DELETE SET NULL clears the slot pointers; item snapshots keep their
+    # catalog_name, so the history stays readable.
+    conn.execute('DELETE FROM catalog_exercises WHERE id=?', (cid,))
+    conn.commit()
+    return {'deleted': cid, 'slots_cleared': slots}
+
+
+def _slot_meta(conn, data):
+    """Validates the area / catalog pointer of a slot payload.
+
+    Returns ({only the keys present in `data`}, error).
+    """
+    out = {}
+    if 'area_id' in data:
+        aid = str(data.get('area_id') or '').strip()
+        if aid and aid not in area_map(conn):
+            return None, 'unknown_area'
+        out['area_id'] = aid
+    if 'catalog_exercise_id' in data:
+        raw = data.get('catalog_exercise_id')
+        if raw in (None, '', 0, '0'):
+            out['catalog_exercise_id'] = None
+        else:
+            try:
+                cid = int(raw)
+            except (TypeError, ValueError):
+                return None, 'unknown_exercise'
+            if not catalog_exists(conn, cid):
+                return None, 'unknown_exercise'
+            out['catalog_exercise_id'] = cid
+    return out, None
+
+
 # ------------------------- Settings (clave/valor) -------------------------
 
 def get_setting(conn, key):
@@ -1304,7 +1622,8 @@ def _session_row(row):
 def _session_items(conn, sid):
     rows = conn.execute(
         'SELECT position, exercise_id, name, state, planned_seconds, played_seconds,'
-        ' elapsed_seconds, started_at, finished_at'
+        ' elapsed_seconds, started_at, finished_at, area_id, catalog_exercise_id,'
+        ' catalog_name'
         ' FROM routine_session_items WHERE session_id=? ORDER BY position', (sid,)).fetchall()
     return [{
         'position': r['position'],
@@ -1316,6 +1635,10 @@ def _session_items(conn, sid):
         'elapsed_seconds': r['elapsed_seconds'] if 'elapsed_seconds' in r.keys() else 0,
         'started_at': _db_to_iso(r['started_at']),
         'finished_at': _db_to_iso(r['finished_at']),
+        'area_id': (r['area_id'] if 'area_id' in r.keys() else '') or '',
+        'catalog_exercise_id': r['catalog_exercise_id']
+                              if 'catalog_exercise_id' in r.keys() else None,
+        'catalog_name': (r['catalog_name'] if 'catalog_name' in r.keys() else '') or '',
     } for r in rows]
 
 
@@ -1332,17 +1655,49 @@ def _session_full(conn, sid):
 
 
 def _apply_item(conn, sid, item):
-    """Writes one item state; False when the position does not exist."""
+    """Writes one item state; False when the position does not exist.
+
+    The area/exercise snapshot is captured from the slot on the first "touched"
+    write (Play, mark done, any time), kept afterwards, and dropped when the
+    client resets the item to zero. See docs/SLOTS_AND_EXERCISES_PLAN.md 6.1.
+    """
     state = item.get('state') or 'pending'
     if state not in SESSION_STATES:
         return False
+    position = int(item.get('position') or 0)
+    played = max(0, int(item.get('played_seconds') or 0))
+    elapsed = max(0, int(item.get('elapsed_seconds') or 0))
+    started = _iso_to_db(item.get('started_at'))
+    row = conn.execute(
+        'SELECT exercise_id, area_id, catalog_exercise_id, catalog_name'
+        ' FROM routine_session_items WHERE session_id=? AND position=?',
+        (sid, position)).fetchone()
+    if row is None:
+        return False
+    area_id = row['area_id'] or ''
+    cid = row['catalog_exercise_id']
+    cname = row['catalog_name'] or ''
+    touched = started is not None or state != 'pending' or played > 0 or elapsed > 0
+    if not touched:
+        # Reset: the attempt is discarded, so is its snapshot.
+        area_id, cid, cname = '', None, ''
+    elif not area_id and cid is None and not cname and row['exercise_id']:
+        slot = conn.execute(
+            'SELECT area_id, catalog_exercise_id FROM exercises WHERE id=?',
+            (row['exercise_id'],)).fetchone()
+        if slot is not None:
+            area_id = slot['area_id'] or ''
+            cid = slot['catalog_exercise_id']
+            if cid is not None:
+                cat = conn.execute('SELECT name FROM catalog_exercises WHERE id=?',
+                                   (cid,)).fetchone()
+                cname = (cat['name'] if cat else '') or ''
     cur = conn.execute(
         'UPDATE routine_session_items SET state=?, played_seconds=?, elapsed_seconds=?,'
-        ' started_at=?, finished_at=? WHERE session_id=? AND position=?',
-        (state, max(0, int(item.get('played_seconds') or 0)),
-         max(0, int(item.get('elapsed_seconds') or 0)),
-         _iso_to_db(item.get('started_at')),
-         _iso_to_db(item.get('finished_at')), sid, int(item.get('position') or 0)))
+        ' started_at=?, finished_at=?, area_id=?, catalog_exercise_id=?, catalog_name=?'
+        ' WHERE session_id=? AND position=?',
+        (state, played, elapsed, started, _iso_to_db(item.get('finished_at')),
+         area_id, cid, cname, sid, position))
     return cur.rowcount > 0
 
 
@@ -1494,8 +1849,12 @@ def list_sessions(conn, date_from=None, date_to=None, limit=50, offset=0):
     return {'sessions': [_session_row(r) for r in rows], 'total': total,
             'limit': limit, 'offset': offset}
 
-def session_stats(conn, days=30):
-    """Aggregates for the History panel (one request, computed in SQL)."""
+def session_stats(conn, days=30, area_id=None, routine_id=None):
+    """Aggregates for the History panel (one request, computed in SQL).
+
+    `area_id` and `routine_id` only filter the derived pivot blocks (by_area,
+    by_exercise, by_slot); the KPIs keep describing the whole window.
+    """
     sweep_open_sessions(conn)
     days = max(1, min(365, int(days)))
     since = (datetime.now(timezone.utc).replace(tzinfo=None)
@@ -1551,6 +1910,71 @@ def session_stats(conn, days=30):
         " WHERE r.started_at >= ? AND i.name <> '' GROUP BY i.name"
         " ORDER BY sec DESC LIMIT 5", (since,)).fetchall()]
     finished = t['fin']
+    # ---- Derived pivot: same window, split by area / exercise / slot --------
+    # Only items with real clock time count, so a skipped slot adds neither
+    # seconds nor a session to its area.
+    filters, fargs = [], []
+    if area_id is not None and str(area_id) != '':
+        filters.append('AND i.area_id = ?')
+        fargs.append(str(area_id))
+    if routine_id:
+        filters.append('AND s.routine_id = ?')
+        fargs.append(int(routine_id))
+    extra = ' '.join(filters)
+    area_rows = conn.execute(
+        'SELECT i.area_id AS area_id, COALESCE(SUM(i.elapsed_seconds), 0) AS seconds,'
+        ' COUNT(DISTINCT i.session_id) AS sessions'
+        ' FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
+        ' WHERE s.started_at >= ? AND i.elapsed_seconds > 0 ' + extra +
+        ' GROUP BY i.area_id ORDER BY seconds DESC', [since] + fargs).fetchall()
+    total_area = sum(r['seconds'] or 0 for r in area_rows)
+    by_area, unassigned = [], None
+    for r in area_rows:
+        item = {'area_id': r['area_id'] or '',
+                'seconds': r['seconds'] or 0,
+                'sessions': r['sessions'] or 0,
+                'share': round((r['seconds'] or 0) / total_area, 3) if total_area else 0}
+        if item['area_id']:
+            by_area.append(item)
+        else:
+            unassigned = item
+    seen = {a['area_id'] for a in by_area}
+    for a in areas(conn):
+        if a['id'] not in seen:
+            by_area.append({'area_id': a['id'], 'seconds': 0, 'sessions': 0, 'share': 0})
+    if unassigned:
+        by_area.append(unassigned)          # "Unassigned" always sorts last
+    by_exercise = [{'catalog_exercise_id': r['cid'], 'name': r['name'] or '',
+                    'seconds': r['seconds'] or 0, 'sessions': r['sessions'] or 0,
+                    'last_practiced_on': r['last_on'] or ''}
+                   for r in conn.execute(
+                       'SELECT i.catalog_exercise_id AS cid,'
+                       " COALESCE(c.name, MAX(i.catalog_name), '') AS name,"
+                       ' COALESCE(SUM(i.elapsed_seconds), 0) AS seconds,'
+                       ' COUNT(DISTINCT i.session_id) AS sessions,'
+                       " MAX(date(s.started_at, 'localtime')) AS last_on"
+                       ' FROM routine_session_items i'
+                       ' JOIN routine_sessions s ON s.id = i.session_id'
+                       ' LEFT JOIN catalog_exercises c ON c.id = i.catalog_exercise_id'
+                       ' WHERE s.started_at >= ? AND i.catalog_exercise_id IS NOT NULL'
+                       ' AND i.elapsed_seconds > 0 ' + extra +
+                       ' GROUP BY i.catalog_exercise_id ORDER BY seconds DESC',
+                       [since] + fargs).fetchall()]
+    by_slot = [{'exercise_id': r['exercise_id'], 'name': r['name'] or '',
+                'area_id': r['area_id'] or '', 'seconds': r['seconds'] or 0,
+                'sessions': r['sessions'] or 0}
+               for r in conn.execute(
+                   'SELECT i.exercise_id AS exercise_id,'
+                   ' COALESCE(MAX(e.name), MAX(i.name)) AS name,'
+                   " COALESCE(MAX(e.area_id), '') AS area_id,"
+                   ' COALESCE(SUM(i.elapsed_seconds), 0) AS seconds,'
+                   ' COUNT(DISTINCT i.session_id) AS sessions'
+                   ' FROM routine_session_items i'
+                   ' JOIN routine_sessions s ON s.id = i.session_id'
+                   ' LEFT JOIN exercises e ON e.id = i.exercise_id'
+                   ' WHERE s.started_at >= ? AND i.elapsed_seconds > 0 ' + extra +
+                   ' GROUP BY i.exercise_id ORDER BY seconds DESC',
+                   [since] + fargs).fetchall()]
     return {
         'range_days': days,
         'totals': {
@@ -1570,7 +1994,58 @@ def session_stats(conn, days=30):
         'heatmap': heatmap,
         'top_skipped': top_skipped,
         'top_time': top_time,
+        'by_area': by_area,
+        'by_exercise': by_exercise,
+        'by_slot': by_slot,
     }
+
+
+# Sandbox seed material: a small catalog plus a name-prefix guess for areas, so
+# the new views have something to show. Never used against the real database.
+CATALOG_SEED = [
+    ('Major scale, 3 notes per string', 'Seven positions, two octaves, alternate picking'),
+    ('Minor pentatonic boxes', 'Five shapes, then connect them across the neck'),
+    ('Spider exercise', '1-2-3-4 permutation up and down every string'),
+    ('Chord transitions', 'Switch between two shapes on the click, no gaps'),
+    ('Functional harmony', 'ii-V-I in all keys, arpeggios over each chord'),
+    ('16th note groove', 'Single chord, accent on the backbeat'),
+    ('Blues scale phrasing', 'Call and response over a twelve bar loop'),
+    ('Interval recognition', 'Sing back the interval before naming it'),
+]
+AREA_BY_PREFIX = [
+    ('theory', 'knowledge'), ('knowledge', 'knowledge'), ('functional', 'knowledge'),
+    ('technique', 'technique'), ('spider', 'technique'), ('warm', 'technique'),
+    ('repertoire', 'repertoire'), ('rhythm', 'rhythm'), ('groove', 'rhythm'),
+    ('improv', 'improvisation'), ('blues', 'improvisation'),
+    ('ear', 'ear_training'), ('interval', 'ear_training'),
+]
+
+
+def _seed_catalog(conn, rnd):
+    """Sandbox only: fill the catalog and point the seeded slots at it."""
+    if conn.execute('SELECT COUNT(*) FROM catalog_exercises').fetchone()[0] == 0:
+        for name, desc in CATALOG_SEED:
+            conn.execute('INSERT INTO catalog_exercises(name, description) VALUES(?, ?)',
+                         (name, desc))
+    catalog = conn.execute('SELECT id FROM catalog_exercises ORDER BY id').fetchall()
+    if not catalog:
+        return
+    for slot in conn.execute('SELECT id, name, area_id, catalog_exercise_id FROM exercises'
+                             ).fetchall():
+        area = slot['area_id'] or ''
+        if not area:
+            low = (slot['name'] or '').lower()
+            for prefix, aid in AREA_BY_PREFIX:
+                if prefix in low:
+                    area = aid
+                    break
+            if area:
+                conn.execute('UPDATE exercises SET area_id=? WHERE id=?', (area, slot['id']))
+        if area and slot['catalog_exercise_id'] is None:
+            pick = catalog[rnd.randrange(len(catalog))]
+            conn.execute('UPDATE exercises SET catalog_exercise_id=? WHERE id=?',
+                         (pick['id'], slot['id']))
+    conn.commit()
 
 
 def seed_sessions(conn, days=60, sessions=40):
@@ -1579,11 +2054,15 @@ def seed_sessions(conn, days=60, sessions=40):
     routines = conn.execute('SELECT id, name FROM routines ORDER BY id').fetchall()
     if not routines:
         return {'error': 'no_routines'}
+    _seed_catalog(conn, rnd)
+    cat_names = {r['id']: r['name'] for r in
+                 conn.execute('SELECT id, name FROM catalog_exercises').fetchall()}
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     created = 0
     for _ in range(max(1, min(500, int(sessions)))):
         routine = rnd.choice(routines)
-        exs = conn.execute('SELECT id, name, duration_seconds FROM exercises WHERE routine_id=?'
+        exs = conn.execute('SELECT id, name, duration_seconds, area_id, catalog_exercise_id'
+                           ' FROM exercises WHERE routine_id=?'
                            ' ORDER BY position, id', (routine['id'],)).fetchall()
         if not exs:
             continue
@@ -1623,10 +2102,15 @@ def seed_sessions(conn, days=60, sessions=40):
              real_total, wall))
         sid = cur.lastrowid
         for pos, (e, state, played, elapsed) in enumerate(states):
+            touched = state != 'pending'
+            cid = e['catalog_exercise_id'] if touched else None
             conn.execute(
                 'INSERT INTO routine_session_items (session_id, position, exercise_id, name, state,'
-                ' planned_seconds, played_seconds, elapsed_seconds) VALUES (?,?,?,?,?,?,?,?)',
-                (sid, pos, e['id'], e['name'], state, int(e['duration_seconds'] or 0), played, elapsed))
+                ' planned_seconds, played_seconds, elapsed_seconds, area_id,'
+                ' catalog_exercise_id, catalog_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (sid, pos, e['id'], e['name'], state, int(e['duration_seconds'] or 0), played,
+                 elapsed, (e['area_id'] or '') if touched else '', cid,
+                 cat_names.get(cid, '') if cid else ''))
         conn.execute(
             'UPDATE routine_sessions SET n_total=?, n_timed=?, n_untimed=?, n_skipped=?,'
             ' n_done=?, n_partial=? WHERE id=?',
