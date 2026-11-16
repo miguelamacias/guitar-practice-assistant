@@ -231,6 +231,9 @@
         wireTimerFloat();
         const changeBtn = document.getElementById('exChangeBtn');
         if (changeBtn) changeBtn.addEventListener('click', openCatalogMenu);
+        // The name is the thing you aim at: same action as the caret next to it.
+        const mainName = document.getElementById('exMain');
+        if (mainName) mainName.addEventListener('click', openCatalogMenu);
         const catalogMenu = document.getElementById('exCatalogMenu');
         if (catalogMenu) catalogMenu.addEventListener('keydown', catalogMenuKeys);
         // A click outside (menu or caret) closes it, like the Manager pickers.
