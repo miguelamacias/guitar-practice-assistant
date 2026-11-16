@@ -1973,8 +1973,13 @@ def _apply_item(conn, sid, item):
     return cur.rowcount > 0
 
 
-def _session_totals(conn, sid, finished_at):
-    """Item counters plus the wall clock for a session that stopped at `finished_at`."""
+def _session_totals(conn, sid, finished_at, wall_override=None):
+    """Item counters plus the wall clock for a session that stopped at `finished_at`.
+
+    `wall_override` (seconds) wins when the client knows the real wall time: a
+    routine can be parked on the welcome screen and resumed later, so the span
+    between start and finish is not the time spent on it any more.
+    """
     c = conn.execute(
         "SELECT COUNT(*) n, COALESCE(SUM(state='timed'),0) t, COALESCE(SUM(state='untimed'),0) u,"
         " COALESCE(SUM(state='skipped'),0) s, COALESCE(SUM(played_seconds),0) played,"
@@ -1983,7 +1988,9 @@ def _session_totals(conn, sid, finished_at):
         " FROM routine_session_items WHERE session_id=?", (sid,)).fetchone()
     row = conn.execute('SELECT started_at FROM routine_sessions WHERE id=?', (sid,)).fetchone()
     wall = 0
-    if row and row['started_at'] and finished_at:
+    if wall_override is not None:
+        wall = max(0, int(wall_override))
+    elif row and row['started_at'] and finished_at:
         try:
             start = datetime.strptime(str(row['started_at']), '%Y-%m-%d %H:%M:%S')
             end = datetime.strptime(str(finished_at), '%Y-%m-%d %H:%M:%S')
@@ -2037,9 +2044,9 @@ def sweep_open_sessions(conn, hours=8):
     return len(rows)
 
 
-def _close_session(conn, sid, finished_at):
+def _close_session(conn, sid, finished_at, wall_seconds=None):
     """Recomputes the counters from the items and marks the session finished."""
-    c, wall = _session_totals(conn, sid, finished_at)
+    c, wall = _session_totals(conn, sid, finished_at, wall_seconds)
     conn.execute(
         "UPDATE routine_sessions SET status='finished', finished_at=?, n_total=?, n_timed=?,"
         " n_untimed=?, n_skipped=?, n_done=?, n_partial=?, practiced_seconds=?,"
@@ -2098,7 +2105,14 @@ def finish_session(conn, sid, data):
         return _session_full(conn, sid)          # idempotent
     for item in (data.get('items') or []):
         _apply_item(conn, sid, item)
-    _close_session(conn, sid, _iso_to_db(data.get('finished_at')) or _utc_now())
+    # The client tracks the wall time of the routine (it can be parked on the
+    # welcome screen), so its figure wins over the start -> finish span.
+    wall = data.get('wall_seconds')
+    try:
+        wall = max(0, int(float(wall))) if wall is not None else None
+    except (TypeError, ValueError):
+        wall = None
+    _close_session(conn, sid, _iso_to_db(data.get('finished_at')) or _utc_now(), wall)
     return _session_full(conn, sid)
 
 

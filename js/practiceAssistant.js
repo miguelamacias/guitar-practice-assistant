@@ -268,6 +268,69 @@
         window.addEventListener('scroll', hideTip, { passive: true });
     }
 
+    // ---- Session on hold: wall clock -------------------------------------
+    // The routine can be parked on the welcome screen (back arrow in the list
+    // header) and resumed later. The wall time is the real time spent on it, so
+    // the parked stretch must not count: it is accumulated here and sent with
+    // the finish request, where it wins over the start -> finish span.
+    const WALL_MS_KEY = 'routineSessionWallMs';
+    const WALL_SINCE_KEY = 'routineSessionWallSince';
+
+    function wallTracked() {
+        return localStorage.getItem(WALL_MS_KEY) != null;
+    }
+
+    function wallSince() {
+        const value = parseInt(localStorage.getItem(WALL_SINCE_KEY) || '', 10);
+        return isNaN(value) ? null : value;
+    }
+
+    function wallElapsedMs() {
+        const since = wallSince();
+        return (parseInt(localStorage.getItem(WALL_MS_KEY) || '0', 10) || 0) +
+            (since ? Math.max(0, Date.now() - since) : 0);
+    }
+
+    function wallReset() {
+        localStorage.setItem(WALL_MS_KEY, '0');
+        localStorage.setItem(WALL_SINCE_KEY, String(Date.now()));
+    }
+
+    function wallContinue() {
+        if (!wallTracked() || wallSince()) return;
+        localStorage.setItem(WALL_SINCE_KEY, String(Date.now()));
+    }
+
+    function wallPause() {
+        const since = wallSince();
+        if (!since) return;
+        const total = (parseInt(localStorage.getItem(WALL_MS_KEY) || '0', 10) || 0) +
+            Math.max(0, Date.now() - since);
+        localStorage.setItem(WALL_MS_KEY, String(total));
+        localStorage.removeItem(WALL_SINCE_KEY);
+    }
+
+    function wallClear() {
+        localStorage.removeItem(WALL_MS_KEY);
+        localStorage.removeItem(WALL_SINCE_KEY);
+    }
+
+    // A session exists but is parked on the welcome screen.
+    function pausedSession() {
+        return localStorage.getItem('routineSessionActive') === 'true' &&
+            localStorage.getItem('routineSessionPaused') === 'true';
+    }
+
+    // Start → Resume while a session is on hold (same button, same place).
+    function syncStartLabel() {
+        const paused = pausedSession();
+        const label = document.getElementById('startRoutineLabel');
+        if (label) label.textContent = paused ? 'Resume Routine' : 'Start Practicing';
+        const btn = document.getElementById('startRoutineBtn');
+        if (btn) btn.classList.toggle('is-resume', paused);
+        return paused;
+    }
+
     // Text used by the Start button tooltip (updated on every init/refresh).
     let startTipText = '';
 
@@ -276,6 +339,12 @@
         if (!btn) return;
         btn.removeAttribute('title');                  // no native tooltip
         startTipText = '';
+        // A routine on hold is not "the last routine": the tooltip would point
+        // at the very session that is waiting.
+        if (localStorage.getItem('routineSessionActive') === 'true') {
+            btn.classList.remove('has-tip');
+            return;
+        }
 
         const startISO = localStorage.getItem('lastRoutineStartedAt');
         const start = startISO ? new Date(startISO) : null;
@@ -423,6 +492,16 @@
         // server keeps it open (the 8 h rule). Otherwise it gets closed as
         // abandoned and we land on the welcome screen, ready for a clean start.
         if (localStorage.getItem('routineSessionActive') === 'true') {
+            // Parked on purpose (back arrow): stay on the welcome screen and
+            // leave the Resume button ready. Never resume by itself.
+            if (pausedSession()) {
+                document.getElementById('welcomeCard').classList.remove('is-hidden');
+                document.getElementById('exerciseCard').classList.add('is-hidden');
+                syncStartLabel();
+                loadWelcomeStats();
+                syncTimerFloat();
+                return;
+            }
             resumeLocalSession();
             return;
         }
@@ -447,6 +526,8 @@
         // Close the DB session with the final states, before they are wiped.
         if (wasRunning) sessionFinish();
         localStorage.setItem('routineSessionActive', 'false');
+        localStorage.removeItem('routineSessionPaused');
+        wallClear();
         localStorage.removeItem('currentExerciseIndex');
         exerciseStates = {};
         playedSet = {};
@@ -461,18 +542,58 @@
             localStorage.setItem('lastRoutineFinishedAt', new Date().toISOString());
         }
         updateStartBtnTip();
+        syncStartLabel();
         document.getElementById('welcomeCard').classList.remove('is-hidden');
         document.getElementById('exerciseCard').classList.add('is-hidden');
         syncTimerFloat();
     }
 
+    // Back arrow of the exercise list: park the routine and return to the
+    // welcome screen. The session stays open — nothing is finished or wiped —
+    // the wall clock stops and Start turns into Resume.
+    function pauseToWelcome() {
+        const exs = rActiva() && rActiva().ejercicios;
+        if (!exs || !exs.length) return;
+        persistCurrentBpm();
+        persistCurrentPlayed();
+        saveStates();
+        pauseExerciseTimer();
+        if (clockRunSince !== null) clockStop();
+        wallPause();
+        localStorage.setItem('routineSessionPaused', 'true');
+        hideTip();
+        syncStartLabel();
+        document.getElementById('welcomeCard').classList.remove('is-hidden');
+        document.getElementById('exerciseCard').classList.add('is-hidden');
+        syncTimerFloat();
+        loadWelcomeStats();          // the week summary may have grown
+    }
+
+    // Resume: the same session and the same slot, wall clock running again.
+    function resumeSession() {
+        if (!pausedSession()) return;
+        localStorage.setItem('routineSessionPaused', 'false');
+        wallContinue();
+        const savedStartTime = localStorage.getItem('practiceStartTimeVal');
+        if (savedStartTime) setStartTimeLabel(savedStartTime);
+        hideTip();
+        document.getElementById('welcomeCard').classList.add('is-hidden');
+        document.getElementById('exerciseCard').classList.remove('is-hidden');
+        displayCurrentExercise();
+        syncStartLabel();
+    }
+
     function startRoutineSession() {
+        // One button for both: with a session on hold it continues that one.
+        if (pausedSession()) { resumeSession(); return; }
         currentExerciseIndex = 0;
 
         const now = new Date();
         const timeString = hhmm(now);
 
         localStorage.setItem('routineSessionActive', 'true');
+        localStorage.removeItem('routineSessionPaused');
+        wallReset();
         exerciseStates = {};
         playedSet = {};
         clockSet = {};
@@ -486,6 +607,7 @@
 
         setStartTimeLabel(timeString);
         hideTip();
+        syncStartLabel();
 
         document.getElementById('welcomeCard').classList.add('is-hidden');
         document.getElementById('exerciseCard').classList.remove('is-hidden');
@@ -1118,7 +1240,22 @@
         titleIcon.innerHTML = GPH.icons.get('clipboard');
         const titleName = document.createElement('span');
         titleName.textContent = rActiva().nombre;
-        title.appendChild(titleIcon); title.appendChild(titleName);
+        title.appendChild(titleIcon);
+        title.appendChild(titleName);
+
+        // Park the routine: back to the welcome screen with the session on hold
+        // (Start becomes Resume). Same action as finishing? No: nothing closes.
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'ex-sidebar-back';
+        back.title = 'Back to the welcome screen (the routine stays on hold)';
+        back.setAttribute('aria-label', 'Back to the welcome screen');
+        back.innerHTML = GPH.icons.get('undo');
+        back.addEventListener('click', function (event) {
+            event.stopPropagation();
+            pauseToWelcome();
+        });
+        title.appendChild(back);
         sidebar.appendChild(title);
 
         rActiva().ejercicios.forEach(function (ex, idx) {
@@ -1836,8 +1973,13 @@
         });
         sessionId = null;
         try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) {}
+        // The real wall time of the routine: pauses on the welcome screen do not
+        // count. Without tracking (a session recovered from the server) the field
+        // stays null and the server falls back to started_at -> finished_at.
+        const wall = wallTracked() ? Math.round(wallElapsedMs() / 1000) : null;
         sessionPost('POST', '/api/sessions/' + sid + '/finish',
-                    { finished_at: new Date().toISOString(), items: items },
+                    { finished_at: new Date().toISOString(), items: items,
+                      wall_seconds: wall },
                     // The week summary on the welcome screen is now stale.
                     function () { loadWelcomeStats(); });
     }
@@ -1953,6 +2095,7 @@
         const restore = function () {
             const savedStartTime = localStorage.getItem('practiceStartTimeVal');
             if (savedStartTime) setStartTimeLabel(savedStartTime);
+            wallContinue();
             const savedIndex = localStorage.getItem('currentExerciseIndex');
             if (savedIndex !== null) {
                 const idx = parseInt(savedIndex, 10);
