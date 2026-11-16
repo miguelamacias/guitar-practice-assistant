@@ -1446,10 +1446,16 @@
             const cb = $('assistantEnabled');
             if (cb) cb.checked = GPH.settings.isOn(v);
         }).catch(function () {});
+        GPH.settings.getOr('audio_close_on_change').then(function (v) {
+            const cb = $('audioCloseOnChange');
+            if (cb) cb.checked = GPH.settings.isOn(v);
+        }).catch(function () {});
     }
     function bindAssistantSettings() {
         const cb = $('assistantEnabled');
         if (cb) cb.addEventListener('change', function () { putSetting('assistant_enabled', this.checked ? '1' : '0'); });
+        const audio = $('audioCloseOnChange');
+        if (audio) audio.addEventListener('change', function () { putSetting('audio_close_on_change', this.checked ? '1' : '0'); });
     }
     function getStringChecks() { return Array.prototype.slice.call(document.querySelectorAll('.fb-str')); }
     function setStringChecks(val) {

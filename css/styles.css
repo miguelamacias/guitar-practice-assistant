@@ -1695,7 +1695,9 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .ap-icon-btn:disabled { opacity: 0.35; cursor: default; }
 .ap-close { color: #ff6b6b; }
 
-/* A / B practice-loop marks (text buttons, tinted when set). */
+/* A / B practice-loop marks: the two halves of one pill (A | B), tinted
+   individually when set. The shared edge is a single 1px line. */
+.ap-ab-group { display: inline-flex; flex: 0 0 auto; gap: 0; align-items: stretch; }
 .ap-ab {
     width: 26px; height: 26px; padding: 0; flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
@@ -1703,19 +1705,34 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
     color: #b0b0b0; cursor: pointer;
     font-family: inherit; font-size: 0.72rem; font-weight: 700; line-height: 1;
 }
+/* Outer corners rounded, the seam shared: A keeps no right border so the pair
+   reads as one control instead of two buttons. */
+.ap-ab-group .ap-ab:first-child {
+    border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-width: 0;
+}
+.ap-ab-group .ap-ab:last-child {
+    border-top-left-radius: 0; border-bottom-left-radius: 0;
+}
+/* The hovered half paints on top, so its highlight is not clipped by the seam. */
+.ap-ab-group .ap-ab:hover:not(:disabled),
+.ap-ab-group .ap-ab:focus-visible { position: relative; z-index: 1; }
 .ap-ab:hover:not(:disabled) { color: #fff; border-color: #4d4d4d; }
 .ap-ab.is-set { background: var(--accent-red); border-color: var(--accent-red); color: #fff; }
 .ap-ab:disabled { opacity: 0.35; cursor: default; }
 
-/* Active range, clickable to clear both marks. */
+/* Active range, clickable to clear both marks. It reserves its slot even with
+   no range yet (`is-off`): appearing must not push the other controls. */
 .ap-range-tag {
     flex: 0 0 auto; white-space: nowrap; cursor: pointer;
+    min-width: 86px; text-align: center;
     padding: 3px 7px; border-radius: 5px;
     border: 1px solid #3a3a3a; background: #1f1f1f;
     color: #9c9c9c;
     font-family: inherit; font-size: 0.7rem; font-weight: 600; line-height: 1.2;
     font-variant-numeric: tabular-nums;
 }
+/* No range on this track: present but invisible (keeps the row stable). */
+.ap-range-tag.is-off { visibility: hidden; }
 /* Stored range that is not looping yet / range engaged. */
 .ap-range-tag.is-on { color: var(--accent-orange); border-color: rgba(255, 170, 60, 0.5); }
 .ap-range-tag:hover { color: #fff; border-color: var(--accent-red); }

@@ -497,20 +497,25 @@ def seed_if_empty(conn):
 # ------------------------- API (lectura) -------------------------
 
 def _resource_labels(conn):
-    """url -> label shown for a section item ("Section: TAG - label").
+    """(full, short) label maps for section items, from one query.
 
-    The label stored on a resource is only a snapshot taken when the exercise
-    was saved, so it misses later edits of the section/item (the tag above all).
+    `full` is "Section: TAG - label", what the Manager picker and the exercise's
+    resource line show (the section gives context there). `short` is
+    "TAG - label", exactly the text the item itself shows and the one used when
+    you click it in its section: that is what the player and the scrobbler want.
+
+    The label stored on a resource is only a snapshot taken when the exercise was
+    saved, so it misses later edits of the section/item (the tag above all).
     The live section data wins, so already saved resources get the full title.
     """
-    out = {}
+    full, short = {}, {}
     try:
         rows = conn.execute(
             'SELECT s.title AS sec_title, i.kind, i.label, i.tag, i.url '
             'FROM section_items i JOIN sections s ON s.id = i.section_id'
         ).fetchall()
     except Exception:  # noqa: BLE001
-        return out
+        return full, short
     for r in rows:
         url = (r['url'] or '').strip()
         if not url:
@@ -521,35 +526,45 @@ def _resource_labels(conn):
         if not base:
             continue
         text = base if (not tag or base.startswith(tag)) else (tag + ' - ' + base)
-        full = ((r['sec_title'] + ': ') if r['sec_title'] else '') + text
-        out[url] = full
+        full_text = ((r['sec_title'] + ': ') if r['sec_title'] else '') + text
+        keys = [url]
         if r['kind'] == 'song':
             # Same encoding the panel uses (encodeURIComponent) for /api/media.
-            out['/api/media?path=' + quote(url, safe="!'()*")] = full
-    return out
+            keys.append('/api/media?path=' + quote(url, safe="!'()*"))
+        for key in keys:
+            full[key] = full_text
+            short[key] = text
+    return full, short
 
 
 def _label_for(labels, url, fallback):
     return labels.get((url or '').strip()) or (fallback or '')
 
 
-def _with_labels(resources, labels):
-    """Same list with the labels refreshed from the live section data."""
+def _with_labels(resources, labels, short_labels=None):
+    """Same list with the labels refreshed from the live section data.
+
+    `label` keeps the section prefix (the resource line of the exercise shows
+    it) and `label_short` is the item's own text, which is what the player and
+    the scrobbler display, exactly like clicking the item in its section.
+    """
     out = []
     for r in resources:
         url = (r.get('url') or '').strip()
+        label = labels.get(url) or (r.get('label') or '')
         out.append({
             'kind': r.get('kind') or '',
             'url': url,
             'bpm': int(r.get('bpm') or 0),
-            'label': labels.get(url) or (r.get('label') or ''),
+            'label': label,
+            'label_short': (short_labels or {}).get(url) or label,
             'cfg': r.get('cfg') if isinstance(r.get('cfg'), dict) else {},
         })
     return out
 
 
 def _exercise_payload(e, labels, catalog=None, areas_map=None, paths=None,
-                      resources_map=None):
+                      resources_map=None, short_labels=None):
     """Exercise dict for the app: `recursos` plus the legacy single-resource keys.
 
     `catalog` is a {id: {id, name, description}} map, `areas_map` an
@@ -565,7 +580,7 @@ def _exercise_payload(e, labels, catalog=None, areas_map=None, paths=None,
     pid = e['catalog_path_id'] if 'catalog_path_id' in e.keys() else None
     aid = (e['area_id'] if 'area_id' in e.keys() else '') or ''
     res = _with_labels(((resources_map or {}).get(cid) or []) if cid is not None else [],
-                       labels)
+                       labels, short_labels)
     first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     return {
         'id': e['id'], 'nombre': e['name'],
@@ -597,7 +612,7 @@ def api_state(conn):
     active = None
     if row is not None:
         rid, name, desc = row['id'], row['name'], row['description']
-        labels = _resource_labels(conn)
+        labels, short_labels = _resource_labels(conn)
         exs = conn.execute(
             'SELECT id, name, duration_seconds, area_id, catalog_exercise_id, '
             'catalog_path_id '
@@ -617,7 +632,7 @@ def api_state(conn):
             'finish_label': _label_for(labels, row['finish_url'], row['finish_label']),
             'finish_bpm': row['finish_bpm'] or 0,
             'ejercicios': [_exercise_payload(e, labels, catalog, areas_map, paths,
-                                             resources_map)
+                                             resources_map, short_labels)
                            for e in exs],
         }
 
@@ -659,7 +674,7 @@ def _routine_full(conn, rid):
     ).fetchone()
     if r is None:
         return None
-    labels = _resource_labels(conn)
+    labels, short_labels = _resource_labels(conn)
     exs = conn.execute(
         'SELECT id, name, duration_seconds, position, '
         'area_id, catalog_exercise_id, catalog_path_id FROM exercises '
@@ -672,7 +687,8 @@ def _routine_full(conn, rid):
     out_exs = []
     for e in exs:
         res = _with_labels(((resources_map.get(e['catalog_exercise_id'])) or [])
-                           if e['catalog_exercise_id'] is not None else [], labels)
+                           if e['catalog_exercise_id'] is not None else [], labels,
+                           short_labels)
         first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
         cid = e['catalog_exercise_id']
         pid = e['catalog_path_id']

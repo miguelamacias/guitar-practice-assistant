@@ -16,22 +16,22 @@
             }
         } catch (e) { /* private mode: the CSS default is the shipped one */ }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=126">
+    <link rel="stylesheet" href="css/styles.css?v=128">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
          so its fetch wrapper can block writes from the very first request. -->
     <script defer src="js/debug.js?v=2"></script>
     <script defer src="js/audioEngine.js?v=12"></script>
-    <script defer src="js/players.js?v=8"></script>
+    <script defer src="js/players.js?v=10"></script>
     <script defer src="js/scrobbler.js?v=3"></script>
     <script defer src="js/icons.js?v=13"></script>
     <script defer src="js/ui.js?v=4"></script>
     <script defer src="js/metronome.js?v=6"></script>
     <script defer src="js/drumMachine.js?v=14"></script>
-    <script defer src="js/practiceAssistant.js?v=89"></script>
+    <script defer src="js/practiceAssistant.js?v=91"></script>
     <script defer src="js/api.js?v=1"></script>
-    <script defer src="js/settings.js?v=3"></script>
+    <script defer src="js/settings.js?v=4"></script>
     <script defer src="js/prefs.js?v=1"></script>
     <script defer src="js/chords.js?v=3"></script>
     <script defer src="js/chordDiagrams.js?v=2"></script>
@@ -300,10 +300,13 @@
             <path d="M7 19.5v-4h4"></path>
         </svg>
     </button>
-    <!-- A-B practice loop: two marks + this track's range (click the range to turn it on/off). -->
-    <button id="apMarkA" class="ap-ab" type="button" title="Set loop start (A)" aria-label="Set loop start A" aria-pressed="false" disabled>A</button>
-    <button id="apMarkB" class="ap-ab" type="button" title="Set loop end (B)" aria-label="Set loop end B" aria-pressed="false" disabled>B</button>
-    <button id="apRange" class="ap-range-tag" type="button" title="A-B loop: click to turn it on/off" aria-label="Toggle A-B loop" aria-pressed="false" hidden></button>
+    <!-- A-B practice loop: one pill split in two (A | B) + this track's range
+         (click the range to turn it on/off). -->
+    <span class="ap-ab-group">
+        <button id="apMarkA" class="ap-ab" type="button" title="Set loop start (A)" aria-label="Set loop start A" aria-pressed="false" disabled>A</button>
+        <button id="apMarkB" class="ap-ab" type="button" title="Set loop end (B)" aria-label="Set loop end B" aria-pressed="false" disabled>B</button>
+    </span>
+    <button id="apRange" class="ap-range-tag is-off" type="button" title="A-B loop: click to turn it on/off" aria-label="Toggle A-B loop" aria-pressed="false" aria-hidden="true" disabled></button>
     <span id="apScrobble" class="ap-scrobble is-off" role="img" aria-label="Last.fm: no local track" title="Last.fm: no local track">
         <svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M10.584 17.21l-.88-2.392s-1.43 1.594-3.573 1.594c-1.897 0-3.244-1.649-3.244-4.288 0-3.382 1.704-4.591 3.381-4.591 2.42 0 3.189 1.567 3.849 3.574l.88 2.749c.88 2.666 2.529 4.81 7.285 4.81 3.409 0 5.718-1.044 5.718-3.793 0-2.227-1.265-3.381-3.63-3.931l-1.758-.385c-1.21-.275-1.567-.77-1.567-1.595 0-.934.742-1.484 1.952-1.484 1.32 0 2.034.495 2.144 1.677l2.749-.33c-.22-2.474-1.924-3.492-4.729-3.492-2.474 0-4.893.935-4.893 3.932 0 1.87.907 3.051 3.189 3.601l1.87.44c1.402.33 1.869.907 1.869 1.704 0 1.017-.99 1.43-2.86 1.43-2.776 0-3.93-1.457-4.59-3.464l-.907-2.75c-1.155-3.573-2.997-4.893-6.653-4.893C2.144 5.333 0 7.89 0 12.233c0 4.18 2.144 6.434 5.993 6.434 3.106 0 4.591-1.457 4.591-1.457z"></path>

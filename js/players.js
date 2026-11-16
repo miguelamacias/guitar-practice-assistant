@@ -171,15 +171,21 @@
             btnB.title = markB != null ? 'B at ' + fmtTime(markB) + ' (click to clear)' : 'Set loop end (B)';
         }
         if (tag) {
+            // The tag keeps its slot in the row even when there is no range yet:
+            // appearing must not push the other controls around.
             if (abHasMarks()) {
-                tag.hidden = false;
+                tag.classList.remove('is-off');
+                tag.disabled = false;
+                tag.removeAttribute('aria-hidden');
                 tag.textContent = fmtTime(markA) + ' \u2013 ' + fmtTime(markB);
                 tag.classList.toggle('is-on', abEnabled);
                 tag.setAttribute('aria-pressed', abEnabled ? 'true' : 'false');
                 tag.title = abEnabled ? 'A-B loop: on (click to disable)'
                                       : 'A-B loop: off (click to enable)';
             } else {
-                tag.hidden = true;
+                tag.classList.add('is-off');
+                tag.disabled = true;
+                tag.setAttribute('aria-hidden', 'true');
                 tag.classList.remove('is-on');
                 tag.setAttribute('aria-pressed', 'false');
             }
@@ -338,8 +344,10 @@
 
     // ---- Keyboard seek ------------------------------------------------------
     // Left / Right behave like a desktop player (10 s). Ignored while typing,
-    // with modifiers, without a loaded track, or while the Manager overlay or
-    // the YouTube modal is open.
+    // Keys: ← → seek 10 s and Space plays/pauses, the way you would expect from
+    // a player. Ignored with modifiers, from a text field, while a control has
+    // focus (Space would press it), with the Manager overlay or the YouTube
+    // modal open, and when no track is loaded or the bar is closed.
     const SEEK_STEP = 10;
 
     function seekBy(delta) {
@@ -350,19 +358,35 @@
         return true;
     }
 
+    function togglePlayback() {
+        const player = getAudioEl();
+        if (!player || !player.getAttribute('src')) return false;
+        if (player.paused) { player.play(); } else { player.pause(); }
+        return true;
+    }
+
     document.addEventListener('keydown', function (e) {
-        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const isSeek = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+        const isPlay = e.key === ' ' || e.key === 'Spacebar' || e.code === 'Space';
+        if (!isSeek && !isPlay) return;
         if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
         const t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' ||
                   t.tagName === 'SELECT' || t.isContentEditable)) return;
+        // Space also activates whatever has focus: never steal it from a control.
+        if (isPlay && t && (t.tagName === 'BUTTON' || t.tagName === 'A' ||
+                            t.getAttribute('role') === 'button')) return;
         const ov = document.getElementById('managerOverlay');
         if (ov && ov.classList.contains('is-open')) return;
         const yt = document.getElementById('youtubeModal');
         if (yt && yt.classList.contains('is-open')) return;
         const panel = document.getElementById('audioPanel');
         if (!panel || !panel.classList.contains('is-open')) return;
-        if (seekBy(e.key === 'ArrowRight' ? SEEK_STEP : -SEEK_STEP)) e.preventDefault();
+        if (isSeek) {
+            if (seekBy(e.key === 'ArrowRight' ? SEEK_STEP : -SEEK_STEP)) e.preventDefault();
+            return;
+        }
+        if (togglePlayback()) e.preventDefault();      // no page scroll on Space
     });
 
     function fmtTime(s) {

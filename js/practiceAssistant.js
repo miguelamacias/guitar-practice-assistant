@@ -10,6 +10,11 @@
     let isExerciseRunning = false;
     let isExerciseFinished = false;
     let resourceApplied = false;
+    // The audio bar is only closed on an exercise change when the track came
+    // from that exercise's resource (and the setting allows it).
+    let resourceAudioActive = false;
+    let audioCloseOnChange = true;
+    let lastShownIndex = null;
     // Outcome of each exercise in the current session: idx -> 'timed' | 'untimed' | 'skipped'.
     // A missing key means "pending" (not practiced yet).
     let exerciseStates = {};
@@ -268,6 +273,15 @@
         window.addEventListener('scroll', hideTip, { passive: true });
     }
 
+    // Should the audio bar close when the routine moves on? Read once and on
+    // every refresh: the switch lives in the Manager's Settings tab.
+    function loadAudioClosePref() {
+        if (!GPH.settings || !GPH.settings.getOr) return;
+        GPH.settings.getOr('audio_close_on_change').then(function (v) {
+            audioCloseOnChange = GPH.settings.isOn(v);
+        }).catch(function () { /* keep the current value */ });
+    }
+
     // ---- Session on hold: wall clock -------------------------------------
     // The routine can be parked on the welcome screen (back arrow in the list
     // header) and resumed later. The wall time is the real time spent on it, so
@@ -434,6 +448,7 @@
         loadSessionId();
         flushSessionQueue();
         loadWelcomeStats();
+        loadAudioClosePref();
         hideTip();
         wireTimerFloat();
         const changeBtn = document.getElementById('exChangeBtn');
@@ -525,6 +540,8 @@
         pauseExerciseTimer();
         persistCurrentPlayed();
         if (clockRunSince !== null) clockStop();
+        lastShownIndex = null;         // the next start is a new run of the list
+        resourceAudioActive = false;
         // Close the DB session with the final states, before they are wiped.
         if (wasRunning) sessionFinish();
         localStorage.setItem('routineSessionActive', 'false');
@@ -1078,6 +1095,16 @@
         clearAlarmFlash();
         resourceApplied = false;
         clockRunSince = null;          // a new exercise: the clock waits for Play
+        // A backing track started by the previous exercise does not follow you
+        // (setting in the Manager). Parking the routine keeps the index, so the
+        // same track survives a pause and resume.
+        const indexChanged = lastShownIndex !== currentExerciseIndex;
+        lastShownIndex = currentExerciseIndex;
+        if (indexChanged && audioCloseOnChange && resourceAudioActive &&
+            GPH.players && GPH.players.closeAudio) {
+            GPH.players.closeAudio();
+            resourceAudioActive = false;
+        }
         const ejercicio = rActiva().ejercicios[currentExerciseIndex];
 
         setIndexLabel();
@@ -1538,14 +1565,20 @@
                 if (audioUsed || !url) return;
                 audioUsed = true;
                 if (GPH.players && GPH.players.playAudio) {
-                    GPH.players.playAudio(url, ex.nombre || res.label || 'Backing track');
+                    // The resource label is the track (section, tag and title);
+                    // the slot name only describes the exercise. `label_short`
+                    // is the item's own text, the same one the section plays.
+                    resourceAudioActive = true;
+                    GPH.players.playAudio(url, res.label_short || res.label ||
+                        ex.nombre || 'Backing track');
                 }
             } else if (kind === 'youtube') {
                 if (audioUsed || !url) return;
                 audioUsed = true;
                 if (GPH.players && GPH.players.getYouTubeId) {
                     const id = GPH.players.getYouTubeId(url);
-                    if (id) GPH.players.openYouTube(id, ex.nombre || 'Video', url);
+                    if (id) GPH.players.openYouTube(id, res.label_short || res.label ||
+                        ex.nombre || 'Video', url);
                 }
             } else if (kind === 'metronome') {
                 if (document.getElementById('metronomeBox') && GPH.metronome) {
@@ -2238,6 +2271,7 @@
     // the new times are applied when switching exercise.
     function softRefreshMidSession() {
         if (!rActiva().ejercicios.length) { showWelcomeScreen(); return; }
+        loadAudioClosePref();          // the Manager may have flipped the switch
         if (currentExerciseIndex >= rActiva().ejercicios.length) {
             currentExerciseIndex = rActiva().ejercicios.length - 1;
             localStorage.setItem('currentExerciseIndex', currentExerciseIndex);
