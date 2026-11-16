@@ -599,8 +599,19 @@
 .is-hidden { display: none !important; }
 
 /* Assistant card */
-.practice-assistant-section { grid-column: span 2; }
+.practice-assistant-section {
+    grid-column: span 2;
+    /* Shared height of the two states (see .assistant-content > .card-panel). */
+    --assistant-h: 380px;
+}
 .assistant-content { padding-top: 4px; }
+/* The welcome screen and the practice view are swapped in the same place, so
+   the section must not change size when one replaces the other (it used to
+   jump ~190px). The floor is the practice view's own height, bounded by the
+   sidebar (max-height 340px) plus the card paddings; the welcome screen
+   centres its content inside the same box. border-box so the two cards agree
+   on what "380" means (they have different paddings). */
+.assistant-content > .card-panel { min-height: var(--assistant-h); box-sizing: border-box; }
 
 .card-panel {
     background: rgba(0, 0, 0, 0.3);
@@ -615,6 +626,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+    /* Centred inside the box it shares with the practice view. */
+    justify-content: center;
     gap: 15px;
     position: relative;
 }
