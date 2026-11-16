@@ -10,7 +10,7 @@ venv/
 # Live SQLite database, WAL/SHM sidecars, daily backups and sandbox DBs
 practice.db
 practice.db-*
-practice-backup-*.db
+practice-backup-*
 practice_sandbox.db*
 
 # Local / temporary files

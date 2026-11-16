@@ -7,52 +7,42 @@
       "exercises": [
         {
           "name": "Theory: Fretboard Knowledge",
-          "description": "Find or Identify note from tools section",
           "duration_seconds": 120
         },
         {
           "name": "Knowledge #1",
-          "description": "Major Scale pos 1-5",
           "duration_seconds": 300
         },
         {
           "name": "Knowledge #2",
-          "description": "Modes",
           "duration_seconds": 300
         },
         {
           "name": "Technique #1",
-          "description": "Mix n' Pick",
           "duration_seconds": 300
         },
         {
           "name": "Technique #2",
-          "description": "Clavado en un Bar - solo",
           "duration_seconds": 300
         },
         {
           "name": "Repertoire #1",
-          "description": "Enzeos Combo Songs (review)",
           "duration_seconds": 300
         },
         {
           "name": "Repertoire #2",
-          "description": "Enzeos Combo Songs (new)",
           "duration_seconds": 300
         },
         {
           "name": "Time #1",
-          "description": "Arpeggios",
           "duration_seconds": 300
         },
         {
           "name": "Time #2",
-          "description": "Fingerstyle",
           "duration_seconds": 300
         },
         {
           "name": "Extra Repertoire",
-          "description": "Youtube songs or review from combo",
           "duration_seconds": 600
         }
       ]

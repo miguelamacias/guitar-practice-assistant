@@ -118,7 +118,7 @@ textarea { resize: vertical; min-height: 44px; }
 .section-item.has-drag { padding-left: 4px; }
 .section-item > .drag-handle { margin-right: -2px; }
 .exercise { background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
-.exercise .ex-fields { display: grid; grid-template-columns: 1.4fr 1.6fr 90px auto; gap: 8px; align-items: center; }
+.exercise .ex-fields { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; align-items: center; }
 @media (max-width: 720px) { .exercise .ex-fields { grid-template-columns: 1fr; } }
 .ex-actions { display: flex; gap: 4px; }
 .empty { color: var(--muted); font-size: 0.9rem; padding: 10px; }

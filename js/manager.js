@@ -275,25 +275,6 @@
         document.body.appendChild(overlay);
     }
 
-    // Turns the slot description into a catalog exercise and points the slot at
-    // it (the description itself is kept as fallback text).
-    async function createFromDescription(row) {
-        const eid = Number(row.dataset.eid);
-        const descIn = row.querySelector('.ex-desc');
-        const desc = (descIn ? descIn.value : '').trim();
-        if (!desc) { toast('This slot has no description to convert', true); return; }
-        const name = prompt('Name for the new catalog exercise:', desc.slice(0, 120));
-        if (!name) return;
-        try {
-            const created = await api('POST', '/api/catalog',
-                { name: name, description: desc.slice(0, 2000) });
-            await api('PUT', '/api/exercises/' + eid, { catalog_exercise_id: created.id });
-            await GPH.mgr.loadMeta(true);
-            await loadRoutines(current ? current.id : undefined);
-            toast('Exercise created and linked');
-        } catch (e) { toast('Error: ' + e.message, true); }
-    }
-
     function renderEditor() {
         if (!current) { clearEditor(); return; }
         $('editorEmpty').hidden = true;
@@ -780,12 +761,6 @@
         nameIn.className = 'ex-name';
         nameIn.value = ex.name || '';
 
-        const descIn = document.createElement('input');
-        descIn.type = 'text';
-        descIn.className = 'ex-desc';
-        descIn.value = ex.description || '';
-        descIn.title = 'Description (used when no exercise is set)';
-
         const durIn = document.createElement('input');
         durIn.type = 'number';
         durIn.className = 'ex-dur';
@@ -810,7 +785,6 @@
         actions.appendChild(delBtn);
 
         fields.appendChild(nameIn);
-        fields.appendChild(descIn);
         fields.appendChild(durIn);
         fields.appendChild(actions);
         row.appendChild(fields);
@@ -909,11 +883,9 @@
             if (old && old.parentNode) old.parentNode.replaceChild(catPicker.root, old);
             else if (metaRow) metaRow.appendChild(catPicker.root);
             catSel.addEventListener('change', function () {
-                syncFromDesc();
                 syncPathChip();
                 setDirty(true);
             });
-            syncFromDesc();
         }
 
         // Id of the exercise currently selected in the (possibly filtered) picker.
@@ -961,28 +933,10 @@
             setDirty(true);
         });
 
-        const fromDesc = mk('\u21aa From description',
-            'Create a catalog exercise from this slot description', function () {
-                createFromDescription(row);
-            });
-
-        // Only useful while the slot has no exercise and there is something to
-        // convert; it follows the picker and the description as they change.
-        function syncFromDesc() {
-            const hasExercise = !!(catSel && catSel.value);
-            const hasDesc = !!(descIn.value || '').trim();
-            fromDesc.hidden = hasExercise || !hasDesc;
-            fromDesc.title = hasExercise
-                ? 'This slot already has an exercise'
-                : (hasDesc ? 'Create a catalog exercise from this slot description'
-                           : 'Write a description first');
-        }
-        descIn.addEventListener('input', syncFromDesc);
 
         metaRow.appendChild(areaSel);
         metaRow.appendChild(pathPicker.root);
         mountCatPicker(ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id);
-        metaRow.appendChild(fromDesc);
         metaRow.appendChild(pathChip);
         metaRow.appendChild(noAreaChip);
         syncPathChip();
@@ -1305,7 +1259,6 @@
         const out = [];
         rows.forEach(function (row) {
             const name = row.querySelector('.ex-name');
-            const desc = row.querySelector('.ex-desc');
             const dur = row.querySelector('.ex-dur');
             const areaSel = row.querySelector('.ex-area');
             const catSel = row.querySelector('.ex-cat');
@@ -1350,7 +1303,6 @@
             out.push({
                 id: Number(row.dataset.eid),
                 name: name ? name.value : '',
-                description: desc ? desc.value : '',
                 duration_seconds: toSeconds(dur ? dur.value : 0),
                 resources: list,
                 area_id: areaSel ? areaSel.value : '',
@@ -1371,7 +1323,7 @@
         const rows = collectExerciseRows();
         for (const ex of rows) {
             await api('PUT', '/api/exercises/' + ex.id,
-                { name: ex.name, description: ex.description, duration_seconds: ex.duration_seconds,
+                { name: ex.name, duration_seconds: ex.duration_seconds,
                   resources: ex.resources, area_id: ex.area_id,
                   catalog_exercise_id: ex.catalog_exercise_id,
                   catalog_path_id: ex.catalog_path_id || null });

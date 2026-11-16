@@ -85,7 +85,6 @@ CREATE TABLE IF NOT EXISTS exercises (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    description TEXT DEFAULT '',
     duration_seconds INTEGER DEFAULT 0,
     position INTEGER DEFAULT 0,
     resource_kind TEXT DEFAULT '',
@@ -464,10 +463,9 @@ def seed_if_empty(conn):
         rid = cur.lastrowid
         for i, e in enumerate(r.get('exercises', [])):
             conn.execute(
-                'INSERT INTO exercises(routine_id, name, description, duration_seconds, position) '
-                'VALUES(?,?,?,?,?)',
-                (rid, e.get('name', ''), e.get('description', ''),
-                 int(e.get('duration_seconds', 0)), i),
+                'INSERT INTO exercises(routine_id, name, duration_seconds, position) '
+                'VALUES(?,?,?,?)',
+                (rid, e.get('name', ''), int(e.get('duration_seconds', 0)), i),
             )
         rpos += 1
 
@@ -591,7 +589,7 @@ def _exercise_payload(e, labels, catalog=None, areas_map=None, paths=None):
     pid = e['catalog_path_id'] if 'catalog_path_id' in e.keys() else None
     aid = (e['area_id'] if 'area_id' in e.keys() else '') or ''
     return {
-        'id': e['id'], 'nombre': e['name'], 'descripcion': e['description'],
+        'id': e['id'], 'nombre': e['name'],
         'tiempo': e['duration_seconds'],
         'recursos': res,
         'recurso_kind': first['kind'], 'recurso_url': first['url'],
@@ -622,7 +620,7 @@ def api_state(conn):
         rid, name, desc = row['id'], row['name'], row['description']
         labels = _resource_labels(conn)
         exs = conn.execute(
-            'SELECT id, name, description, duration_seconds, resource_kind, resource_url, '
+            'SELECT id, name, duration_seconds, resource_kind, resource_url, '
             'resource_bpm, resource_label, resources_json, area_id, catalog_exercise_id, '
             'catalog_path_id '
             'FROM exercises WHERE routine_id=? ORDER BY position, id',
@@ -683,7 +681,7 @@ def _routine_full(conn, rid):
         return None
     labels = _resource_labels(conn)
     exs = conn.execute(
-        'SELECT id, name, description, duration_seconds, position, '
+        'SELECT id, name, duration_seconds, position, '
         'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
         'area_id, catalog_exercise_id, catalog_path_id FROM exercises '
         'WHERE routine_id=? ORDER BY position, id',
@@ -698,7 +696,7 @@ def _routine_full(conn, rid):
         cid = e['catalog_exercise_id']
         pid = e['catalog_path_id']
         out_exs.append({
-            'id': e['id'], 'name': e['name'], 'description': e['description'],
+            'id': e['id'], 'name': e['name'],
             'duration_seconds': e['duration_seconds'], 'position': e['position'],
             'resources': res,
             'resource_kind': first['kind'], 'resource_url': first['url'],
@@ -786,14 +784,14 @@ def duplicate_routine(conn, rid):
     )
     nid = cur.lastrowid
     exs = conn.execute(
-        'SELECT name, description, duration_seconds, position FROM exercises '
+        'SELECT name, duration_seconds, position FROM exercises '
         'WHERE routine_id=? ORDER BY position, id', (rid,)
     ).fetchall()
     for e in exs:
         conn.execute(
-            'INSERT INTO exercises(routine_id, name, description, duration_seconds, position) '
-            'VALUES(?,?,?,?,?)',
-            (nid, e['name'], e['description'], e['duration_seconds'], e['position']),
+            'INSERT INTO exercises(routine_id, name, duration_seconds, position) '
+            'VALUES(?,?,?,?)',
+            (nid, e['name'], e['duration_seconds'], e['position']),
         )
     conn.commit()
     return _routine_full(conn, nid)
@@ -874,7 +872,6 @@ def create_exercise(conn, rid, data):
     if err:
         return {'error': err}
     name = (data.get('name') or 'New Exercise').strip()
-    desc = data.get('description') or ''
     dur = int(data.get('duration_seconds') or 0)
     pos = conn.execute(
         'SELECT COALESCE(MAX(position), -1) + 1 FROM exercises WHERE routine_id=?', (rid,)
@@ -889,10 +886,10 @@ def create_exercise(conn, rid, data):
         }])
     first = resources[0] if resources else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     conn.execute(
-        'INSERT INTO exercises(routine_id, name, description, duration_seconds, position, '
+        'INSERT INTO exercises(routine_id, name, duration_seconds, position, '
         'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
-        'area_id, catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-        (rid, name, desc, dur, pos,
+        'area_id, catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+        (rid, name, dur, pos,
          first['kind'], first['url'], first['bpm'], first['label'],
          json.dumps(resources, ensure_ascii=False),
          meta.get('area_id', ''), meta.get('catalog_exercise_id'),
@@ -918,8 +915,6 @@ def update_exercise(conn, eid, data):
                      (meta['catalog_path_id'], eid))
     if data.get('name') is not None:
         conn.execute('UPDATE exercises SET name=? WHERE id=?', (data['name'], eid))
-    if data.get('description') is not None:
-        conn.execute('UPDATE exercises SET description=? WHERE id=?', (data['description'], eid))
     if data.get('duration_seconds') is not None:
         conn.execute('UPDATE exercises SET duration_seconds=? WHERE id=?',
                      (int(data['duration_seconds']), eid))

@@ -38,7 +38,8 @@ duración propia, no mueve ejercicios solo y no añade estado de "maestría".
   final**, después de que los paths funcionen: si hubiera que revertir algo,
   paths y descripción no se arrastran entre sí.
 - Merge a `main` sólo con pruebas en verde, con `--no-ff`, y **la versión se
-  decide en ese momento** (propuesta: **1.5.0**, por ser funcionalidad nueva).
+  decide en ese momento** (decidido: **1.4.1**, un parche dentro de la 1.4:
+  los paths completan el trabajo de ejercicios que quedó fuera).
 - Antes de tocar la BD real: backup verificado con ruta conocida (§11).
 
 ## 4. Modelo de datos
@@ -205,6 +206,34 @@ SELECT id, routine_id, name, description FROM exercises
 - Si devuelve filas: **parar**. Convertir esas descripciones en ejercicios del
   catálogo (o exportarlas a un `.txt`) y volver a comprobar.
 
+### 8.1.1 Resultado del pre-flight (2026-11-16)
+
+En la BD real devolvió **6 filas**, todas fuera de la rutina diaria:
+
+| Rutina | Slot | Texto |
+|---|---|---|
+| 6 | Warmup | Play some scales and barre chords to warmup |
+| 6 | Guitar Aerobics | The main exercise of the day |
+| 6 | Rhythm Guitar 365 | Complementary exercise |
+| 28 | Live Song #1 | Besos |
+| 28 | Live Song #2 | Clavado en un Bar |
+| 28 | Live Song #3 | Europa |
+
+Se hizo backup verificado
+(`practice-backup-20261116-pre-drop-slot-description.db`) y se exportaron las
+17 descripciones a `practice-backup-20261116-slot-descriptions.txt`.
+
+**Estado**: el código ya no lee ni escribe la columna (§8.2–8.5 hechos), pero
+**la columna sigue en la BD** a la espera de decidir qué hacer con esos 6
+textos. Cuando se decida, el único paso pendiente es:
+
+```python
+conn.execute('ALTER TABLE exercises DROP COLUMN description')
+```
+
+desde `_migrate()` (guardado por `PRAGMA table_info`) o con un script de una
+sola vez.
+
 Comprobar además que `ALTER TABLE ... DROP COLUMN` está disponible:
 
 ```
@@ -336,8 +365,9 @@ temporal, como en el lote anterior. Nada de datos reales.
     columna `catalog_path_id` se queda a `NULL`, inofensiva.
   - descripción → restaurar el `.db` del backup (parando el servidor) y
     `git revert` del commit de §8.
-- **Versión**: 1.5.0 al mergear (funcionalidad nueva). El bump se hace en el
-  último commit de la rama, previo al merge.
+- **Versión**: 1.4.1 al mergear (parche: los paths completan el trabajo de
+  ejercicios de la 1.4). El bump se hace en el último commit de la rama,
+  previo al merge.
 
 ## 12. Fases, commits y estimación
 
@@ -346,7 +376,7 @@ temporal, como en el lote anterior. Nada de datos reales.
 | F1 | Tablas, columna, funciones `db.py`, endpoints `/api/paths`, `_exercise_payload` + `_slot_meta` | `Add catalog paths to the data layer and the API` | media jornada |
 | F2 | Manager: segmento `Catalog \| Paths`, editor con drag & drop, control en la fila del slot, chip `not in path` | `Add the paths editor and the slot path picker to the Manager` | 1 día |
 | F3 | Asistente: filtrado del picker, cabecera del menú, `#exMain` con el nombre del path, degradación | `Filter the assistant picker by the slot path` | 2–3 h |
-| F4 | Retirada de la descripción del slot (§8) + bump a 1.5.0 (a confirmar en el merge) | `Drop the slot description now that it lives in the catalog` | 2–3 h |
+| F4 | Retirada de la descripción del slot (§8) + bump a 1.4.1 | `Drop the slot description now that it lives in the catalog` | 2–3 h |
 
 Cada fase termina con sus pruebas (§10) y su `node --check` /
 `py_compile`. La rama se mergea a `main` con `--no-ff` cuando F1–F4 estén

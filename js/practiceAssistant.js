@@ -379,14 +379,11 @@
         parent.appendChild(span);
     }
 
-    // Text shown when hovering the exercise name: the catalog exercise description
-    // when the slot points at one (that is the real exercise), otherwise the
-    // slot's own description.
+    // Text shown when hovering the exercise name: the description of the catalog
+    // exercise (the only place descriptions live now).
     function slotDescText(ex) {
         const cat = slotExercise(ex);
-        const catDesc = cat && cat.description ? String(cat.description).trim() : '';
-        if (catDesc) return catDesc;
-        return String((ex && ex.descripcion) || '').trim();
+        return cat && cat.description ? String(cat.description).trim() : '';
     }
 
     // Panel for the exercise on screen. Null when the slot has no exercise: the
