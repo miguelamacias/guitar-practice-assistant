@@ -8,6 +8,10 @@
     let days = 30;
     let page = 0;              // session log page (0 based)
     let totalSessions = 0;
+    let groupBy = 'day';       // day | area | exercise | slot
+    let filterArea = '';
+    let filterRoutine = '';
+    let filtersReady = false;
 
     const $ = id => document.getElementById(id);
 
@@ -21,6 +25,60 @@
         return String(text == null ? '' : text).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
+    }
+
+    // Area id -> label; the empty id is the group of the pre-catalog history.
+    function areaLabel(id) {
+        if (!id) return 'Unassigned';
+        if (GPH.mgr && GPH.mgr.areaLabel) return GPH.mgr.areaLabel(id) || id;
+        return id;
+    }
+
+    // Stats URL with the optional filters; "_unassigned" is what the select
+    // sends for the empty area.
+    function statsUrl() {
+        let url = '/api/sessions/stats?days=' + days;
+        if (filterArea !== '') url += '&area_id=' + encodeURIComponent(filterArea);
+        if (filterRoutine !== '') url += '&routine_id=' + encodeURIComponent(filterRoutine);
+        return url;
+    }
+
+    // Area and routine selects, filled once with what the server knows.
+    function fillFilters() {
+        const areaSel = $('histAreaFilter');
+        const routineSel = $('histRoutineFilter');
+        if (!areaSel || !routineSel || filtersReady) return Promise.resolve();
+        filtersReady = true;
+        return Promise.all([
+            fetch('/api/settings/practice_areas', { cache: 'no-store' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .catch(function () { return null; }),
+            api('/api/routines')
+        ]).then(function (res) {
+            let areas = [];
+            try { areas = JSON.parse((res[0] && res[0].value) || '[]'); } catch (e) { areas = []; }
+            areaSel.innerHTML = '<option value="">All areas</option>';
+            (areas || []).forEach(function (a) {
+                const o = document.createElement('option');
+                o.value = a.id;
+                o.textContent = a.label;
+                areaSel.appendChild(o);
+            });
+            const unassigned = document.createElement('option');
+            unassigned.value = '_unassigned';
+            unassigned.textContent = 'Unassigned';
+            areaSel.appendChild(unassigned);
+            areaSel.value = filterArea;
+
+            routineSel.innerHTML = '<option value="">All routines</option>';
+            (res[1] || []).forEach(function (r) {
+                const o = document.createElement('option');
+                o.value = String(r.id);
+                o.textContent = r.name;
+                routineSel.appendChild(o);
+            });
+            routineSel.value = filterRoutine;
+        }).catch(function () { filtersReady = false; });
     }
 
     function fmtDur(seconds) {
@@ -124,6 +182,18 @@
             ['Partial exercises', String(st.partial || 0), 'skipped, but with time inside'],
             ['Current streak', streak + (streak === 1 ? ' day' : ' days'), streakNote(best)]
         ];
+        // Area cards come from the same by_area block the breakdown uses, so
+        // the panel never needs an extra request for them.
+        const areaRows = stats.by_area || [];
+        const withTime = areaRows.filter(function (a) { return (a.seconds || 0) > 0; });
+        const most = withTime.slice().sort(function (a, b) { return b.seconds - a.seconds; })[0] || null;
+        const least = withTime.length
+            ? areaRows.slice().sort(function (a, b) { return (a.seconds || 0) - (b.seconds || 0); })[0]
+            : null;
+        cards.push(['Most practised area', most ? areaLabel(most.area_id) : '\u2014',
+                    most ? fmtDur(most.seconds) : 'no practice yet']);
+        cards.push(['Least practised area', least ? areaLabel(least.area_id) : '\u2014',
+                    least ? fmtDur(least.seconds) : 'no areas yet']);
         return '<div class="hist-kpis">' + cards.map(function (c) {
             // A note may carry "\n" (each line is its own row below the label)
             // and "~...~" (a fragment that must stay on one piece, e.g. a date
@@ -466,9 +536,19 @@
             const real = it.elapsed_seconds || 0;
             const plan = it.planned_seconds || 0;
             const extra = (plan && real > plan) ? real - plan : 0;
+            const cat = (it.catalog_exercise_id != null && GPH.mgr && GPH.mgr.catalogById)
+                ? GPH.mgr.catalogById(it.catalog_exercise_id) : null;
+            // The current catalog name wins (a rename fixes the history too);
+            // the snapshot name covers a deleted exercise.
+            const exName = cat ? cat.name : (it.catalog_name || '');
+            const bits = [];
+            if (exName) bits.push(exName);
+            bits.push(areaLabel(it.area_id));
+            const extraText = (exName ? '\u2014 ' : '\u00b7 ') + bits.join(' \u00b7 ');
             return '<li class="hist-detail-item is-' + esc(it.state) + '">' +
                 '<span class="hist-detail-state">' + esc(STATE_LABEL[it.state] || it.state) + '</span>' +
                 '<span class="hist-detail-name">' + esc(it.name) + '</span>' +
+                '<span class="hist-detail-extra">' + esc(extraText) + '</span>' +
                 '<span class="hist-detail-time">' + fmtDur(real) + ' / ' + fmtDur(plan) +
                 (extra ? ' <b class="hist-extra">+' + fmtDur(extra) + '</b>' : '') + '</span></li>';
         }).join('');
@@ -569,6 +649,50 @@
         });
     }
 
+    // Breakdown table: the same window grouped by day / area / exercise / slot.
+    // The bar behind the name keeps it readable without an extra column.
+    function pivotTable(stats) {
+        const rows = groupBy === 'area' ? (stats.by_area || [])
+            : groupBy === 'exercise' ? (stats.by_exercise || [])
+                : groupBy === 'slot' ? (stats.by_slot || [])
+                    : (stats.daily || []);
+        if (!rows.length) {
+            return '<div class="hist-empty">No practice in this period for this grouping.</div>';
+        }
+        const max = Math.max.apply(null, rows.map(function (r) {
+            return r.seconds || 0;
+        }).concat([1]));
+        const head = groupBy === 'area' ? ['Area', 'Time', 'Share', 'Sessions', 'Avg']
+            : groupBy === 'exercise' ? ['Exercise', 'Time', 'Sessions', 'Avg', 'Last practised']
+                : groupBy === 'slot' ? ['Slot', 'Area', 'Time', 'Sessions', 'Avg']
+                    : ['Day', 'Time', 'Sessions'];
+        let html = '<div class="hist-pivot-wrap"><table class="hist-pivot"><thead><tr>' +
+            head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') +
+            '</tr></thead><tbody>';
+        rows.forEach(function (r) {
+            const secs = r.seconds || 0;
+            const pct = Math.round(secs / max * 100);
+            const label = groupBy === 'area' ? areaLabel(r.area_id)
+                : groupBy === 'exercise' ? (r.name || '')
+                    : groupBy === 'slot' ? (r.name || '')
+                        : (r.date || '');
+            const cells = [
+                '<td class="hist-pivot-name"><span class="hist-pivot-fill" style="width:' + pct +
+                '%"></span><span class="hist-pivot-label">' + esc(label) + '</span></td>',
+                '<td class="hist-pivot-time">' + fmtDur(secs) + '</td>'
+            ];
+            if (groupBy === 'area') cells.push('<td>' + Math.round((r.share || 0) * 100) + '%</td>');
+            if (groupBy === 'slot') cells.push('<td>' + esc(areaLabel(r.area_id)) + '</td>');
+            cells.push('<td>' + (r.sessions || 0) + '</td>');
+            cells.push('<td>' + (r.sessions ? fmtDur(Math.round(secs / r.sessions)) : '\u2014') + '</td>');
+            if (groupBy === 'exercise') {
+                cells.push('<td>' + esc(r.last_practiced_on || '\u2014') + '</td>');
+            }
+            html += '<tr>' + cells.join('') + '</tr>';
+        });
+        return html + '</tbody></table></div>';
+    }
+
     function render(stats, sessions) {
         if (!stats || !stats.totals || !stats.totals.sessions) {
             return '<div class="hist-empty">No practice recorded in this period yet.' +
@@ -585,6 +709,7 @@
             '<div class="hist-chart hist-chart-wide"><h3>When you practise</h3>' +
             heatmapChart(stats.heatmap) + '</div>' +
             '</div>' + rankings(stats) +
+            '<h3 class="hist-h3">Breakdown</h3>' + pivotTable(stats) +
             '<h3 class="hist-h3">Last sessions</h3>' +
             '<div id="histSessions">' + sessionsTable(sessions) + pager() + '</div>';
     }
@@ -596,8 +721,9 @@
         document.querySelectorAll('.hist-range-btn').forEach(function (b) {
             b.classList.toggle('active', parseInt(b.getAttribute('data-days'), 10) === days);
         });
+        fillFilters();
         body.innerHTML = '<div class="hist-empty">Loading…</div>';
-        Promise.all([api('/api/sessions/stats?days=' + days),
+        Promise.all([api(statsUrl()),
                      api('/api/sessions?limit=' + PAGE_SIZE + '&offset=' + page * PAGE_SIZE)])
             .then(function (res) {
                 totalSessions = (res[1] && res[1].total) || 0;
@@ -618,6 +744,29 @@
                 load(parseInt(b.getAttribute('data-days'), 10) || RANGES[0]);
             });
         });
+        const groupSel = $('histGroup');
+        if (groupSel) {
+            groupSel.addEventListener('change', function () {
+                groupBy = this.value || 'day';
+                load();
+            });
+        }
+        const areaSel = $('histAreaFilter');
+        if (areaSel) {
+            areaSel.addEventListener('change', function () {
+                filterArea = this.value;
+                page = 0;
+                load();
+            });
+        }
+        const routineSel = $('histRoutineFilter');
+        if (routineSel) {
+            routineSel.addEventListener('change', function () {
+                filterRoutine = this.value;
+                page = 0;
+                load();
+            });
+        }
     }
 
     GPH.history = { init: init, show: function () { load(); }, load: load };

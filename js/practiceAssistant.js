@@ -193,6 +193,23 @@
         flushSessionQueue();
         hideTip();
         wireTimerFloat();
+        const changeBtn = document.getElementById('exChangeBtn');
+        if (changeBtn) changeBtn.addEventListener('click', openCatalogPicker);
+        const catalogSel = document.getElementById('exCatalogSel');
+        if (catalogSel) {
+            catalogSel.addEventListener('change', function () { changeSlotExercise(this.value); });
+            catalogSel.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') { this.hidden = true; renderSlotHeader(); }
+            });
+        }
+        // Same pattern as the Manager pickers: a click outside closes it.
+        document.addEventListener('mousedown', function (e) {
+            const sel = document.getElementById('exCatalogSel');
+            if (!sel || sel.hidden) return;
+            if (e.target === sel || (e.target.closest && e.target.closest('#exCatalogSel'))) return;
+            sel.hidden = true;
+            renderSlotHeader();
+        });
         const desc = document.getElementById('welcomeRoutineDesc');
         if (!rActiva().ejercicios.length) {
             document.getElementById('welcomeRoutineName').innerHTML = GPH.icons.get('alert') + ' No active routine loaded';
@@ -203,7 +220,7 @@
 
         const totalMins = getRoutineTotalMinutes();
         setWelcomeName(rActiva().nombre || 'Daily Guitar Routine', totalMins);
-        desc.textContent = 'Contains ' + rActiva().ejercicios.length + ' exercises to practice today.';
+        desc.textContent = 'Contains ' + rActiva().ejercicios.length + ' slots to practice today.';
         // Hover / focus: the full list in a dark panel, one exercise per row.
         desc.classList.add('has-tip');
         wireTip(desc, buildWelcomeTip);
@@ -293,7 +310,7 @@
         displayCurrentExercise();
     }
 
-    // "Exercise 2 of 8 · done" / "· skipped" (no suffix while pending).
+    // "Slot 2 of 8 · done" / "· skipped" (no suffix while pending).
     function setIndexLabel() {
         const el = document.getElementById('exIndex');
         if (!el) return;
@@ -301,8 +318,137 @@
         let suffix = '';
         if (DONE_STATES[state]) suffix = ' \u00b7 done';
         else if (state === 'skipped') suffix = ' \u00b7 skipped';
-        el.textContent = 'Exercise ' + (currentExerciseIndex + 1) + ' of ' +
+        el.textContent = 'Slot ' + (currentExerciseIndex + 1) + ' of ' +
             (rActiva().ejercicios || []).length + suffix;
+    }
+
+    // ---- Slot header: area, current exercise and the picker ----------------
+    // Line 1 is the slot (name · area · duration); line 2 is the working
+    // content: the catalog exercise, or the description the slot always carried
+    // when it has none. The picker is locked while an attempt is live (§9.3).
+    let catalogCache = null;
+    let catalogLoading = null;
+
+    function mmss(sec) {
+        const total = Math.max(0, Math.round(sec || 0));
+        return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+    }
+
+    function slotExercise(ex) { return (ex && ex.catalog_exercise) || null; }
+
+    // Live attempt: started and not resolved yet (a pause keeps the lock).
+    function attemptLive(idx) {
+        return !!clockStartedSet[idx] && !DONE_STATES[exerciseStates[idx]];
+    }
+
+    function updateChangeLock() {
+        const btn = document.getElementById('exChangeBtn');
+        if (!btn || btn.hidden) return;
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        const live = attemptLive(currentExerciseIndex);
+        btn.disabled = live;
+        btn.title = live
+            ? 'The attempt is live: change it when the timer ends or press Reset'
+            : (slotExercise(ex) ? 'Pick another exercise for this slot'
+                                : 'Pick an exercise from the catalog');
+    }
+
+    function renderSlotHeader(mode) {
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        if (!ex) return;
+        const keepPicker = mode === 'keep';
+        const sel = document.getElementById('exCatalogSel');
+        if (sel && !keepPicker) sel.hidden = true;
+        const pickerOpen = !!(sel && !sel.hidden);
+        const title = document.getElementById('exTitle');
+        if (title) {
+            const bits = [ex.nombre];
+            if (ex.area) bits.push(ex.area);
+            bits.push(mmss(ex.tiempo));
+            title.textContent = bits.join(' \u00b7 ');
+        }
+        const chip = document.getElementById('exAreaChip');
+        if (chip) chip.hidden = !!ex.area_id;
+        const cat = slotExercise(ex);
+        const desc = document.getElementById('exDescription');
+        if (desc) {
+            desc.textContent = cat ? cat.name : (ex.descripcion || '');
+            desc.classList.toggle('is-exercise', !!cat);
+        }
+        const btn = document.getElementById('exChangeBtn');
+        if (btn) {
+            // Never draw the button over an open picker, even after a refresh.
+            btn.hidden = pickerOpen;
+            btn.textContent = cat ? 'Change' : 'Add exercise';
+        }
+        updateChangeLock();
+    }
+
+    function loadCatalog() {
+        if (catalogCache) return Promise.resolve(catalogCache);
+        if (catalogLoading) return catalogLoading;
+        catalogLoading = fetch('/api/catalog', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : { exercises: [] }; })
+            .then(function (d) { catalogCache = (d && d.exercises) || []; return catalogCache; })
+            .catch(function () { catalogCache = []; return catalogCache; });
+        return catalogLoading;
+    }
+
+    function openCatalogPicker() {
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        const sel = document.getElementById('exCatalogSel');
+        const btn = document.getElementById('exChangeBtn');
+        if (!ex || !sel || attemptLive(currentExerciseIndex)) return;
+        loadCatalog().then(function (list) {
+            sel.innerHTML = '';
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = '\u2014 None (use description) \u2014';
+            sel.appendChild(none);
+            list.forEach(function (c) {
+                const o = document.createElement('option');
+                o.value = String(c.id);
+                o.textContent = c.name;
+                sel.appendChild(o);
+            });
+            sel.value = ex.catalog_exercise_id ? String(ex.catalog_exercise_id) : '';
+            sel.hidden = false;
+            if (btn) btn.hidden = true;
+            sel.focus();
+        });
+    }
+
+    function changeSlotExercise(value) {
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        const sel = document.getElementById('exCatalogSel');
+        if (!ex) return;
+        const cid = value ? Number(value) : null;
+        fetch('/api/exercises/' + ex.id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ catalog_exercise_id: cid })
+        }).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function () {
+            // Only the slot pointer moves: the attempt already recorded in the
+            // session log keeps the exercise that was practised.
+            ex.catalog_exercise_id = cid;
+            ex.catalog_exercise = null;
+            if (cid) {
+                const found = (catalogCache || []).filter(function (c) { return c.id === cid; })[0];
+                if (found) {
+                    ex.catalog_exercise = { id: found.id, name: found.name,
+                                            description: found.description || '' };
+                }
+            }
+            if (sel) sel.hidden = true;
+            renderSlotHeader();
+        }).catch(function (e) {
+            if (sel) sel.hidden = true;
+            renderSlotHeader();
+            alert('Could not change the exercise (' + e.message + ')');
+        });
     }
 
     // Seconds really played for an exercise. After a page reload the countdown is
@@ -367,8 +513,7 @@
         const ejercicio = rActiva().ejercicios[currentExerciseIndex];
 
         setIndexLabel();
-        document.getElementById('exTitle').textContent = ejercicio.nombre;
-        document.getElementById('exDescription').textContent = ejercicio.descripcion;
+        renderSlotHeader();
 
         exerciseTimeTotal = ejercicio.tiempo;
         exerciseTimeLeft = Math.max(0, (ejercicio.tiempo || 0) - playedFor(currentExerciseIndex, ejercicio));
@@ -1023,6 +1168,10 @@
         if (exerciseTimeLeft <= 0) return;
         isExerciseRunning = true;
         clockStart();
+        // Play is the moment the server records this attempt: the area and the
+        // exercise are captured then, before the picker is unlocked at the end
+        // of the timer (plan 6.1 / 9.4).
+        sessionSyncItem(currentExerciseIndex);
 
         if (!resourceApplied) { applyExerciseResource(rActiva().ejercicios[currentExerciseIndex]); resourceApplied = true; }
 
@@ -1030,6 +1179,7 @@
         btn.innerHTML = GPH.icons.get('pause') + ' Pause';
         btn.classList.add('is-playing');
         btn.classList.remove('is-ended');
+        updateChangeLock();   // the attempt is live: the picker locks now
 
         exerciseTimerInterval = setInterval(function () {
             if (exerciseTimeLeft > 0) {
@@ -1098,6 +1248,7 @@
         updateTimerDisplay();
         updateProgressBar();
         updateNextButtonState();
+        updateChangeLock();   // Reset frees the attempt again
     }
 
     // Persisted per-session outcome. The legacy binary map (routineCompleted,
@@ -1409,6 +1560,7 @@
         const ex = rActiva().ejercicios[currentExerciseIndex];
         setExerciseState(currentExerciseIndex, classifyDone(currentExerciseIndex, ex));
         setIndexLabel();
+        updateChangeLock();   // timer finished: the next session can use another one
     }
     function goToExercise(idx) {
         const exs = rActiva().ejercicios;
@@ -1492,8 +1644,7 @@
 
         const ejercicio = rActiva().ejercicios[currentExerciseIndex];
         setIndexLabel();
-        document.getElementById('exTitle').textContent = ejercicio.nombre;
-        document.getElementById('exDescription').textContent = ejercicio.descripcion;
+        renderSlotHeader('keep');   // a soft refresh must not close the picker
 
         updateResourceTag(ejercicio);
         renderExerciseSidebar();

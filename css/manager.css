@@ -530,9 +530,10 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 /* Following one line across beats lighting the whole block: only this item. */
 .hist-detail-item:hover { background: rgba(255, 255, 255, 0.1); }
 .hist-detail-state { width: 108px; flex: 0 0 auto; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.4px; color: var(--muted); }
+.hist-detail-extra { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.76rem; color: #8fb8d8; }
 .hist-detail-item.is-timed .hist-detail-state { color: var(--accent); }
 .hist-detail-item.is-untimed .hist-detail-state { color: var(--green); }
-.hist-detail-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-detail-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-detail-time { color: var(--muted); font-size: 0.74rem; white-space: nowrap; }
 
 .hist-rank { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; }
@@ -637,5 +638,30 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 .area-list { display: grid; gap: 6px; margin-bottom: 10px; }
 .area-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
 .area-label { padding: 5px 8px; font-family: inherit; font-size: 0.82rem; }
+
+/* --------------------- History: filters + breakdown -------------------- */
+.hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hist-select {
+    padding: 5px 8px; border-radius: 6px; font-family: inherit; font-size: 0.78rem;
+    background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.hist-pivot-wrap { overflow-x: auto; margin-bottom: 6px; }
+.hist-pivot { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.hist-pivot th {
+    text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--muted); padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.hist-pivot td {
+    padding: 5px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: middle;
+}
+.hist-pivot tbody tr:nth-child(odd) td { background: rgba(255, 255, 255, 0.03); }
+.hist-pivot-name { position: relative; min-width: 180px; }
+.hist-pivot-fill {
+    position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 3px;
+    background: rgba(255, 255, 255, 0.07); pointer-events: none;
+}
+.hist-pivot-label { position: relative; }
+.hist-pivot-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 

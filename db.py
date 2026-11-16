@@ -1916,7 +1916,8 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
     filters, fargs = [], []
     if area_id is not None and str(area_id) != '':
         filters.append('AND i.area_id = ?')
-        fargs.append(str(area_id))
+        # The UI sends "_unassigned" for the pre-catalog group (empty area).
+        fargs.append('' if str(area_id) == '_unassigned' else str(area_id))
     if routine_id:
         filters.append('AND s.routine_id = ?')
         fargs.append(int(routine_id))

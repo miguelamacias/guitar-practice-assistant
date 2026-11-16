@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎸</text></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>ðŸŽ¸</text></svg>">
     <title>Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/styles.css?v=100">
+    <link rel="stylesheet" href="css/styles.css?v=101">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
@@ -18,7 +18,7 @@
     <script defer src="js/ui.js?v=4"></script>
     <script defer src="js/metronome.js?v=6"></script>
     <script defer src="js/drumMachine.js?v=14"></script>
-    <script defer src="js/practiceAssistant.js?v=55"></script>
+    <script defer src="js/practiceAssistant.js?v=58"></script>
     <script defer src="js/api.js?v=1"></script>
     <script defer src="js/settings.js?v=2"></script>
     <script defer src="js/prefs.js?v=1"></script>
@@ -99,7 +99,7 @@
                         <div id="exerciseListSidebar" class="exercise-sidebar"></div>
 
                         <div class="exercise-main">
-                            <!-- Panel toolbar: start time · exercise counter · Reset -->
+                            <!-- Panel toolbar: start time Â· exercise counter Â· Reset -->
                             <div class="exercise-head">
                                 <span id="practiceStartTime" class="exercise-start-time"><svg class="start-time-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><polyline points="12 7 12 12 15.5 14"></polyline></svg><span id="practiceStartTimeText">Start time: --:--</span></span>
                                 <div id="exIndex" class="ex-index">-</div>
@@ -110,7 +110,12 @@
                                 <!-- Name + description + resource: one tight block about the same exercise -->
                                 <div class="ex-info">
                                     <div id="exTitle" class="ex-title">-</div>
-                                    <div id="exDescription" class="ex-desc">-</div>
+                                    <div class="ex-content-row">
+                                        <div id="exDescription" class="ex-desc">-</div>
+                                        <button id="exChangeBtn" class="ex-change-btn" type="button" hidden>Change</button>
+                                        <select id="exCatalogSel" class="ex-catalog-sel" aria-label="Current exercise" hidden></select>
+                                    </div>
+                                    <div id="exAreaChip" class="ex-area-chip" hidden>No area</div>
                                     <div id="exResource" class="ex-resource-tag"></div>
                                 </div>
                                 <div id="exTimer" class="ex-timer">00:00</div>
@@ -316,4 +321,7 @@
 
 </body>
 </html>
+
+
+
 
