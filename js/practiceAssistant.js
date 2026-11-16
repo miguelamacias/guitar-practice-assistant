@@ -363,6 +363,8 @@
     // when it has none. The picker is locked while an attempt is live (§9.3).
     let catalogCache = null;
     let catalogLoading = null;
+    let pathsCache = null;
+    let pathsLoading = null;
 
     function slotExercise(ex) { return (ex && ex.catalog_exercise) || null; }
 
@@ -435,8 +437,10 @@
         }
         const mainEl = document.getElementById('exMain');
         if (mainEl) {
-            mainEl.textContent = cat ? cat.name : (ex.descripcion || '');
-            mainEl.className = 'ex-main' + (cat ? ' is-exercise' : '');
+            const path = slotPath(ex);
+            mainEl.textContent = cat ? cat.name
+                : (path ? path.name + ' \u2014 pick one' : '');
+            mainEl.className = 'ex-main' + (cat ? ' is-exercise' : (path ? ' is-path-hint' : ''));
             // Hover on the exercise name (not on the slot name): its description,
             // which is not displayed anywhere else. Only when the slot points at
             // an exercise: without one the line already shows the slot text.
@@ -459,6 +463,28 @@
             .then(function (d) { catalogCache = (d && d.exercises) || []; return catalogCache; })
             .catch(function () { catalogCache = []; return catalogCache; });
         return catalogLoading;
+    }
+
+    // Learning paths: only the picker needs them, cached like the catalog.
+    // A failure is not fatal: the picker falls back to the whole catalog.
+    function loadPaths() {
+        if (pathsCache) return Promise.resolve(pathsCache);
+        if (pathsLoading) return pathsLoading;
+        pathsLoading = fetch('/api/paths', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : { paths: [] }; })
+            .then(function (d) { pathsCache = (d && d.paths) || []; return pathsCache; })
+            .catch(function () { pathsCache = []; return pathsCache; });
+        return pathsLoading;
+    }
+
+    // The path of a slot, from the cache when possible (the payload already
+    // carries id and name, so the header can be rendered before the fetch lands).
+    function slotPath(ex) {
+        const pid = ex && ex.catalog_path_id;
+        if (pid == null) return null;
+        const found = (pathsCache || []).filter(function (p) { return p.id === pid; })[0];
+        if (found) return found;
+        return ex.catalog_path ? { id: pid, name: ex.catalog_path.name || '', steps: [] } : null;
     }
 
     // ---- Catalog menu ------------------------------------------------------
@@ -495,10 +521,12 @@
     function highlightMenuOption() {
         const menu = menuEl();
         if (!menu) return;
-        Array.prototype.forEach.call(menu.children, function (child, i) {
-            child.classList.toggle('is-highlighted', i === menuIndex);
+        const options = Array.prototype.slice.call(
+            menu.querySelectorAll('.ex-catalog-option'));
+        options.forEach(function (opt, i) {
+            opt.classList.toggle('is-highlighted', i === menuIndex);
         });
-        const active = menu.children[menuIndex];
+        const active = options[menuIndex];
         if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
     }
 
@@ -508,11 +536,42 @@
         const btn = document.getElementById('exChangeBtn');
         if (!ex || !menu || attemptLive(currentExerciseIndex)) return;
         if (!menu.hidden) { closeCatalogMenu(); return; }   // the caret toggles it
-        loadCatalog().then(function (list) {
-            menuItems = [{ id: null, name: '\u2014 None (use description) \u2014' }]
-                .concat(list.map(function (c) { return { id: c.id, name: c.name }; }));
-            menu.innerHTML = '';
+        Promise.all([loadCatalog(), loadPaths()]).then(function (res) {
+            const list = res[0];
+            const path = slotPath(ex);
+            // A path only narrows the picker when its steps are known: an empty
+            // path (or a failed /api/paths) falls back to the whole catalog.
+            const steps = (path && path.steps) || [];
+            const hasPool = steps.length > 0;
             const currentId = ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id;
+            // With a path the picker only offers its steps (path order); without
+            // one, the whole catalog. A stale exercise outside the path stays
+            // visible so it can be recognised and replaced.
+            const pool = hasPool
+                ? steps.map(function (s) {
+                    const known = list.filter(function (c) {
+                        return c.id === s.catalog_exercise_id;
+                    })[0];
+                    return { id: s.catalog_exercise_id, name: s.name || (known ? known.name : '') };
+                })
+                : list.map(function (c) { return { id: c.id, name: c.name }; });
+            menuItems = [{ id: null, name: '\u2014 No exercise \u2014' }].concat(pool);
+            if (hasPool && currentId != null &&
+                !menuItems.some(function (it) { return it.id === currentId; })) {
+                const known = list.filter(function (c) { return c.id === currentId; })[0];
+                menuItems.splice(1, 0, {
+                    id: currentId,
+                    name: (known ? known.name : 'exercise ' + currentId) + ' (not in path)'
+                });
+            }
+            menu.innerHTML = '';
+            if (hasPool) {
+                const head = document.createElement('div');
+                head.className = 'ex-catalog-head';
+                head.textContent = path.name + ' \u00b7 ' + steps.length +
+                    ' step' + (steps.length === 1 ? '' : 's');
+                menu.appendChild(head);
+            }
             menuItems.forEach(function (item, i) {
                 const opt = document.createElement('button');
                 opt.type = 'button';
