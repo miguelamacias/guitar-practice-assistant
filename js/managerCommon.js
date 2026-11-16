@@ -192,14 +192,19 @@
         if (metaPromise && !force) return metaPromise;
         metaPromise = Promise.all([
             GPH.settings.get('practice_areas').catch(function () { return null; }),
-            api('GET', '/api/catalog').catch(function () { return { exercises: [] }; })
+            api('GET', '/api/catalog').catch(function () { return { exercises: [] }; }),
+            api('GET', '/api/paths').catch(function () { return { paths: [] }; })
         ]).then(function (res) {
             let areas = [];
             try {
                 areas = JSON.parse(res[0] || '[]');
                 if (!Array.isArray(areas)) areas = [];
             } catch (e) { areas = []; }
-            metaData = { areas: areas, catalog: (res[1] && res[1].exercises) || [] };
+            metaData = {
+                areas: areas,
+                catalog: (res[1] && res[1].exercises) || [],
+                paths: (res[2] && res[2].paths) || []
+            };
             return metaData;
         });
         return metaPromise;
@@ -207,6 +212,12 @@
 
     function areas() { return metaData.areas; }
     function catalog() { return metaData.catalog; }
+    function paths() { return metaData.paths; }
+
+    function pathById(id) {
+        if (id == null) return null;
+        return metaData.paths.filter(function (p) { return p.id === id; })[0] || null;
+    }
 
     function areaLabel(id) {
         if (!id) return '';
@@ -222,7 +233,7 @@
     GPH.mgr = {
         $: $, api: api, toast: toast, notify: notify, bc: bc, setDirty: setDirty,
         dragHandle: dragHandle, makeSortable: makeSortable, balanceLanes: balanceLanes,
-        loadMeta: loadMeta, areas: areas, catalog: catalog,
-        areaLabel: areaLabel, catalogById: catalogById
+        loadMeta: loadMeta, areas: areas, catalog: catalog, paths: paths,
+        areaLabel: areaLabel, catalogById: catalogById, pathById: pathById
     };
 })(window.GPH = window.GPH || {});

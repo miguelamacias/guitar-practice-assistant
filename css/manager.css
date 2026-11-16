@@ -591,6 +591,9 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 }
 .ex-cat-picker { flex: 1 1 240px; min-width: 180px; max-width: 460px; }
 .ex-cat-picker .ex-res-trigger { height: 34px; font-size: 0.82rem; }
+/* Path picker on the same row: narrower than the exercise one. */
+.ex-path-picker { flex: 0 1 190px; min-width: 140px; max-width: 240px; }
+.ex-path-picker .ex-res-trigger { height: 34px; font-size: 0.82rem; }
 .chip-warn {
     font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.5px;
     color: #f0b429; border: 1px solid rgba(240, 180, 41, 0.45);
@@ -626,6 +629,47 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 /* --------------------------- Exercise catalog -------------------------- */
+/* Catalog | Paths segment, above the two-column layout. */
+.cat-tabs {
+    display: inline-flex; gap: 4px; padding: 3px; margin: 0 0 12px;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+.cat-tab {
+    border: 0; background: transparent; color: #b9b9b9; cursor: pointer;
+    padding: 6px 14px; border-radius: 6px; font-family: inherit;
+    font-size: 0.82rem; letter-spacing: 0.3px;
+}
+.cat-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.cat-tab.is-active {
+    background: var(--accent); color: #fff; font-weight: 600;
+}
+
+/* Path editor: one row per step, same grammar as the slot list. */
+.path-steps { display: grid; gap: 6px; margin-bottom: 10px; }
+.path-step {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.path-step.dragging { opacity: 0.5; }
+.path-step-n { min-width: 1.6em; text-align: right; color: var(--muted); font-size: 0.8rem; }
+.path-step-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.path-step-name { font-size: 0.86rem; }
+.path-step-note {
+    background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
+    padding: 4px 6px; font-family: inherit; font-size: 0.78rem; width: 100%;
+}
+.path-step-del { flex: 0 0 auto; }
+.path-add { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.path-add select {
+    flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 6px;
+    background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
+    font-family: inherit; font-size: 0.82rem;
+}
+.path-add select:disabled { opacity: 0.6; }
+
 .cat-search input {
     width: 240px; padding: 6px 8px; font-family: inherit; font-size: 0.82rem;
 }

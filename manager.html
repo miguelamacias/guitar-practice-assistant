@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=57">
+    <link rel="stylesheet" href="css/manager.css?v=58">
 </head>
 <body>
 <div class="mgr">
@@ -220,6 +220,14 @@
         </div>
     </div>
 
+    <div class="cat-tabs" role="tablist" aria-label="Catalog panels">
+        <button id="catTabCatalog" class="cat-tab is-active" type="button"
+                role="tab" aria-selected="true">Catalog</button>
+        <button id="catTabPaths" class="cat-tab" type="button"
+                role="tab" aria-selected="false">Paths</button>
+    </div>
+
+    <div id="catPanelCatalog">
     <div class="layout">
         <div class="panel">
             <h2>Catalog <span class="sub" id="catCount"></span></h2>
@@ -255,6 +263,43 @@
                 <div id="catUsedIn" class="cat-used"></div>
                 <h3 class="cat-h3">Recent practices</h3>
                 <div id="catRecent" class="cat-recent"></div>
+            </div>
+        </div>
+    </div>
+    </div><!-- /catPanelCatalog -->
+
+    <div id="catPanelPaths" class="layout" hidden>
+        <div class="panel">
+            <h2>Paths <span class="sub" id="pathCount"></span></h2>
+            <div id="pathList"></div>
+            <button id="newPathBtn" class="btn primary block" type="button">+ New path</button>
+        </div>
+
+        <div class="panel">
+            <div id="pathEmpty" class="empty">Select or create a path.</div>
+            <div id="pathEditor" hidden>
+                <div class="field">
+                    <label>Name</label>
+                    <input type="text" id="pathName">
+                </div>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea id="pathDesc" rows="2"></textarea>
+                </div>
+                <h3 class="cat-h3">Steps</h3>
+                <div id="pathSteps" class="path-steps"></div>
+                <div id="pathStepsEmpty" class="empty" hidden>
+                    Empty path &mdash; it cannot be assigned to a slot yet.
+                </div>
+                <div class="path-add">
+                    <select id="pathAddSel" aria-label="Exercise to add"></select>
+                    <button id="pathAddBtn" class="btn small" type="button">+ Add exercise</button>
+                </div>
+                <div class="editor-actions">
+                    <button id="savePathBtn" class="btn primary" type="button">Save path</button>
+                    <button id="delPathBtn" class="btn danger" type="button">Delete</button>
+                    <span id="pathUsage" class="cat-usage"></span>
+                </div>
             </div>
         </div>
     </div>
@@ -453,12 +498,13 @@
 <script src="js/theory.js?v=20"></script>
 <script src="js/chords.js?v=3"></script>
 <script src="js/chordDiagrams.js?v=2"></script>
-<script src="js/managerCommon.js?v=7"></script>
+<script src="js/managerCommon.js?v=8"></script>
 <!-- the drum preset catalog comes from the widget itself (single source of truth) -->
 <script src="js/drumMachine.js?v=14"></script>
-<script src="js/manager.js?v=31"></script>
+<script src="js/manager.js?v=34"></script>
 <script src="js/managerExercises.js?v=2"></script>
-<script src="js/managerSections.js?v=23"></script>
+<script src="js/managerPaths.js?v=1"></script>
+<script src="js/managerSections.js?v=24"></script>
 <script src="js/managerHistory.js?v=31"></script>
 </body>
 </html>

@@ -836,16 +836,92 @@
         areaSel.value = ex.area_id || '';
 
         const catItems = GPH.mgr.catalog().map(function (c) { return { label: c.name, id: c.id }; });
-        let catIndex = '';
-        catItems.forEach(function (c, i) {
-            if (c.id === ex.catalog_exercise_id) catIndex = String(i);
+
+        // ---- learning path (optional): narrows the exercise picker to its pool
+        const pathItems = GPH.mgr.paths()
+            .filter(function (p) { return (p.steps || []).length; })
+            .map(function (p) { return { label: p.name, id: p.id }; });
+        let pathIndex = '';
+        pathItems.forEach(function (p, i) {
+            if (p.id === ex.catalog_path_id) pathIndex = String(i);
         });
-        const catPicker = createResourcePicker(catItems, catIndex,
-            { noneLabel: '\u2014 None (use description) \u2014' });
-        catPicker.root.classList.add('ex-cat-picker');
-        catPicker.select.classList.add('ex-cat');
-        catPicker.trigger.setAttribute('aria-label', 'Current exercise');
-        const catSel = catPicker.select;
+        const pathPicker = createResourcePicker(pathItems, pathIndex,
+            { noneLabel: '\u2014 No path \u2014' });
+        pathPicker.root.classList.add('ex-path-picker');
+        pathPicker.select.classList.add('ex-path');
+        pathPicker.trigger.setAttribute('aria-label', 'Learning path');
+        pathPicker.trigger.title = 'Learning path: the exercise picker only offers its steps';
+        const pathSel = pathPicker.select;
+
+        function pathSteps(id) {
+            const p = GPH.mgr.pathById(Number(id));
+            return (p && p.steps) || [];
+        }
+
+        // The picker stores an index into `pathItems`, not the path id.
+        pathSel._pool = pathItems;
+        function selectedPathId() {
+            if (!pathSel.value) return null;
+            const item = pathItems[Number(pathSel.value)];
+            return item ? item.id : null;
+        }
+
+        // The exercise picker is rebuilt when the path changes, so it only shows
+        // the pool of that path (or the whole catalog when there is no path).
+        let catPicker = null;
+        let catSel = null;
+
+        function buildCatPicker(currentId) {
+            const pathId = selectedPathId();
+            const allowed = pathId ? pathSteps(pathId) : null;
+            const pool = allowed
+                ? allowed.map(function (s) {
+                    return { label: s.name, id: s.catalog_exercise_id };
+                })
+                : catItems.slice();
+            // An exercise outside the path must stay visible and selectable.
+            if (pathId && currentId != null &&
+                !pool.some(function (c) { return c.id === currentId; })) {
+                const known = GPH.mgr.catalogById(currentId);
+                pool.unshift({
+                    label: (known ? known.name : 'exercise ' + currentId) + ' (not in path)',
+                    id: currentId
+                });
+            }
+            let initial = '';
+            pool.forEach(function (c, i) {
+                if (c.id === currentId) initial = String(i);
+            });
+            const picker = createResourcePicker(pool, initial,
+                { noneLabel: '\u2014 No exercise \u2014' });
+            picker.root.classList.add('ex-cat-picker');
+            picker.root._pool = pool;      // select.value indexes this pool
+            picker.select.classList.add('ex-cat');
+            picker.trigger.setAttribute('aria-label', 'Current exercise');
+            return picker;
+        }
+
+        function mountCatPicker(currentId) {
+            const old = catPicker ? catPicker.root : null;
+            catPicker = buildCatPicker(currentId);
+            catSel = catPicker.select;
+            catSel._pool = catPicker.root._pool;
+            if (old && old.parentNode) old.parentNode.replaceChild(catPicker.root, old);
+            else if (metaRow) metaRow.appendChild(catPicker.root);
+            catSel.addEventListener('change', function () {
+                syncFromDesc();
+                syncPathChip();
+                setDirty(true);
+            });
+            syncFromDesc();
+        }
+
+        // Id of the exercise currently selected in the (possibly filtered) picker.
+        function currentCatId() {
+            if (!catSel || catSel.value === '' || !catSel._pool) return null;
+            const item = catSel._pool[Number(catSel.value)];
+            return item ? item.id : null;
+        }
 
         const noAreaChip = document.createElement('span');
         noAreaChip.className = 'chip-warn';
@@ -860,6 +936,31 @@
         });
         syncNoAreaChip();
 
+        // Amber chip when the slot's exercise is not part of the chosen path.
+        const pathChip = document.createElement('span');
+        pathChip.className = 'chip-warn';
+        pathChip.textContent = 'not in path';
+        pathChip.hidden = true;
+
+        function syncPathChip() {
+            const pid = selectedPathId();
+            const cid = currentCatId();
+            const outside = !!(pid && cid != null &&
+                !pathSteps(pid).some(function (s) { return s.catalog_exercise_id === cid; }));
+            pathChip.hidden = !outside;
+            pathChip.title = outside
+                ? 'This exercise is not part of the chosen path. It is kept until you ' +
+                  'pick one from the path.'
+                : '';
+        }
+
+        // Changing the path narrows the exercise pool but keeps the current one.
+        pathSel.addEventListener('change', function () {
+            mountCatPicker(currentCatId());
+            syncPathChip();
+            setDirty(true);
+        });
+
         const fromDesc = mk('\u21aa From description',
             'Create a catalog exercise from this slot description', function () {
                 createFromDescription(row);
@@ -868,7 +969,7 @@
         // Only useful while the slot has no exercise and there is something to
         // convert; it follows the picker and the description as they change.
         function syncFromDesc() {
-            const hasExercise = !!catSel.value;
+            const hasExercise = !!(catSel && catSel.value);
             const hasDesc = !!(descIn.value || '').trim();
             fromDesc.hidden = hasExercise || !hasDesc;
             fromDesc.title = hasExercise
@@ -876,14 +977,15 @@
                 : (hasDesc ? 'Create a catalog exercise from this slot description'
                            : 'Write a description first');
         }
-        catSel.addEventListener('change', syncFromDesc);
         descIn.addEventListener('input', syncFromDesc);
-        syncFromDesc();
 
         metaRow.appendChild(areaSel);
-        metaRow.appendChild(catPicker.root);
+        metaRow.appendChild(pathPicker.root);
+        mountCatPicker(ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id);
         metaRow.appendChild(fromDesc);
+        metaRow.appendChild(pathChip);
         metaRow.appendChild(noAreaChip);
+        syncPathChip();
         row.appendChild(metaRow);
         row._areaSel = areaSel;
 
@@ -1207,10 +1309,19 @@
             const dur = row.querySelector('.ex-dur');
             const areaSel = row.querySelector('.ex-area');
             const catSel = row.querySelector('.ex-cat');
+            const pathSel = row.querySelector('.ex-path');
             let catalogId = null;
             if (catSel && catSel.value !== '') {
-                const cat = GPH.mgr.catalog()[Number(catSel.value)];
+                const pool = catSel._pool || GPH.mgr.catalog();
+                const cat = pool[Number(catSel.value)];
                 catalogId = cat ? cat.id : null;
+            }
+            // The path picker stores an index into its pool, not the path id.
+            let pathId = null;
+            if (pathSel && pathSel.value !== '') {
+                const pathPool = pathSel._pool || [];
+                const item = pathPool[Number(pathSel.value)];
+                pathId = item ? item.id : null;
             }
             const list = [];
 
@@ -1243,7 +1354,8 @@
                 duration_seconds: toSeconds(dur ? dur.value : 0),
                 resources: list,
                 area_id: areaSel ? areaSel.value : '',
-                catalog_exercise_id: catalogId
+                catalog_exercise_id: catalogId,
+                catalog_path_id: pathId
             });
         });
         return out;
@@ -1261,7 +1373,8 @@
             await api('PUT', '/api/exercises/' + ex.id,
                 { name: ex.name, description: ex.description, duration_seconds: ex.duration_seconds,
                   resources: ex.resources, area_id: ex.area_id,
-                  catalog_exercise_id: ex.catalog_exercise_id });
+                  catalog_exercise_id: ex.catalog_exercise_id,
+                  catalog_path_id: ex.catalog_path_id || null });
         }
         setDirty(false);
         updateAreaBanner();
@@ -1489,6 +1602,11 @@
         document.addEventListener('slot-meta:changed', function () {
             if (current && !dirty) renderEditor();
             updateAreaBanner();
+        });
+        // A path was created, edited or deleted: the slot rows rebuild their path
+        // and exercise pickers (same rule: never over unsaved edits).
+        document.addEventListener('paths:changed', function () {
+            if (current && !dirty) renderEditor();
         });
         GPH.mgr.loadMeta()
             .then(function () { return api('GET', '/api/sections'); })
