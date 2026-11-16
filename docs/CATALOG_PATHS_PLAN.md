@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS catalog_path_steps (
     path_id             INTEGER NOT NULL REFERENCES catalog_paths(id) ON DELETE CASCADE,
     catalog_exercise_id INTEGER NOT NULL REFERENCES catalog_exercises(id) ON DELETE CASCADE,
     position            INTEGER NOT NULL DEFAULT 0,
-    note                TEXT NOT NULL DEFAULT '',
+    note                TEXT NOT NULL DEFAULT '',   -- reservada: sin UI en la v1
     UNIQUE(path_id, catalog_exercise_id)
 );
 CREATE INDEX IF NOT EXISTS idx_path_steps_path ON catalog_path_steps(path_id);
@@ -149,7 +149,7 @@ no perderlo al recargar.
 **Editor (columna derecha)**: nombre, descripción y la lista de pasos:
 
 - una fila por paso con `drag-handle` (mismo patrón que los slots), el nombre
-  del ejercicio, un `input` para `note` y `×` para quitarlo;
+  del ejercicio y `×` para quitarlo;
 - `+ Add exercise`: buscador sobre `GPH.mgr.catalog()` y clic para añadir;
 - si el path no tiene pasos: aviso ámbar `Empty path — it cannot be assigned to
   a slot yet` y guardado deshabilitado;
@@ -403,6 +403,8 @@ verdes.
 - Estadísticas por path (`by_path`): la pertenencia cambia con el tiempo, así
   que no habría histórico fiable.
 - Varios paths por slot, paths anidados, o paths dentro de rutinas.
+- Notas por paso: la columna existe en el esquema, pero sin UI. Encaja en un
+  futuro *learning log* con objetivos y avances, no aquí.
 - Sincronización de paths entre dispositivos (no hay backend remoto).
 
 - La etiqueta `— None (use description) —` pasa a `— No exercise —`.

@@ -240,10 +240,16 @@
         document.addEventListener('mousedown', function (e) {
             const menu = document.getElementById('exCatalogMenu');
             const btn = document.getElementById('exChangeBtn');
+            const main = document.getElementById('exMain');
             if (!menu || menu.hidden) return;
-            if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+            // The name and the caret are the picker anchor: they toggle it.
+            if (menu.contains(e.target) || (btn && btn.contains(e.target)) ||
+                (main && main.contains(e.target))) return;
             closeCatalogMenu();
         });
+        // The menu is a fixed panel: scrolling or resizing would leave it adrift.
+        window.addEventListener('scroll', closeCatalogMenu, { passive: true });
+        window.addEventListener('resize', closeCatalogMenu);
         const desc = document.getElementById('welcomeRoutineDesc');
         if (!rActiva().ejercicios.length) {
             const nameEl = document.getElementById('welcomeRoutineName');
@@ -506,16 +512,20 @@
     }
 
     function positionCatalogMenu(menu) {
-        const row = document.getElementById('exDescription');
         const main = document.getElementById('exMain');
-        if (!row || !main) return;
-        const rr = row.getBoundingClientRect();
+        if (!main) return;
         const mr = main.getBoundingClientRect();
         const width = Math.max(220, Math.min(460, Math.ceil(mr.width) + 60));
-        const left = Math.max(2, Math.min(mr.left - rr.left - 10, rr.width - width - 2));
-        menu.style.left = left + 'px';
-        menu.style.top = (mr.bottom - rr.top + 6) + 'px';
-        menu.style.width = width + 'px';
+        // Centred on the name, never outside the viewport, and flipped above
+        // when there is no room below (the panel lives in body, not in the row).
+        let left = mr.left + mr.width / 2 - width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+        const height = Math.min(menu.scrollHeight || 260, 260);
+        let top = mr.bottom + 6;
+        if (top + height > window.innerHeight - 8) top = Math.max(8, mr.top - 6 - height);
+        menu.style.left = Math.round(left) + 'px';
+        menu.style.top = Math.round(top) + 'px';
+        menu.style.width = Math.round(width) + 'px';
     }
 
     function highlightMenuOption() {
@@ -583,6 +593,9 @@
             });
             menu.hidden = false;
             if (btn) btn.classList.add('is-open');
+            // Out of the card: an absolutely-positioned panel was clipped by the
+            // assistant section and squeezed the layout while it was open.
+            if (menu.parentNode !== document.body) document.body.appendChild(menu);
             menuIndex = Math.max(0, menuItems.findIndex(function (it) { return it.id === currentId; }));
             highlightMenuOption();
             positionCatalogMenu(menu);

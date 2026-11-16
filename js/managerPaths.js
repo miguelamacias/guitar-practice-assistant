@@ -8,7 +8,7 @@
     let items = [];         // every path, from /api/paths
     let selectedId = null;  // path being edited
     let current = null;     // that path as returned by /api/paths/<id>
-    let steps = [];         // working copy: [{catalog_exercise_id, name, note}]
+    let steps = [];         // working copy: [{catalog_exercise_id, name}]
     let dirty = false;      // unsaved edits in the path editor
 
     function setDirty(v) {
@@ -113,8 +113,7 @@
             return;
         }
         steps = (current.steps || []).map(function (s) {
-            return { catalog_exercise_id: s.catalog_exercise_id, name: s.name,
-                     note: s.note || '' };
+            return { catalog_exercise_id: s.catalog_exercise_id, name: s.name };
         });
         if ($('pathEmpty')) $('pathEmpty').hidden = true;
         if ($('pathEditor')) $('pathEditor').hidden = false;
@@ -147,17 +146,6 @@
             main.className = 'path-step-main';
             main.appendChild(span('path-step-name',
                                   s.name || ('exercise ' + s.catalog_exercise_id)));
-            const note = document.createElement('input');
-            note.type = 'text';
-            note.className = 'path-step-note';
-            note.placeholder = 'Note (optional)';
-            note.title = 'Note for this step, e.g. "until 100 BPM"';
-            note.value = s.note || '';
-            note.addEventListener('input', function () {
-                s.note = note.value;
-                setDirty(true);
-            });
-            main.appendChild(note);
             row.appendChild(main);
 
             const del = document.createElement('button');
@@ -205,7 +193,7 @@
         const id = Number(sel.value);
         const item = GPH.mgr.catalogById(id);
         if (!item) return;
-        steps.push({ catalog_exercise_id: id, name: item.name, note: '' });
+        steps.push({ catalog_exercise_id: id, name: item.name });
         setDirty(true);
         renderSteps();
     }
@@ -260,7 +248,7 @@
                 { name: name, description: $('pathDesc').value || '' });
             await api('PUT', '/api/paths/' + current.id + '/steps', {
                 steps: steps.map(function (s) {
-                    return { catalog_exercise_id: s.catalog_exercise_id, note: s.note || '' };
+                    return { catalog_exercise_id: s.catalog_exercise_id };
                 })
             });
             setDirty(false);

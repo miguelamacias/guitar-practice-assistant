@@ -655,11 +655,10 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 }
 .path-step.dragging { opacity: 0.5; }
 .path-step-n { min-width: 1.6em; text-align: right; color: var(--muted); font-size: 0.8rem; }
-.path-step-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.path-step-name { font-size: 0.86rem; }
-.path-step-note {
-    background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
-    padding: 4px 6px; font-family: inherit; font-size: 0.78rem; width: 100%;
+.path-step-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+.path-step-name {
+    font-size: 0.86rem; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .path-step-del { flex: 0 0 auto; }
 .path-add { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
