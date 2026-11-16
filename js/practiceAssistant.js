@@ -471,7 +471,9 @@
         setWelcomeName(rActiva().nombre || 'Daily Guitar Routine', totalMins);
         // Hover / focus on the name: the routine description from the Manager.
         wireRoutineNameTip();
-        desc.textContent = 'Contains ' + rActiva().ejercicios.length + ' slots to practice today.';
+        const count = rActiva().ejercicios.length;
+        desc.textContent = 'Contains ' + count + ' exercise' + (count === 1 ? '' : 's') +
+            ' to practice today.';
         // Hover / focus: the full list in a dark panel, one exercise per row.
         desc.classList.add('has-tip');
         wireTip(desc, buildWelcomeTip);
