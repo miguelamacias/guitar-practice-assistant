@@ -15,7 +15,15 @@
         fretboard_chord_diagrams_enabled: '1',
         fretboard_color: '#607d8b',
         fretboard_strings: '1,2,3,4,5,6',
-        fretboard_frets: '12'
+        fretboard_frets: '12',
+        // The real defaults live in db.DEFAULT_AREAS; this copy is only a
+        // fallback when the settings endpoint cannot be reached.
+        practice_areas: '[{"id":"knowledge","label":"Knowledge","position":0},' +
+            '{"id":"technique","label":"Technique","position":1},' +
+            '{"id":"repertoire","label":"Repertoire","position":2},' +
+            '{"id":"rhythm","label":"Rhythm","position":3},' +
+            '{"id":"improvisation","label":"Improvisation","position":4},' +
+            '{"id":"ear_training","label":"Ear Training","position":5}]'
     };
 
     function get(key) {

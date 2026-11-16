@@ -123,6 +123,177 @@
         el.textContent = 'Total: ' + total + ' min';
     }
 
+    // ---- Areas: banner + bulk assignment ----------------------------------
+    // Always fetched (three small local requests): the banner must never show a
+    // stale count after assigning areas, in the editor or in the modal.
+    async function loadAllSlots() {
+        const list = await api('GET', '/api/routines');
+        return Promise.all(list.map(function (r) {
+            return api('GET', '/api/routines/' + r.id);
+        }));
+    }
+
+    // Client-side guess from the slot name; never saved without confirmation.
+    function suggestArea(name) {
+        const known = GPH.mgr.areas().map(function (a) { return a.id; });
+        const low = String(name || '').toLowerCase();
+        const rules = [
+            ['knowledge', 'knowledge'], ['theory', 'knowledge'], ['fretboard', 'knowledge'],
+            ['tech', 'technique'], ['aerobic', 'technique'], ['warm', 'technique'],
+            ['song', 'repertoire'], ['live', 'repertoire'], ['repertoire', 'repertoire'],
+            ['solo', 'repertoire'], ['rhythm', 'rhythm']
+        ];
+        for (let i = 0; i < rules.length; i++) {
+            if (low.indexOf(rules[i][0]) >= 0 && known.indexOf(rules[i][1]) >= 0) {
+                return rules[i][1];
+            }
+        }
+        return '';
+    }
+
+    async function updateAreaBanner() {
+        const banner = $('areaBanner');
+        const text = $('areaBannerText');
+        if (!banner || !text) return;
+        try {
+            const all = await loadAllSlots();
+            const liveSels = document.querySelectorAll('#exerciseList .ex-area');
+            let missing = 0;
+            all.forEach(function (r) {
+                const rows = r.exercises || [];
+                if (current && r.id === current.id && liveSels.length === rows.length) {
+                    // The editor wins for the open routine: it may already hold
+                    // areas that are not saved yet.
+                    liveSels.forEach(function (sel) { if (!sel.value) missing += 1; });
+                } else {
+                    rows.forEach(function (ex) { if (!ex.area_id) missing += 1; });
+                }
+            });
+            if (!missing) { banner.hidden = true; return; }
+            text.textContent = missing +
+                (missing === 1 ? ' slot without area' : ' slots without area');
+            banner.hidden = false;
+        } catch (e) { banner.hidden = true; }
+    }
+
+    function areaSelect(selected) {
+        const sel = document.createElement('select');
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = '\u2014 No area \u2014';
+        sel.appendChild(none);
+        GPH.mgr.areas().forEach(function (a) {
+            const o = document.createElement('option');
+            o.value = a.id;
+            o.textContent = a.label;
+            sel.appendChild(o);
+        });
+        sel.value = selected || '';
+        return sel;
+    }
+
+    async function openAssignModal() {
+        if (dirty && !confirm('You have unsaved changes in this routine. Assign areas anyway?')) return;
+        let all;
+        try {
+            all = await loadAllSlots();
+        } catch (e) { toast('Error: ' + e.message, true); return; }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const box = document.createElement('div');
+        box.className = 'modal-box';
+        const title = document.createElement('h2');
+        title.textContent = 'Assign areas';
+        box.appendChild(title);
+
+        const list = document.createElement('div');
+        list.className = 'assign-list';
+        const previous = {};
+        let rows = 0;
+        all.forEach(function (r) {
+            (r.exercises || []).forEach(function (ex) {
+                previous[ex.id] = ex.area_id || '';
+                const line = document.createElement('div');
+                line.className = 'assign-row';
+                line.dataset.eid = String(ex.id);
+                const name = document.createElement('span');
+                name.className = 'assign-name';
+                name.textContent = ex.name || '';
+                const routineName = document.createElement('span');
+                routineName.className = 'assign-routine';
+                routineName.textContent = r.name || '';
+                line.appendChild(name);
+                line.appendChild(routineName);
+                line.appendChild(areaSelect(ex.area_id || suggestArea(ex.name)));
+                list.appendChild(line);
+                rows += 1;
+            });
+        });
+        if (!rows) {
+            const empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = 'No slots yet.';
+            list.appendChild(empty);
+        }
+        box.appendChild(list);
+
+        const actions = document.createElement('div');
+        actions.className = 'modal-actions';
+        const cancel = document.createElement('button');
+        cancel.className = 'btn';
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.addEventListener('click', function () { overlay.remove(); });
+        const apply = document.createElement('button');
+        apply.className = 'btn primary';
+        apply.type = 'button';
+        apply.textContent = 'Apply';
+        apply.addEventListener('click', async function () {
+            apply.disabled = true;
+            let ok = 0;
+            let failed = 0;
+            const lines = list.querySelectorAll('.assign-row');
+            for (const line of lines) {
+                const sel = line.querySelector('select');
+                const eid = Number(line.dataset.eid);
+                const wanted = sel ? sel.value : '';
+                if (wanted === (previous[eid] || '')) continue;
+                try {
+                    await api('PUT', '/api/exercises/' + eid, { area_id: wanted });
+                    ok += 1;
+                } catch (e) { failed += 1; }
+            }
+            overlay.remove();
+            toast(ok + ' slots assigned' + (failed ? ', ' + failed + ' failed' : ''), failed > 0);
+            await loadRoutines(current ? current.id : undefined);
+        });
+        actions.appendChild(cancel);
+        actions.appendChild(apply);
+        box.appendChild(actions);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+    }
+
+    // Turns the slot description into a catalog exercise and points the slot at
+    // it (the description itself is kept as fallback text).
+    async function createFromDescription(row) {
+        const eid = Number(row.dataset.eid);
+        const descIn = row.querySelector('.ex-desc');
+        const desc = (descIn ? descIn.value : '').trim();
+        if (!desc) { toast('This slot has no description to convert', true); return; }
+        const name = prompt('Name for the new catalog exercise:', desc.slice(0, 120));
+        if (!name) return;
+        try {
+            const created = await api('POST', '/api/catalog',
+                { name: name, description: desc.slice(0, 2000) });
+            await api('PUT', '/api/exercises/' + eid, { catalog_exercise_id: created.id });
+            await GPH.mgr.loadMeta(true);
+            await loadRoutines(current ? current.id : undefined);
+            toast('Exercise created and linked');
+        } catch (e) { toast('Error: ' + e.message, true); }
+    }
+
     function renderEditor() {
         if (!current) { clearEditor(); return; }
         $('editorEmpty').hidden = true;
@@ -149,6 +320,7 @@
         $('exCount').textContent = '(' + (current.exercises ? current.exercises.length : 0) + ')';
         renderExercises();
         updateRoutineTotal();
+        updateAreaBanner();
     }
 
     function renderExercises() {
@@ -158,7 +330,7 @@
         if (!exs.length) {
             const d = document.createElement('div');
             d.className = 'empty';
-            d.textContent = 'No exercises. Add one below.';
+            d.textContent = 'No slots yet. Add one below.';
             wrap.appendChild(d);
             return;
         }
@@ -612,6 +784,7 @@
         descIn.type = 'text';
         descIn.className = 'ex-desc';
         descIn.value = ex.description || '';
+        descIn.title = 'Description (used when no exercise is set)';
 
         const durIn = document.createElement('input');
         durIn.type = 'number';
@@ -641,6 +814,78 @@
         fields.appendChild(durIn);
         fields.appendChild(actions);
         row.appendChild(fields);
+
+        // ---- area + current exercise (the catalog pointer) ----
+        // Kept on its own line above the resources so the existing grid holds.
+        const metaRow = document.createElement('div');
+        metaRow.className = 'ex-meta';
+
+        const areaSel = document.createElement('select');
+        areaSel.className = 'ex-area';
+        areaSel.title = 'Area this slot belongs to';
+        const noArea = document.createElement('option');
+        noArea.value = '';
+        noArea.textContent = '\u2014 No area \u2014';
+        areaSel.appendChild(noArea);
+        GPH.mgr.areas().forEach(function (a) {
+            const o = document.createElement('option');
+            o.value = a.id;
+            o.textContent = a.label;
+            areaSel.appendChild(o);
+        });
+        areaSel.value = ex.area_id || '';
+
+        const catItems = GPH.mgr.catalog().map(function (c) { return { label: c.name, id: c.id }; });
+        let catIndex = '';
+        catItems.forEach(function (c, i) {
+            if (c.id === ex.catalog_exercise_id) catIndex = String(i);
+        });
+        const catPicker = createResourcePicker(catItems, catIndex,
+            { noneLabel: '\u2014 None (use description) \u2014' });
+        catPicker.root.classList.add('ex-cat-picker');
+        catPicker.select.classList.add('ex-cat');
+        catPicker.trigger.setAttribute('aria-label', 'Current exercise');
+        const catSel = catPicker.select;
+
+        const noAreaChip = document.createElement('span');
+        noAreaChip.className = 'chip-warn';
+        noAreaChip.textContent = 'No area';
+        noAreaChip.title = 'Assign an area to see this slot in the statistics';
+
+        function syncNoAreaChip() { noAreaChip.hidden = !!areaSel.value; }
+        areaSel.addEventListener('change', function () {
+            syncNoAreaChip();
+            setDirty(true);
+            updateAreaBanner();   // the count follows the editor, saved or not
+        });
+        syncNoAreaChip();
+
+        const fromDesc = mk('\u21aa From description',
+            'Create a catalog exercise from this slot description', function () {
+                createFromDescription(row);
+            });
+
+        // Only useful while the slot has no exercise and there is something to
+        // convert; it follows the picker and the description as they change.
+        function syncFromDesc() {
+            const hasExercise = !!catSel.value;
+            const hasDesc = !!(descIn.value || '').trim();
+            fromDesc.hidden = hasExercise || !hasDesc;
+            fromDesc.title = hasExercise
+                ? 'This slot already has an exercise'
+                : (hasDesc ? 'Create a catalog exercise from this slot description'
+                           : 'Write a description first');
+        }
+        catSel.addEventListener('change', syncFromDesc);
+        descIn.addEventListener('input', syncFromDesc);
+        syncFromDesc();
+
+        metaRow.appendChild(areaSel);
+        metaRow.appendChild(catPicker.root);
+        metaRow.appendChild(fromDesc);
+        metaRow.appendChild(noAreaChip);
+        row.appendChild(metaRow);
+        row._areaSel = areaSel;
 
         // ---- resources: a list (a scale + a backing track is a normal combo) ----
         const resWrap = document.createElement('div');
@@ -900,7 +1145,7 @@
 
     async function deleteRoutine() {
         if (!current) return;
-        if (!confirm('Delete routine "' + current.name + '" and all its exercises?')) return;
+        if (!confirm('Delete routine "' + current.name + '" and all its slots?')) return;
         try {
             await api('DELETE', '/api/routines/' + current.id);
             notify();
@@ -960,6 +1205,13 @@
             const name = row.querySelector('.ex-name');
             const desc = row.querySelector('.ex-desc');
             const dur = row.querySelector('.ex-dur');
+            const areaSel = row.querySelector('.ex-area');
+            const catSel = row.querySelector('.ex-cat');
+            let catalogId = null;
+            if (catSel && catSel.value !== '') {
+                const cat = GPH.mgr.catalog()[Number(catSel.value)];
+                catalogId = cat ? cat.id : null;
+            }
             const list = [];
 
             Array.prototype.forEach.call(row.querySelectorAll('.ex-res-line'), function (line) {
@@ -989,7 +1241,9 @@
                 name: name ? name.value : '',
                 description: desc ? desc.value : '',
                 duration_seconds: toSeconds(dur ? dur.value : 0),
-                resources: list
+                resources: list,
+                area_id: areaSel ? areaSel.value : '',
+                catalog_exercise_id: catalogId
             });
         });
         return out;
@@ -1006,9 +1260,11 @@
         for (const ex of rows) {
             await api('PUT', '/api/exercises/' + ex.id,
                 { name: ex.name, description: ex.description, duration_seconds: ex.duration_seconds,
-                  resources: ex.resources });
+                  resources: ex.resources, area_id: ex.area_id,
+                  catalog_exercise_id: ex.catalog_exercise_id });
         }
         setDirty(false);
+        updateAreaBanner();
     }
 
 
@@ -1025,7 +1281,7 @@
     async function addExercise() {
         if (!current) return;
         const name = $('newExName').value.trim();
-        if (!name) { toast('Enter an exercise name', true); return; }
+        if (!name) { toast('Enter a slot name', true); return; }
         const desc = $('newExDesc').value;
         const durMin = $('newExDur').value;
         try {
@@ -1044,7 +1300,7 @@
     //  "Save routine" button, which persists the header and all rows.)
 
     async function deleteExercise(eid) {
-        if (!confirm('Delete this exercise?')) return;
+        if (!confirm('Delete this slot? The practice history keeps its name and recorded time.')) return;
         try {
             try { await saveAll(); } catch (ignore) {}
             await api('DELETE', '/api/exercises/' + eid);
@@ -1226,13 +1482,24 @@
         });
         const finishSel = $('finishResource');
         if (finishSel) finishSel.addEventListener('change', syncFinishBpm);
-        api('GET', '/api/sections').then(function (secs) {
-            resources = buildResources(secs);
-            finishResources = buildFinishResources(secs);
-            populateFinishSelect();
-        })
+        const assignBtn = $('assignAreasBtn');
+        if (assignBtn) assignBtn.addEventListener('click', openAssignModal);
+        // The catalog or the areas changed in another view: refresh the slot rows
+        // unless there are unsaved edits in this routine.
+        document.addEventListener('slot-meta:changed', function () {
+            if (current && !dirty) renderEditor();
+            updateAreaBanner();
+        });
+        GPH.mgr.loadMeta()
+            .then(function () { return api('GET', '/api/sections'); })
+            .then(function (secs) {
+                resources = buildResources(secs);
+                finishResources = buildFinishResources(secs);
+                populateFinishSelect();
+            })
             .catch(function () { /* noop */ })
-            .then(function () { loadRoutines().catch(function (e) { toast('Error: ' + e.message, true); }); });
+            .then(function () { return loadRoutines().catch(function (e) { toast('Error: ' + e.message, true); }); })
+            .then(function () { updateAreaBanner(); });
     }
 
     document.addEventListener('DOMContentLoaded', init);

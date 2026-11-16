@@ -27,6 +27,9 @@ from db import (
     start_session, upsert_session_item, finish_session, list_sessions,
     session_stats, _session_full, seed_sessions, active_session,
     export_csv, get_settings_prefix,
+    AREAS_KEY, areas, clean_areas, areas_in_use,
+    list_catalog, catalog_detail,
+    create_catalog_exercise, update_catalog_exercise, delete_catalog_exercise,
 )
 import db as dbmod
 import lastfm
@@ -344,6 +347,14 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
+    def guess_type(self, path):
+        """Static files are UTF-8: say it in the header, do not rely on <meta>."""
+        guess = super().guess_type(path)
+        if (guess.startswith('text/') or guess == 'application/javascript') \
+                and 'charset' not in guess:
+            guess += '; charset=utf-8'
+        return guess
+
     def _route_api(self, method):
         self._cache_ok = False
         path = urlparse(self.path).path
@@ -397,7 +408,41 @@ class Handler(SimpleHTTPRequestHandler):
                     offset=int((qs.get('offset') or ['0'])[0] or 0)))
             if path == '/api/sessions/stats' and method == 'GET':
                 qs = parse_qs(urlparse(self.path).query)
-                return self._send_json(session_stats(conn, int((qs.get('days') or ['30'])[0] or 30)))
+                return self._send_json(session_stats(
+                    conn,
+                    int((qs.get('days') or ['30'])[0] or 30),
+                    area_id=(qs.get('area_id') or [None])[0],
+                    routine_id=(qs.get('routine_id') or [None])[0]))
+
+            # ---- Global exercise catalog ------------------------------------
+            if path == '/api/catalog':
+                if method == 'GET':
+                    qs = parse_qs(urlparse(self.path).query)
+                    return self._send_json(
+                        {'exercises': list_catalog(conn, (qs.get('q') or [''])[0])})
+                if method == 'POST':
+                    r = create_catalog_exercise(conn, data)
+                    if 'error' in r:
+                        return self._send_json(r, 422)
+                    return self._send_json(r, 201)
+            m = re.fullmatch(r'/api/catalog/(\d+)', path)
+            if m:
+                cid = int(m.group(1))
+                if method == 'GET':
+                    r = catalog_detail(conn, cid)
+                    return self._send_json(r if r else {'error': 'not_found'},
+                                           200 if r else 404)
+                if method == 'PUT':
+                    r = update_catalog_exercise(conn, cid, data)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    if 'error' in r:
+                        return self._send_json(r, 422)
+                    return self._send_json(r)
+                if method == 'DELETE':
+                    r = delete_catalog_exercise(conn, cid)
+                    return self._send_json(r if r else {'error': 'not_found'},
+                                           200 if r else 404)
             if path == '/api/sessions/active' and method == 'GET':
                 r = active_session(conn)
                 return self._send_json(r if r else {'session': None})
@@ -451,7 +496,11 @@ class Handler(SimpleHTTPRequestHandler):
             m = re.fullmatch(r'/api/routines/(\d+)/exercises', path)
             if m and method == 'POST':
                 r = create_exercise(conn, int(m.group(1)), data)
-                return self._send_json(r if r else {'error': 'not_found'}, 200 if r else 404)
+                if r is None:
+                    return self._send_json({'error': 'not_found'}, 404)
+                if 'error' in r:
+                    return self._send_json(r, 422)
+                return self._send_json(r)
 
             m = re.fullmatch(r'/api/routines/(\d+)/reorder', path)
             if m and method == 'POST':
@@ -463,7 +512,11 @@ class Handler(SimpleHTTPRequestHandler):
                 eid = int(m.group(1))
                 if method == 'PUT':
                     r = update_exercise(conn, eid, data)
-                    return self._send_json(r if r else {'error': 'not_found'}, 200 if r else 404)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    if 'error' in r:
+                        return self._send_json(r, 422)
+                    return self._send_json(r)
                 if method == 'DELETE':
                     return self._send_json(delete_exercise(conn, eid))
 
@@ -570,9 +623,27 @@ class Handler(SimpleHTTPRequestHandler):
                 if key in lastfm.SECRET_SETTINGS:
                     return self._send_json({'error': 'forbidden'}, 403)
                 if method == 'GET':
+                    if key == AREAS_KEY:
+                        return self._send_json({
+                            'key': key,
+                            'value': json.dumps(areas(conn), ensure_ascii=False)})
                     return self._send_json({'key': key, 'value': get_setting(conn, key)})
                 if method in ('PUT', 'POST'):
-                    set_setting(conn, key, data.get('value', ''))
+                    value = data.get('value', '')
+                    if key == AREAS_KEY:
+                        new_areas, err = clean_areas(value)
+                        if err:
+                            return self._send_json({'error': err}, 422)
+                        keep = {a['id'] for a in new_areas}
+                        used = areas_in_use(conn)
+                        blocking = [aid for aid in used if aid not in keep]
+                        if blocking:
+                            # Removing an area that a slot still uses would leave
+                            # orphan labels, so it is refused instead.
+                            return self._send_json({
+                                'error': 'area_in_use',
+                                'slots': [s for aid in blocking for s in used[aid]]}, 409)
+                    set_setting(conn, key, value)
                     return self._send_json({'ok': True})
 
             self._send_json({'error': 'not_found', 'method': method, 'path': path}, 404)

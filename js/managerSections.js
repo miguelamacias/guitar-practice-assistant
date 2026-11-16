@@ -64,11 +64,16 @@
         if (a) a.classList.toggle('view-hidden', which !== 'about');
         const h = $('viewHistory');
         if (h) h.classList.toggle('view-hidden', which !== 'history');
+        const x = $('viewExercises');
+        if (x) x.classList.toggle('view-hidden', which !== 'exercises');
         $('tabRoutines').classList.toggle('active', which === 'routines');
         $('tabSections').classList.toggle('active', which === 'sections');
         const tabA = $('tabAbout'); if (tabA) tabA.classList.toggle('active', which === 'about');
         const tabH = $('tabHistory'); if (tabH) tabH.classList.toggle('active', which === 'history');
+        const tabE = $('tabExercises'); if (tabE) tabE.classList.toggle('active', which === 'exercises');
         if (which === 'history' && GPH.history) GPH.history.show();
+        if (which === 'exercises' && GPH.exercises) GPH.exercises.show();
+        if (which === 'about' && GPH.areas) GPH.areas.load();
     }
 
     async function loadSections(preferId) {
@@ -687,10 +692,12 @@
         $('tabAbout').addEventListener('click', function () { showView('about'); });
         const tabHistory = $('tabHistory');
         if (tabHistory) tabHistory.addEventListener('click', function () { showView('history'); });
+        const tabExercises = $('tabExercises');
+        if (tabExercises) tabExercises.addEventListener('click', function () { showView('exercises'); });
         // Deep link from the app (chart icon on the welcome card): manager.html?view=history
         try {
             const want = new URLSearchParams(location.search).get('view');
-            if (want && ['routines', 'sections', 'history', 'about'].indexOf(want) >= 0) showView(want);
+            if (want && ['routines', 'sections', 'history', 'about', 'exercises'].indexOf(want) >= 0) showView(want);
         } catch (e) { /* noop */ }
         $('newSectionBtn').addEventListener('click', newSection);
         const resetLayoutBtn = $('resetLayoutBtn');

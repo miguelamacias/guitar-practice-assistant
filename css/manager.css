@@ -181,7 +181,9 @@ textarea { resize: vertical; min-height: 44px; }
 .add-main > #newWidgetKey { flex: 0 1 260px; }
 .add-main .mini { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) { .add-head, .add-head--compact { grid-template-columns: 1fr; } }
-#newItemKind, #sColor, #newWidgetKey, #finishResource {
+/* Form fields that live next to text inputs: same control as the inputs.
+   #sLane belongs to the section editor, between the title and subtitle fields. */
+#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane {
     background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
     padding: 8px 10px; font-family: inherit; font-size: 0.9rem;
 }
@@ -380,8 +382,12 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;              /* a grid item must be able to shrink */
+    overflow: hidden;
 }
-.hist-kpi-value { font-size: 1.35rem; font-weight: bold; color: #fff; }
+.hist-kpi-value { font-size: 1.35rem; font-weight: bold; color: #fff; overflow-wrap: anywhere; }
+/* Word values (area names) are long: smaller type, and they may wrap. */
+.hist-kpi.is-text .hist-kpi-value { font-size: 1.05rem; line-height: 1.25; }
 .hist-kpi-label { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--accent); }
 .hist-kpi-note { font-size: 0.72rem; color: var(--muted); }
 .hist-kpi-frag { white-space: nowrap; }
@@ -530,9 +536,10 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 /* Following one line across beats lighting the whole block: only this item. */
 .hist-detail-item:hover { background: rgba(255, 255, 255, 0.1); }
 .hist-detail-state { width: 108px; flex: 0 0 auto; text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.4px; color: var(--muted); }
+.hist-detail-extra { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.76rem; color: #8fb8d8; }
 .hist-detail-item.is-timed .hist-detail-state { color: var(--accent); }
 .hist-detail-item.is-untimed .hist-detail-state { color: var(--green); }
-.hist-detail-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-detail-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-detail-time { color: var(--muted); font-size: 0.74rem; white-space: nowrap; }
 
 .hist-rank { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; }
@@ -547,6 +554,10 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 .hist-page-btn:disabled { opacity: 0.4; cursor: default; }
 
 .hist-h3 { margin: 18px 0 8px; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); }
+/* Section heading with an action on the right (e.g. the rankings selector) */
+.hist-section-head { display: flex; align-items: center; gap: 12px; margin: 18px 0 8px; }
+.hist-section-head .hist-h3 { margin: 0; }
+.hist-section-head .hist-select { margin-left: auto; }
 .hist-empty {
     padding: 40px 20px; text-align: center; color: #bbb;
     background: rgba(255, 255, 255, 0.03); border: 1px dashed rgba(255, 255, 255, 0.12);
@@ -560,4 +571,116 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
     /* 24 labels do not fit: keep every other hour (hover still has the exact one) */
     .hist-heat-hour.is-odd { visibility: hidden; }
 }
+
+/* `hidden` must beat any layout rule: the UA style is only `display: none` and
+   a class with `display: flex` would otherwise keep the box on screen. */
+[hidden] { display: none !important; }
+
+/* ------------------- Slots: area + catalogue pointer ------------------- */
+/* Same grid cell as .ex-fields / .ex-resources (see the has-drag rule). */
+.exercise.has-drag > .ex-meta { grid-column: 2; }
+.ex-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+}
+.ex-meta .ex-area {
+    min-width: 130px; padding: 7px 8px; font-family: inherit; font-size: 0.82rem;
+    /* Compact control, like the catalog picker beside it: a bare select would
+       paint its own grey box with square corners. */
+    background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
+}
+.ex-cat-picker { flex: 1 1 240px; min-width: 180px; max-width: 460px; }
+.ex-cat-picker .ex-res-trigger { height: 34px; font-size: 0.82rem; }
+.chip-warn {
+    font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #f0b429; border: 1px solid rgba(240, 180, 41, 0.45);
+    border-radius: 8px; padding: 0 5px;
+}
+.area-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin: 4px 0 10px; padding: 7px 10px; border-radius: 6px;
+    background: rgba(240, 180, 41, 0.1); border: 1px solid rgba(240, 180, 41, 0.35);
+    font-size: 0.8rem; color: #f0c674;
+}
+
+/* ------------------------ Assign areas modal -------------------------- */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 3000; background: rgba(0, 0, 0, 0.6);
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+    width: min(760px, 92vw); max-height: 84vh; overflow: auto; padding: 16px;
+    background: #141414; border: 1px solid #333; border-radius: 10px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+}
+.modal-box h2 { margin: 0 0 12px; font-size: 1rem; }
+.assign-list { display: grid; gap: 3px; }
+.assign-row {
+    display: grid; grid-template-columns: 1fr 1fr 170px; gap: 8px;
+    align-items: center; padding: 4px 6px; border-radius: 4px;
+}
+.assign-row:nth-child(odd) { background: rgba(255, 255, 255, 0.045); }
+.assign-name { font-size: 0.82rem; }
+.assign-routine { font-size: 0.74rem; color: var(--muted); }
+.assign-row select { padding: 5px 6px; font-family: inherit; font-size: 0.8rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* --------------------------- Exercise catalog -------------------------- */
+.cat-search input {
+    width: 240px; padding: 6px 8px; font-family: inherit; font-size: 0.82rem;
+}
+.cat-item {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 8px; border-radius: 5px; cursor: pointer;
+}
+.cat-item:hover { background: rgba(255, 255, 255, 0.05); }
+.cat-item.selected { background: rgba(255, 255, 255, 0.1); }
+.cat-name { font-size: 0.86rem; }
+.cat-meta { font-size: 0.72rem; color: var(--muted); }
+.cat-usage { font-size: 0.74rem; color: var(--muted); margin-left: auto; }
+.cat-h3 {
+    margin: 18px 0 6px; font-size: 0.76rem; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--muted);
+}
+.cat-use-row {
+    display: flex; gap: 10px; align-items: center;
+    padding: 3px 6px; border-radius: 4px; font-size: 0.8rem;
+}
+.cat-use-row:nth-child(odd) { background: rgba(255, 255, 255, 0.05); }
+.cat-use-routine { flex: 1 1 auto; color: var(--muted); font-size: 0.76rem; }
+.cat-use-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cat-empty { color: var(--muted); font-size: 0.78rem; }
+
+/* ---------------------------- Practice areas --------------------------- */
+.about-note { margin: 0 0 10px; font-size: 0.78rem; color: var(--muted); }
+.area-list { display: grid; gap: 6px; margin-bottom: 10px; }
+.area-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
+.area-label { padding: 5px 8px; font-family: inherit; font-size: 0.82rem; }
+
+/* --------------------- History: filters + breakdown -------------------- */
+.hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Small select: History filters and the catalog sort share the same control */
+.hist-select, #catSort {
+    padding: 5px 8px; border-radius: 6px; font-family: inherit; font-size: 0.78rem;
+    background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.hist-pivot-wrap { overflow-x: auto; margin-bottom: 6px; }
+.hist-pivot { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.hist-pivot th {
+    text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--muted); padding: 6px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.hist-pivot td {
+    padding: 5px 8px; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    vertical-align: middle;
+}
+.hist-pivot tbody tr:nth-child(odd) td { background: rgba(255, 255, 255, 0.03); }
+.hist-pivot-name { position: relative; min-width: 180px; }
+.hist-pivot-fill {
+    position: absolute; left: 0; top: 3px; bottom: 3px; border-radius: 3px;
+    background: rgba(255, 255, 255, 0.07); pointer-events: none;
+}
+.hist-pivot-label { position: relative; }
+.hist-pivot-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 

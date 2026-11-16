@@ -182,8 +182,47 @@
         return !!dirty;
     }
 
+    // ---- Slot metadata: practice areas and the exercise catalog -----------
+    // Loaded once and cached; every view reads the same lists and calls
+    // loadMeta(true) after changing them (areas card, catalog CRUD).
+    let metaData = { areas: [], catalog: [] };
+    let metaPromise = null;
+
+    function loadMeta(force) {
+        if (metaPromise && !force) return metaPromise;
+        metaPromise = Promise.all([
+            GPH.settings.get('practice_areas').catch(function () { return null; }),
+            api('GET', '/api/catalog').catch(function () { return { exercises: [] }; })
+        ]).then(function (res) {
+            let areas = [];
+            try {
+                areas = JSON.parse(res[0] || '[]');
+                if (!Array.isArray(areas)) areas = [];
+            } catch (e) { areas = []; }
+            metaData = { areas: areas, catalog: (res[1] && res[1].exercises) || [] };
+            return metaData;
+        });
+        return metaPromise;
+    }
+
+    function areas() { return metaData.areas; }
+    function catalog() { return metaData.catalog; }
+
+    function areaLabel(id) {
+        if (!id) return '';
+        const found = metaData.areas.filter(function (a) { return a.id === id; })[0];
+        return found ? found.label : '(removed)';
+    }
+
+    function catalogById(id) {
+        if (id == null) return null;
+        return metaData.catalog.filter(function (c) { return c.id === id; })[0] || null;
+    }
+
     GPH.mgr = {
         $: $, api: api, toast: toast, notify: notify, bc: bc, setDirty: setDirty,
-        dragHandle: dragHandle, makeSortable: makeSortable, balanceLanes: balanceLanes
+        dragHandle: dragHandle, makeSortable: makeSortable, balanceLanes: balanceLanes,
+        loadMeta: loadMeta, areas: areas, catalog: catalog,
+        areaLabel: areaLabel, catalogById: catalogById
     };
 })(window.GPH = window.GPH || {});
