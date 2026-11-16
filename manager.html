@@ -286,6 +286,11 @@
                     <label>Description</label>
                     <textarea id="pathDesc" rows="2"></textarea>
                 </div>
+                <div class="editor-actions">
+                    <button id="savePathBtn" class="btn primary" type="button">Save path</button>
+                    <button id="delPathBtn" class="btn danger" type="button">Delete</button>
+                    <span id="pathUsage" class="cat-usage"></span>
+                </div>
                 <h3 class="cat-h3">Steps</h3>
                 <div id="pathSteps" class="path-steps"></div>
                 <div id="pathStepsEmpty" class="empty" hidden>
@@ -294,11 +299,6 @@
                 <div class="path-add">
                     <select id="pathAddSel" aria-label="Exercise to add"></select>
                     <button id="pathAddBtn" class="btn small" type="button">+ Add exercise</button>
-                </div>
-                <div class="editor-actions">
-                    <button id="savePathBtn" class="btn primary" type="button">Save path</button>
-                    <button id="delPathBtn" class="btn danger" type="button">Delete</button>
-                    <span id="pathUsage" class="cat-usage"></span>
                 </div>
             </div>
         </div>
