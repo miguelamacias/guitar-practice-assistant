@@ -9,8 +9,10 @@
     let selectedId = null;  // path being edited
     let current = null;     // that path as returned by /api/paths/<id>
     let steps = [];         // working copy: [{catalog_exercise_id, name, note}]
+    let dirty = false;      // unsaved edits in the path editor
 
     function setDirty(v) {
+        dirty = !!v;
         GPH.mgr.setDirty('savePathBtn', v, 'Save the path');
     }
 
@@ -42,6 +44,18 @@
             else url.searchParams.delete('panel');
             window.history.replaceState(null, '', url.toString());
         }
+        // The catalog may have changed while this panel was hidden (a new
+        // exercise, a rename): refresh without touching unsaved edits.
+        if (!keepUrl && paths) refreshFromCatalog(true);
+    }
+
+    // Re-reads the catalog-dependent parts of the editor. `full` reloads the
+    // list too (fresh step names and slot counts); with unsaved edits only the
+    // "add exercise" pool is rebuilt, so nothing typed is lost.
+    function refreshFromCatalog(full) {
+        if (!current) return;
+        if (dirty || !full) { renderAddOptions(); return; }
+        load();
     }
 
     // -------------------------------- List --------------------------------
@@ -293,6 +307,11 @@
         bindStepsSortable();
         const start = new URLSearchParams(window.location.search).get('panel');
         setPanel(start === 'paths' ? 'paths' : 'catalog', true);
+        // The catalog panel can create or rename exercises while this one is
+        // hidden: keep the "add exercise" pool in sync without a reload.
+        document.addEventListener('slot-meta:changed', function () {
+            refreshFromCatalog(false);
+        });
     }
 
     function show() {
