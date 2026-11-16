@@ -84,18 +84,35 @@
 
     function loadWelcomeStats() {
         if (!document.getElementById('welcomeStatTime')) return;
-        fetch('/api/sessions/stats?days=7', { cache: 'no-store' })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(renderWelcomeStats)
-            .catch(function () { renderWelcomeStats(null); });
+        const load = function (days) {
+            return fetch('/api/sessions/stats?days=' + days, { cache: 'no-store' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .catch(function () { return null; });
+        };
+        Promise.all([load(7), load(30)]).then(function (res) {
+            renderWelcomeStats(res[0], res[1]);
+        });
     }
 
-    function renderWelcomeStats(data) {
+    // Same steps as the Manager calendar (js/managerHistory.js): the two grids
+    // must read the same way.
+    function actLevel(seconds, max) {
+        if (!seconds) return 0;
+        const ratio = max ? seconds / max : 1;
+        if (ratio >= 0.75) return 4;
+        if (ratio >= 0.45) return 3;
+        if (ratio >= 0.2) return 2;
+        return 1;
+    }
+
+    function renderWelcomeStats(week, month) {
         const timeEl = document.getElementById('welcomeStatTime');
         const lineEl = document.getElementById('welcomeStatLine');
         const barsEl = document.getElementById('welcomeBars');
         const mostEl = document.getElementById('welcomeStatMost');
         if (!timeEl || !lineEl || !barsEl || !mostEl) return;
+        const data = week;
+        renderWelcomeMonth(month);
 
         const totals = (data && data.totals) || {};
         const real = totals.real_seconds || 0;
@@ -126,10 +143,16 @@
         barsEl.innerHTML = '';
         values.forEach(function (v) {
             const bar = document.createElement('div');
+            const level = actLevel(v.seconds, max);
             bar.className = 'welcome-bar' + (v.today ? ' is-today' : '') +
-                (v.seconds ? '' : ' is-empty');
-            // 8% of the track is ~4px: an empty day still reads as a day.
+                (level ? '' : ' is-empty');
+            // 8% of the track is a visible stub: an empty day still reads as a day.
             bar.style.height = Math.max(8, Math.round(v.seconds / max * 100)) + '%';
+            if (level && !v.today) {
+                // Same encoding as the 30-day squares, a bit calmer for a big bar.
+                bar.style.background = 'var(--accent)';
+                bar.style.opacity = (0.34 + 0.12 * level).toFixed(2);
+            }
             bar.title = v.date.toLocaleDateString('en-US', { weekday: 'short' }) + ': ' +
                 (fmtMinutes(Math.round(v.seconds / 60)) || '0 min');
             barsEl.appendChild(bar);
@@ -145,6 +168,45 @@
             ? 'Most time: ' + top.name + ' \u00b7 ' + fmtMinutes(Math.round(top.seconds / 60))
             : '';
         mostEl.title = top ? top.name : '';
+    }
+
+    // Thirty squares, oldest first, today at the bottom right. Level 0 is a grey
+    // square; 1..4 light up in accent, exactly like the Manager calendar.
+    function renderWelcomeMonth(month) {
+        const box = document.getElementById('welcomeMonth');
+        if (!box) return;
+        const byDay = {};
+        ((month && month.activity) || []).forEach(function (a) {
+            byDay[a.date] = a;
+        });
+        const today = new Date();
+        const cells = [];
+        let max = 0;
+        for (let i = 29; i >= 0; i -= 1) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+            const hit = byDay[dayKey(d)] || null;
+            const seconds = (hit && hit.seconds) || 0;
+            if (seconds > max) max = seconds;
+            cells.push({ date: d, seconds: seconds, sessions: (hit && hit.sessions) || 0 });
+        }
+        box.innerHTML = '';
+        cells.forEach(function (c) {
+            const cell = document.createElement('div');
+            const level = actLevel(c.seconds, max);
+            cell.className = 'welcome-day is-l' + level + (level ? '' : ' is-empty');
+            if (level) {
+                cell.style.background = 'var(--accent)';
+                cell.style.opacity = (0.3 + 0.17 * level).toFixed(2);
+            }
+            const minutes = Math.round(c.seconds / 60);
+            cell.title = c.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                ' \u00b7 ' + (c.seconds
+                    ? (minutes ? fmtMinutes(minutes) : 'under 1 min') +
+                      (c.sessions ? ' \u00b7 ' + c.sessions +
+                          (c.sessions === 1 ? ' session' : ' sessions') : '')
+                    : 'no practice');
+            box.appendChild(cell);
+        });
     }
 
     // ---- Shared dark tooltip (welcome list, Start button…) ----------------

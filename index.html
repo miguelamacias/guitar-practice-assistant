@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%B8</text></svg>">
     <title>Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/styles.css?v=119">
+    <link rel="stylesheet" href="css/styles.css?v=122">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
@@ -18,7 +18,7 @@
     <script defer src="js/ui.js?v=4"></script>
     <script defer src="js/metronome.js?v=6"></script>
     <script defer src="js/drumMachine.js?v=14"></script>
-    <script defer src="js/practiceAssistant.js?v=84"></script>
+    <script defer src="js/practiceAssistant.js?v=86"></script>
     <script defer src="js/api.js?v=1"></script>
     <script defer src="js/settings.js?v=2"></script>
     <script defer src="js/prefs.js?v=1"></script>
@@ -95,6 +95,12 @@
                             <div id="welcomeStatLine" class="welcome-stat-line"></div>
                             <div id="welcomeBars" class="welcome-bars" aria-hidden="true"></div>
                             <div id="welcomeStatMost" class="welcome-stat-most"></div>
+                            <!-- One square per day, 30 days: the same idea as the
+                                 Manager calendar, small enough to fit here. -->
+                            <div class="welcome-month">
+                                <span class="welcome-aside-label">Last 30 days</span>
+                                <div id="welcomeMonth" class="welcome-month-grid"></div>
+                            </div>
                         </div>
                     </aside>
                     <div class="welcome-main">

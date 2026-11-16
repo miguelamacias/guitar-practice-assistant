@@ -660,11 +660,12 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .welcome-stat-most:empty { display: none; }
-/* Seven quiet bars, one per day ending today: a glance, not a chart. They sit
-   at the bottom of the strip, so the numbers stay together at the top. */
+/* Seven quiet bars, one per day ending today: a glance, not a chart. They grow
+   with the strip, so the numbers stay together at the top. */
 .welcome-bars {
-    margin-top: auto; display: flex; align-items: flex-end; gap: 4px;
-    height: 70px; padding: 2px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex: 1 1 auto; min-height: 56px; max-height: 118px;
+    display: flex; align-items: flex-end; gap: 4px;
+    padding: 2px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .welcome-bar {
     flex: 1 1 0; min-width: 0; border-radius: 3px 3px 0 0;
@@ -673,6 +674,15 @@
 /* A day without practice is a short stub, not a missing bar. */
 .welcome-bar.is-empty { background: rgba(255, 255, 255, 0.07); min-height: 6px; }
 .welcome-bar.is-today { background: var(--accent); }
+/* Last 30 days: one square per day, sitting at the bottom of the strip. The
+   squares light up in accent steps with the same thresholds as the Manager
+   calendar (see actLevel in js/managerHistory.js). */
+.welcome-month {
+    margin-top: auto; display: flex; flex-direction: column; gap: 5px;
+    padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.welcome-month-grid { display: grid; grid-template-columns: repeat(15, 1fr); gap: 3px; }
+.welcome-day { aspect-ratio: 1; border-radius: 2px; background: rgba(255, 255, 255, 0.07); }
 /* Right column: the routine name, its description and the big button, centred
    in the space the practice view uses for its main panel. */
 .welcome-main {
@@ -707,7 +717,7 @@
     }
     .welcome-stat-time { font-size: 1rem; }
     .welcome-stat-line { font-size: 0.75rem; }
-    .welcome-bars, .welcome-stat-most { display: none; }
+    .welcome-bars, .welcome-stat-most, .welcome-month { display: none; }
 }
 /* Anything with a custom tooltip: help cursor (+ focus ring for keyboard) */
 .has-tip { cursor: help; }
