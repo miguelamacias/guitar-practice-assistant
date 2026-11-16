@@ -813,6 +813,17 @@
     min-height: 24px;
 }
 .exercise-head .ex-index { justify-self: center; }
+/* Narrow cards: with the sidebar taking its 340px there is no room for the
+   three pieces side by side, so they wrap instead of squeezing each other
+   (the Reset button used to be clipped). The counter takes its own line. */
+@media (max-width: 900px) {
+    .exercise-head {
+        display: flex; flex-wrap: wrap;
+        justify-content: space-between; align-items: center;
+        gap: 4px 12px;
+    }
+    .exercise-head .ex-index { flex: 1 0 100%; }
+}
 .exercise-head .exercise-start-time { justify-self: start; }
 .exercise-head .exercise-reset-btn { justify-self: end; }
 

@@ -616,7 +616,7 @@
         displayCurrentExercise();
     }
 
-    // "Slot 2 of 8 · done" / "· skipped" (no suffix while pending).
+    // "Exercise 2 of 8 · done" / "· skipped" (no suffix while pending).
     function setIndexLabel() {
         const el = document.getElementById('exIndex');
         if (!el) return;
@@ -624,7 +624,7 @@
         let suffix = '';
         if (DONE_STATES[state]) suffix = ' \u00b7 done';
         else if (state === 'skipped') suffix = ' \u00b7 skipped';
-        el.textContent = 'Slot ' + (currentExerciseIndex + 1) + ' of ' +
+        el.textContent = 'Exercise ' + (currentExerciseIndex + 1) + ' of ' +
             (rActiva().ejercicios || []).length + suffix;
     }
 
