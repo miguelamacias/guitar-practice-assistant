@@ -10,6 +10,27 @@
     let selectedId = null;
     let current = null;
 
+    // Collapsed area groups are remembered per browser, so a catalog you keep
+    // tidy stays tidy after a reload.
+    const COLLAPSED_KEY = 'gphCatalogCollapsed';
+
+    function collapsedGroups() {
+        try {
+            const list = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]');
+            return Array.isArray(list) ? list : [];
+        } catch (e) { return []; }
+    }
+
+    function isCollapsed(key) {
+        return collapsedGroups().indexOf(key) >= 0;
+    }
+
+    function setCollapsed(key, collapsed) {
+        const list = collapsedGroups().filter(function (k) { return k !== key; });
+        if (collapsed) list.push(key);
+        try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify(list)); } catch (e) { /* noop */ }
+    }
+
     function setDirty(v) {
         GPH.mgr.setDirty('saveCatalogBtn', v, 'Save the exercise');
     }
@@ -130,6 +151,8 @@
             list.forEach(function (it) { wrap.appendChild(catalogRow(it)); });
             return;
         }
+        // A search must never hide its own matches behind a collapsed group.
+        const filtering = !!($('catSearch') ? $('catSearch').value : '').trim();
         // Grouped view: area order comes from the areas panel, then the chosen
         // sort applies inside each group. Unclassified goes last.
         const order = GPH.mgr.areas().map(function (a) { return a.id; });
@@ -139,19 +162,38 @@
         };
         const byArea = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
         let last = null;
+        let body = null;
         byArea.forEach(function (it) {
             const label = it.area || 'No area';
             if (label !== last) {
-                const head = document.createElement('div');
-                head.className = 'cat-group';
+                const key = it.area_id || '';
                 const n = byArea.filter(function (o) {
                     return (o.area || 'No area') === label;
                 }).length;
+                const collapsed = !filtering && isCollapsed(key);
+                const head = document.createElement('button');
+                head.type = 'button';
+                head.className = 'cat-group' + (collapsed ? ' is-collapsed' : '');
                 head.textContent = label + ' (' + n + ')';
+                head.title = collapsed ? 'Expand this group' : 'Collapse this group';
                 wrap.appendChild(head);
+                body = document.createElement('div');
+                body.className = 'cat-group-body';
+                body.hidden = collapsed;
+                wrap.appendChild(body);
+                // Toggled in place (no re-render, the list keeps its scroll).
+                head.addEventListener('click', (function (k, b, h) {
+                    return function () {
+                        const now = !b.hidden;
+                        b.hidden = now;
+                        h.classList.toggle('is-collapsed', now);
+                        h.title = now ? 'Expand this group' : 'Collapse this group';
+                        setCollapsed(k, now);
+                    };
+                })(key, body, head));
                 last = label;
             }
-            wrap.appendChild(catalogRow(it));
+            body.appendChild(catalogRow(it));
         });
     }
 
@@ -195,6 +237,8 @@
     }
 
     async function load() {
+        // Areas drive the grouping: wait for them so the first paint is right.
+        try { await GPH.mgr.loadMeta(); } catch (e) { /* the list still renders */ }
         try {
             const res = await api('GET', '/api/catalog');
             items = res.exercises || [];

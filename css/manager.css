@@ -678,13 +678,20 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 }
 .cat-item:hover { background: rgba(255, 255, 255, 0.05); }
 .cat-item.selected { background: rgba(255, 255, 255, 0.1); }
-/* Section headers of the catalog list (grouped by area). */
+/* Section headers of the catalog list (grouped by area, click to collapse). */
 .cat-group {
-    margin: 10px 0 2px; padding: 0 2px 3px;
-    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.6px;
-    color: var(--muted); border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    margin: 10px 0 2px; padding: 3px 2px;
+    background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--muted); cursor: pointer; text-align: left;
+    font-family: inherit; font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.6px;
 }
 .cat-group:first-child { margin-top: 0; }
+.cat-group:hover { color: #fff; }
+.cat-group::before { content: '\25be'; font-size: 0.8rem; line-height: 1; }
+.cat-group.is-collapsed::before { content: '\25b8'; }
+.cat-group-body { display: block; }
 
 /* Archived: out of the active list, still readable when shown. */
 .cat-item.is-archived { opacity: 0.55; }
