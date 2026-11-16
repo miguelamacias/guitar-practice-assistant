@@ -497,7 +497,18 @@
     // A floating list anchored under the exercise name. The line does not move:
     // the menu is positioned absolutely inside the centred row.
     let menuItems = [];
+    let visibleItems = [];      // menuItems after the search filter
     let menuIndex = -1;
+    let menuSearch = null;      // the filter input, when the pool is long enough
+    let menuCurrentId = null;   // exercise id currently on the slot
+    const SEARCH_FROM = 6;      // below this, a filter is just noise
+
+    // Same idea as the Manager: ignore case, accents and punctuation.
+    function menuNorm(text) {
+        return String(text || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
 
     function menuEl() { return document.getElementById('exCatalogMenu'); }
 
@@ -507,6 +518,8 @@
         menu.hidden = true;
         menu.innerHTML = '';
         menuIndex = -1;
+        visibleItems = [];
+        menuSearch = null;
         const btn = document.getElementById('exChangeBtn');
         if (btn) btn.classList.remove('is-open');
     }
@@ -582,29 +595,70 @@
                     ' step' + (steps.length === 1 ? '' : 's');
                 menu.appendChild(head);
             }
-            menuItems.forEach(function (item, i) {
-                const opt = document.createElement('button');
-                opt.type = 'button';
-                opt.className = 'ex-catalog-option' + (item.id === currentId ? ' is-current' : '');
-                opt.setAttribute('role', 'option');
-                opt.textContent = item.name;
-                opt.addEventListener('click', function () { chooseCatalogItem(i); });
-                menu.appendChild(opt);
-            });
+            // A long list is unusable by scanning: the filter is the way in.
+            let search = null;
+            if (menuItems.length > SEARCH_FROM) {
+                search = document.createElement('input');
+                search.type = 'search';
+                search.className = 'ex-catalog-search';
+                search.placeholder = 'Search exercises\u2026';
+                search.autocomplete = 'off';
+                search.setAttribute('aria-label', 'Search exercises');
+                menu.appendChild(search);
+            }
+            menuSearch = search;
+            menuCurrentId = currentId;
+            if (search) {
+                search.addEventListener('input', function () { renderMenuOptions(); });
+                search.addEventListener('keydown', catalogMenuKeys);
+            }
+            renderMenuOptions();
             menu.hidden = false;
             if (btn) btn.classList.add('is-open');
             // Out of the card: an absolutely-positioned panel was clipped by the
             // assistant section and squeezed the layout while it was open.
             if (menu.parentNode !== document.body) document.body.appendChild(menu);
-            menuIndex = Math.max(0, menuItems.findIndex(function (it) { return it.id === currentId; }));
-            highlightMenuOption();
             positionCatalogMenu(menu);
-            menu.focus();
+            if (search) search.focus();
+            else menu.focus();
         });
     }
 
+    // Rebuilds the visible options from the current filter (the menu header and
+    // the search box stay where they are).
+    function renderMenuOptions() {
+        const menu = menuEl();
+        if (!menu) return;
+        Array.prototype.forEach.call(
+            menu.querySelectorAll('.ex-catalog-option, .ex-catalog-empty'),
+            function (el) { el.parentNode.removeChild(el); });
+        const q = menuNorm(menuSearch ? menuSearch.value : '');
+        visibleItems = menuItems.filter(function (item) {
+            return !q || menuNorm(item.name).indexOf(q) >= 0;
+        });
+        visibleItems.forEach(function (item, i) {
+            const opt = document.createElement('button');
+            opt.type = 'button';
+            opt.className = 'ex-catalog-option' + (item.id === menuCurrentId ? ' is-current' : '');
+            opt.setAttribute('role', 'option');
+            opt.textContent = item.name;
+            opt.addEventListener('click', function () { chooseCatalogItem(i); });
+            menu.appendChild(opt);
+        });
+        if (!visibleItems.length) {
+            const empty = document.createElement('div');
+            empty.className = 'ex-catalog-empty';
+            empty.textContent = 'No matches';
+            menu.appendChild(empty);
+        }
+        const currentAt = visibleItems.findIndex(function (it) { return it.id === menuCurrentId; });
+        menuIndex = currentAt >= 0 ? currentAt : (visibleItems.length ? 0 : -1);
+        highlightMenuOption();
+        if (menu.parentNode === document.body) positionCatalogMenu(menu);
+    }
+
     function chooseCatalogItem(i) {
-        const item = menuItems[i];
+        const item = visibleItems[i];
         if (!item) return;
         closeCatalogMenu();
         changeSlotExercise(item.id == null ? '' : String(item.id));
@@ -612,16 +666,23 @@
 
     function catalogMenuKeys(e) {
         if (e.key === 'Escape') { e.preventDefault(); closeCatalogMenu(); return; }
+        const typing = e.target && e.target.classList &&
+            e.target.classList.contains('ex-catalog-search');
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
-            if (!menuItems.length) return;
+            if (!visibleItems.length) return;
             const step = e.key === 'ArrowDown' ? 1 : -1;
-            menuIndex = (menuIndex + step + menuItems.length) % menuItems.length;
+            menuIndex = (menuIndex + step + visibleItems.length) % visibleItems.length;
             highlightMenuOption();
             return;
         }
-        if (e.key === 'Enter' || e.key === ' ') {
-            if (menuIndex >= 0) { e.preventDefault(); chooseCatalogItem(menuIndex); }
+        // Space only selects when it is not being typed into the filter.
+        const selectKey = e.key === 'Enter' || (e.key === ' ' && !typing);
+        if (selectKey) {
+            if (menuIndex >= 0 && visibleItems.length) {
+                e.preventDefault();
+                chooseCatalogItem(menuIndex);
+            }
         }
     }
 

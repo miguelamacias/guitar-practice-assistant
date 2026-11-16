@@ -982,6 +982,15 @@
 .ex-catalog-option:hover, .ex-catalog-option.is-highlighted { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .ex-catalog-option.is-current { color: var(--accent); }
 .ex-catalog-option.is-current::after { content: ' \2713'; }
+/* Filter box at the top of the exercise picker (only for long pools). */
+.ex-catalog-search {
+    display: block; width: 100%; box-sizing: border-box;
+    margin: 2px 0 6px; padding: 5px 8px;
+    background: #111; color: var(--text); border: 1px solid #333; border-radius: 6px;
+    font-family: inherit; font-size: 0.85rem;
+}
+.ex-catalog-search:focus { outline: none; border-color: var(--accent); }
+.ex-catalog-empty { padding: 6px 8px; color: #8f8f8f; font-size: 0.85rem; }
 /* line-height 1: the digits box hugs the glyphs, so the air above and below the
    clock is the same 12 px gap as the rest of the stack. */
 .ex-timer { font-size: 3rem; font-weight: bold; font-family: monospace; color: #fff; line-height: 1; }
