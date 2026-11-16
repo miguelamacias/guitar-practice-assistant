@@ -561,3 +561,81 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
     .hist-heat-hour.is-odd { visibility: hidden; }
 }
 
+/* ------------------- Slots: area + catalogue pointer ------------------- */
+/* Same grid cell as .ex-fields / .ex-resources (see the has-drag rule). */
+.exercise.has-drag > .ex-meta { grid-column: 2; }
+.ex-meta {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+}
+.ex-meta .ex-area {
+    min-width: 130px; padding: 7px 8px; font-family: inherit; font-size: 0.82rem;
+}
+.ex-cat-picker { flex: 1 1 240px; min-width: 180px; max-width: 460px; }
+.ex-cat-picker .ex-res-trigger { height: 34px; font-size: 0.82rem; }
+.chip-warn {
+    font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #f0b429; border: 1px solid rgba(240, 180, 41, 0.45);
+    border-radius: 8px; padding: 0 5px;
+}
+.area-banner {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin: 4px 0 10px; padding: 7px 10px; border-radius: 6px;
+    background: rgba(240, 180, 41, 0.1); border: 1px solid rgba(240, 180, 41, 0.35);
+    font-size: 0.8rem; color: #f0c674;
+}
+
+/* ------------------------ Assign areas modal -------------------------- */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 3000; background: rgba(0, 0, 0, 0.6);
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-box {
+    width: min(760px, 92vw); max-height: 84vh; overflow: auto; padding: 16px;
+    background: #141414; border: 1px solid #333; border-radius: 10px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+}
+.modal-box h2 { margin: 0 0 12px; font-size: 1rem; }
+.assign-list { display: grid; gap: 3px; }
+.assign-row {
+    display: grid; grid-template-columns: 1fr 1fr 170px; gap: 8px;
+    align-items: center; padding: 4px 6px; border-radius: 4px;
+}
+.assign-row:nth-child(odd) { background: rgba(255, 255, 255, 0.045); }
+.assign-name { font-size: 0.82rem; }
+.assign-routine { font-size: 0.74rem; color: var(--muted); }
+.assign-row select { padding: 5px 6px; font-family: inherit; font-size: 0.8rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* --------------------------- Exercise catalog -------------------------- */
+.cat-search input {
+    width: 240px; padding: 6px 8px; font-family: inherit; font-size: 0.82rem;
+}
+.cat-item {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 6px 8px; border-radius: 5px; cursor: pointer;
+}
+.cat-item:hover { background: rgba(255, 255, 255, 0.05); }
+.cat-item.selected { background: rgba(255, 255, 255, 0.1); }
+.cat-name { font-size: 0.86rem; }
+.cat-meta { font-size: 0.72rem; color: var(--muted); }
+.cat-usage { font-size: 0.74rem; color: var(--muted); margin-left: auto; }
+.cat-h3 {
+    margin: 18px 0 6px; font-size: 0.76rem; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--muted);
+}
+.cat-use-row {
+    display: flex; gap: 10px; align-items: center;
+    padding: 3px 6px; border-radius: 4px; font-size: 0.8rem;
+}
+.cat-use-row:nth-child(odd) { background: rgba(255, 255, 255, 0.05); }
+.cat-use-routine { flex: 1 1 auto; color: var(--muted); font-size: 0.76rem; }
+.cat-use-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cat-empty { color: var(--muted); font-size: 0.78rem; }
+
+/* ---------------------------- Practice areas --------------------------- */
+.about-note { margin: 0 0 10px; font-size: 0.78rem; color: var(--muted); }
+.area-list { display: grid; gap: 6px; margin-bottom: 10px; }
+.area-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 6px; align-items: center; }
+.area-label { padding: 5px 8px; font-family: inherit; font-size: 0.82rem; }
+
+

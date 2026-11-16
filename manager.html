@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=50">
+    <link rel="stylesheet" href="css/manager.css?v=51">
 </head>
 <body>
 <div class="mgr">
@@ -12,6 +12,7 @@
         <div class="tabs">
             <button id="tabRoutines" class="tab active">Routines</button>
             <button id="tabSections" class="tab">Sections</button>
+            <button id="tabExercises" class="tab">Exercises</button>
             <button id="tabHistory" class="tab">History</button>
             <button id="tabAbout" class="tab">Settings</button>
         </div>
@@ -70,14 +71,18 @@
                     </div>
                 </div>
 
-                <h2>Exercises <span class="sub" id="exCount"></span></h2>
+                <h2>Slots <span class="sub" id="exCount"></span></h2>
+                <div id="areaBanner" class="area-banner" hidden>
+                    <span id="areaBannerText"></span>
+                    <button id="assignAreasBtn" class="btn small primary" type="button">Assign areas</button>
+                </div>
                 <div id="exTotal" class="routine-total">Total: 0 min</div>
                 <div id="exerciseList"></div>
 
                 <div class="exercise add-ex">
                     <div class="ex-fields">
-                        <input type="text" id="newExName" placeholder="Name">
-                        <input type="text" id="newExDesc" placeholder="Description">
+                        <input type="text" id="newExName" placeholder="Slot name">
+                        <input type="text" id="newExDesc" placeholder="Description (used when no exercise is set)" title="Description (used when no exercise is set)">
                         <input type="number" id="newExDur" placeholder="min" min="0" step="0.5">
                         <button id="addExBtn" class="btn primary small">+ Add</button>
                     </div>
@@ -187,6 +192,59 @@
     </div>
 </div>
 
+<div class="mgr view-hidden" id="viewExercises">
+    <div class="mgr-header">
+        <h1 class="view-title">
+            <svg class="view-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M4 5.6h6.2a2.4 2.4 0 0 1 2.4 2.4v11a2 2 0 0 0-2-2H4z"></path>
+                <path d="M20 5.6h-6.2a2.4 2.4 0 0 0-2.4 2.4v11a2 2 0 0 1 2-2H20z"></path>
+            </svg>
+            <span>Exercise Catalog</span>
+        </h1>
+        <div class="cat-search">
+            <input type="search" id="catSearch" placeholder="Search exercises…" autocomplete="off">
+        </div>
+    </div>
+
+    <div class="layout">
+        <div class="panel">
+            <h2>Catalog <span class="sub" id="catCount"></span></h2>
+            <div class="field">
+                <select id="catSort">
+                    <option value="name">Sort: name</option>
+                    <option value="recent">Sort: last practised</option>
+                    <option value="time">Sort: total time</option>
+                </select>
+            </div>
+            <div id="catalogList"></div>
+            <button id="newCatalogBtn" class="btn primary block" type="button">+ New exercise</button>
+        </div>
+
+        <div class="panel">
+            <div id="catEmpty" class="empty">Select or create an exercise.</div>
+            <div id="catEditor" hidden>
+                <div class="field">
+                    <label>Name</label>
+                    <input type="text" id="catName">
+                </div>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea id="catDesc" rows="3"></textarea>
+                </div>
+                <div class="editor-actions">
+                    <button id="saveCatalogBtn" class="btn primary" type="button">Save exercise</button>
+                    <button id="delCatalogBtn" class="btn danger" type="button">Delete</button>
+                    <span id="catUsage" class="cat-usage"></span>
+                </div>
+                <h3 class="cat-h3">Used in</h3>
+                <div id="catUsedIn" class="cat-used"></div>
+                <h3 class="cat-h3">Recent practices</h3>
+                <div id="catRecent" class="cat-recent"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="mgr view-hidden" id="viewAbout">
     <div class="mgr-header">
         <h1 class="view-title">
@@ -218,6 +276,13 @@
                 <button id="resetFbColorBtn" class="btn small" title="Restore the default color (#607d8b)">Reset</button>
             </div>
         </div>
+    </div>
+
+    <div class="about-card">
+        <h2>Practice areas</h2>
+        <p class="about-note">Each slot belongs to one area. The History panel groups practice time by area.</p>
+        <div id="areaList" class="area-list"></div>
+        <button id="addAreaBtn" class="btn primary block" type="button">+ Add area</button>
     </div>
 
     <div class="about-card">
@@ -367,17 +432,18 @@
 
 <div id="toast" class="toast"></div>
 <script src="js/debug.js?v=2"></script>
-<script src="js/settings.js?v=1"></script>
+<script src="js/settings.js?v=2"></script>
 <script src="js/managerLastfm.js?v=2"></script>
 <script src="js/icons.js?v=12"></script>
 <script src="js/theory.js?v=20"></script>
 <script src="js/chords.js?v=3"></script>
 <script src="js/chordDiagrams.js?v=2"></script>
-<script src="js/managerCommon.js?v=6"></script>
+<script src="js/managerCommon.js?v=7"></script>
 <!-- the drum preset catalog comes from the widget itself (single source of truth) -->
 <script src="js/drumMachine.js?v=14"></script>
-<script src="js/manager.js?v=28"></script>
-<script src="js/managerSections.js?v=22"></script>
+<script src="js/manager.js?v=29"></script>
+<script src="js/managerExercises.js?v=1"></script>
+<script src="js/managerSections.js?v=23"></script>
 <script src="js/managerHistory.js?v=25"></script>
 </body>
 </html>
