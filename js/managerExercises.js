@@ -214,6 +214,8 @@
         current = null;
         if ($('catEmpty')) $('catEmpty').hidden = false;
         if ($('catEditor')) $('catEditor').hidden = true;
+        if ($('catResources')) $('catResources').innerHTML = '';
+        resEditor = null;
         setDirty(false);
     }
 
@@ -296,6 +298,23 @@
         }
     }
 
+    // Resources belong to the exercise (a backing track, a scale, a metronome
+    // preset): the editor is mounted here and rebuilt on every selection.
+    let resEditor = null;
+
+    function renderResources() {
+        const box = $('catResources');
+        if (!box) return;
+        box.innerHTML = '';
+        resEditor = null;
+        if (!current || !GPH.mgr.createResourceEditor) return;
+        resEditor = GPH.mgr.createResourceEditor(current.resources || []);
+        box.appendChild(resEditor.root);
+        // Any edit in there needs the Save button to light up.
+        resEditor.root.addEventListener('change', function () { setDirty(true); });
+        resEditor.root.addEventListener('input', function () { setDirty(true); });
+    }
+
     async function select(id) {
         selectedId = id;
         try {
@@ -309,6 +328,7 @@
         if ($('catName')) $('catName').value = current.name || '';
         if ($('catDesc')) $('catDesc').value = current.description || '';
         renderAreaSelect();
+        renderResources();
         const archBtn = $('archiveCatalogBtn');
         if (archBtn) {
             archBtn.textContent = current.archived ? 'Unarchive' : 'Archive';
@@ -342,7 +362,8 @@
         try {
             await api('PUT', '/api/catalog/' + current.id,
                 { name: name, description: $('catDesc').value || '',
-                  area_id: $('catArea') ? $('catArea').value : '' });
+                  area_id: $('catArea') ? $('catArea').value : '',
+                  resources: resEditor ? resEditor.getResources() : undefined });
             setDirty(false);
             await GPH.mgr.loadMeta(true);
             document.dispatchEvent(new CustomEvent('slot-meta:changed'));
@@ -551,6 +572,11 @@
         bind('catName', function () { setDirty(true); }, 'input');
         bind('catDesc', function () { setDirty(true); }, 'input');
         bind('addAreaBtn', addArea);
+        // The resource picker list arrives with the sections; rebuild the editor
+        // only if nothing has been edited yet, never on top of user changes.
+        document.addEventListener('resources:ready', function () {
+            if (current && !dirty) renderResources();
+        });
         loadAreas();
     }
 

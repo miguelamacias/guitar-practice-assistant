@@ -747,6 +747,271 @@
         return { kind: kind, url: url, label: label, bpm: bpmVal };
     }
 
+    // ---- resources editor ---------------------------------------------------
+    // One exercise can hold several resources (a scale plus a backing track is a
+    // normal combo). The list belongs to the catalog exercise, so the editor is
+    // mounted there and never on a routine slot: the slot only says which
+    // exercise is played.
+    function createResourceEditor(list) {
+        const resWrap = document.createElement('div');
+        resWrap.className = 'ex-resources';
+        const resList = document.createElement('div');
+        resList.className = 'ex-res-list';
+        resWrap.appendChild(resList);
+
+        const existing = (list || []).filter(function (r) { return r && r.kind; });
+
+        function addResourceLine(res) {
+            const line = document.createElement('div');
+            line.className = 'ex-res-line';
+            const p = parseParams(res && res.url);
+            // Settings learnt while practising (signature, pattern, style...) are
+            // carried over untouched when the exercise is edited here.
+            line._resKind = res ? res.kind : '';
+            line._resCfg = (res && res.cfg) || {};
+            line._resUrl = res ? res.url : '';
+
+            let selVal = '';
+            resources.forEach(function (r, i) {
+                if (!res) return;
+                const isFixed = (r.kind === 'metronome' || r.kind === 'drums' || r.kind === 'fretboard');
+                const match = (r.kind === 'theory')
+                    ? (res.kind === 'theory' && (p.view || 'scales') === r.view)
+                    : (res.kind === r.kind && (isFixed || r.url === res.url));
+                if (match) selVal = String(i);
+            });
+            const picker = createResourcePicker(resources, selVal);
+            const sel = picker.select;
+
+            const bpm = document.createElement('input');
+            bpm.type = 'number'; bpm.className = 'ex-res-bpm';
+            bpm.min = '40'; bpm.max = '240'; bpm.placeholder = 'BPM';
+            bpm.value = (res && res.bpm) || '';
+
+            // ---- settings of the widget (metronome / drums) ----
+            const cfgBox = document.createElement('div');
+            cfgBox.className = 'ex-res-cfgbox';
+            const sigSel = makeSel('Time signature');
+            const patSel = makeSel('Metronome click pattern');
+            const accentSel = makeSel('Accent on beat 1');
+            const styleSel = makeSel('Drum preset');
+            const resSel = makeSel('Grid resolution');
+            const swingSel = makeSel('Swing');
+            sigSel.dataset.cfg = 'sig';
+            patSel.dataset.cfg = 'pattern';
+            accentSel.dataset.cfg = 'accent';
+            styleSel.dataset.cfg = 'style';
+            resSel.dataset.cfg = 'res';
+            swingSel.dataset.cfg = 'swing';
+
+            function fillStyles() {
+                const dm = window.GPH && GPH.drumMachine;
+                const opts = (dm && dm.styleOptions) ? dm.styleOptions() : [];
+                const items = opts.map(function (o) {
+                    return { v: o.value, t: 'preset: ' + o.label };
+                });
+                fillSel(styleSel, 'preset: auto', items);
+            }
+
+            function styleSigOf(id) {
+                const dm = window.GPH && GPH.drumMachine;
+                return (dm && dm.styleSig) ? dm.styleSig(id) : '';
+            }
+
+            function styleTextOf(id) {
+                const dm = window.GPH && GPH.drumMachine;
+                return (dm && dm.styleLabel) ? dm.styleLabel(id) : id;
+            }
+
+            // Builds the controls for a kind and shows the settings stored on it.
+            // Every option carries its own label ("sig: 4/4"), so the row needs no
+            // extra captions and nothing gets truncated.
+            function buildCfg(kind) {
+                const isDrums = kind === 'drums';
+                fillSel(sigSel, 'sig: auto', (isDrums ? ['4/4', '3/4', '6/8']
+                    : ['4/4', '3/4', '2/4', '6/8']).map(function (v) {
+                    return { v: v, t: 'sig: ' + v };
+                }));
+                fillSel(patSel, 'click: auto', [
+                    { v: '1', t: 'click: 4th' }, { v: '2', t: 'click: 8ths' },
+                    { v: '4', t: 'click: 16ths' }, { v: '3', t: 'click: triplets' },
+                    { v: 'shuffle', t: 'click: shuffle' }
+                ]);
+                fillSel(accentSel, 'accent: auto', [
+                    { v: 'on', t: 'accent: on' }, { v: 'off', t: 'accent: off' }
+                ]);
+                fillSel(resSel, 'grid: auto', [{ v: '8', t: 'grid: 8ths' }, { v: '16', t: 'grid: 16ths' }]);
+                fillSel(swingSel, 'swing: auto', [{ v: 'on', t: 'swing: on' }, { v: 'off', t: 'swing: off' }]);
+
+                const cfg = line._resCfg || {};
+                const legacyFlat = cfg.pattern === 'flat';
+                let styleVal = cfg.style || '';
+                // Old states stored a single "custom"; map it to the custom of
+                // the saved signature.
+                if (styleVal === 'custom' && (cfg.sig === '6/8' || cfg.sig === '3/4')) {
+                    const dm = window.GPH && GPH.drumMachine;
+                    if (dm && dm.customStyleId) styleVal = dm.customStyleId(cfg.sig);
+                }
+                sigSel.value = cfg.sig || '';
+                patSel.value = legacyFlat ? '1' : (cfg.pattern != null ? String(cfg.pattern) : '');
+                accentSel.value = legacyFlat ? 'off'
+                    : (cfg.accent === true ? 'on' : (cfg.accent === false ? 'off' : ''));
+                resSel.value = cfg.res ? String(cfg.res) : '';
+                swingSel.value = cfg.swing === true ? 'on' : (cfg.swing === false ? 'off' : '');
+                fillStyles();
+                styleSel.value = styleVal;
+                if (styleVal && !styleSel.value) {
+                    // Unknown/legacy preset: keep it visible, never lose it
+                    const o = document.createElement('option');
+                    o.value = styleVal;
+                    o.textContent = 'preset: ' + styleTextOf(styleVal);
+                    styleSel.appendChild(o);
+                    styleSel.value = styleVal;
+                }
+                const styleSig = styleSigOf(styleSel.value);
+                if (styleSig) sigSel.value = styleSig;
+                patSel.style.display = isDrums ? 'none' : '';
+                accentSel.style.display = isDrums ? 'none' : '';
+                styleSel.style.display = isDrums ? '' : 'none';
+                resSel.style.display = isDrums ? '' : 'none';
+                swingSel.style.display = isDrums ? '' : 'none';
+                cfgBox.dataset.kind = kind;
+            }
+
+            // All styles stay visible. Choosing one loads its meter; changing
+            // the meter manually clears an incompatible preset.
+            sigSel.addEventListener('change', function () {
+                if (cfgBox.dataset.kind !== 'drums') return;
+                const sig = sigSel.value;
+                const styleSig = styleSigOf(styleSel.value);
+                if (sig && styleSig && styleSig !== sig) styleSel.value = '';
+            });
+            styleSel.addEventListener('change', function () {
+                if (cfgBox.dataset.kind !== 'drums') return;
+                const sig = styleSigOf(styleSel.value);
+                if (sig) sigSel.value = sig;
+            });
+
+            cfgBox.appendChild(bpm);
+            cfgBox.appendChild(sigSel);
+            cfgBox.appendChild(patSel);
+            cfgBox.appendChild(accentSel);
+            cfgBox.appendChild(styleSel);
+            cfgBox.appendChild(resSel);
+            cfgBox.appendChild(swingSel);
+
+            const thBox = document.createElement('div');
+            thBox.className = 'ex-theory';
+
+            function sync() {
+                const r = sel.value !== '' ? resources[Number(sel.value)] : null;
+                const kind = r ? r.kind : '';
+                const isWidget = (kind === 'metronome' || kind === 'drums');
+                bpm.style.display = isWidget ? '' : 'none';
+                cfgBox.style.display = isWidget ? '' : 'none';
+                if (isWidget && cfgBox.dataset.kind !== kind) buildCfg(kind);
+                const isTheory = !!(r && r.kind === 'theory');
+                thBox.style.display = isTheory ? '' : 'none';
+                if (isTheory && thBox.dataset.view !== r.view) {
+                    buildTheoryControls(thBox, r.view, (res && res.kind === 'theory') ? p : {});
+                }
+                refreshAdd();
+            }
+            sel.addEventListener('change', sync);
+
+            const del = document.createElement('button');
+            del.type = 'button'; del.className = 'btn small danger ex-res-del';
+            del.textContent = '\u2715'; del.title = 'Remove this resource';
+            del.addEventListener('click', function () {
+                if (resList.querySelectorAll('.ex-res-line').length > 1) {
+                    line.remove();
+                    refreshDeleteButtons();
+                    refreshAdd();
+                } else {
+                    sel.value = '';
+                    picker.refresh();
+                    sync();
+                }
+            });
+
+            line.appendChild(picker.root);
+            line.appendChild(cfgBox);
+            line.appendChild(thBox);
+            line.appendChild(del);
+            resList.appendChild(line);
+            sync();
+            return line;
+        }
+
+        function refreshDeleteButtons() {
+            const lines = resList.querySelectorAll('.ex-res-line');
+            Array.prototype.forEach.call(lines, function (l) {
+                const btn = l.querySelector('.ex-res-del');
+                if (btn) btn.disabled = lines.length <= 1;
+            });
+        }
+
+        const addRes = document.createElement('button');
+        addRes.type = 'button'; addRes.className = 'btn small ex-res-add';
+        addRes.textContent = '+ Add resource';
+        addRes.title = 'Add another resource to this exercise';
+        addRes.hidden = true;
+        addRes.addEventListener('click', function () {
+            const line = addResourceLine(null);
+            refreshDeleteButtons();
+            refreshAdd();
+            const trigger = line.querySelector('.ex-res-trigger');
+            if (trigger) trigger.click();
+        });
+        resWrap.appendChild(addRes);
+
+        (existing.length ? existing : [null]).forEach(addResourceLine);
+        refreshDeleteButtons();
+        refreshAdd();
+
+        // Only shown once a resource has been picked: with an empty list the
+        // job is to assign the first one, not to add a second one.
+        function refreshAdd() {
+            let filled = 0;
+            Array.prototype.forEach.call(resList.querySelectorAll('.ex-res-line'), function (l) {
+                const sel = l.querySelector('.ex-res');
+                if (sel && sel.value !== '') filled += 1;
+            });
+            addRes.hidden = filled === 0;
+        }
+
+        // Current values of every filled line, ready for the API.
+        function collectResources() {
+            const out = [];
+            Array.prototype.forEach.call(resList.querySelectorAll('.ex-res-line'), function (line) {
+                const sel = line.querySelector('.ex-res');
+                if (!sel || sel.value === '') return;
+                const r = resources[Number(sel.value)];
+                if (!r) return;
+                const item = { kind: r.kind, url: r.url || '', bpm: 0, label: r.label || '' };
+                if (r.kind === 'theory') {
+                    const thBox = line.querySelector('.ex-theory');
+                    item.url = readTheoryUrl(thBox);
+                    item.label = readTheoryLabel(thBox, item.label || 'Theory');
+                }
+                if (r.kind === 'metronome' || r.kind === 'drums') {
+                    const bpmIn = line.querySelector('.ex-res-bpm');
+                    let bpm = parseInt(bpmIn && bpmIn.value, 10);
+                    if (!bpm || bpm < 40 || bpm > 240) bpm = 120;
+                    item.bpm = bpm;
+                    // signature / pattern / preset / grid / swing ("auto" = not forced)
+                    item.cfg = readLineCfg(line);
+                }
+                out.push(item);
+            });
+            return out;
+        }
+
+        return { root: resWrap, getResources: collectResources };
+    }
+
+    GPH.mgr.createResourceEditor = createResourceEditor;
+
     function buildExerciseRow(ex, idx, total) {
         const row = document.createElement('div');
         row.className = 'exercise has-drag';
@@ -790,7 +1055,8 @@
         row.appendChild(fields);
 
         // ---- area + current exercise (the catalog pointer) ----
-        // Kept on its own line above the resources so the existing grid holds.
+        // Kept on its own line: the slot only decides *which* exercise is played
+        // (and in which area), the exercise owns its resources.
         const metaRow = document.createElement('div');
         metaRow.className = 'ex-meta';
 
@@ -957,218 +1223,6 @@
         row.appendChild(metaRow);
         row._areaSel = areaSel;
 
-        // ---- resources: a list (a scale + a backing track is a normal combo) ----
-        const resWrap = document.createElement('div');
-        resWrap.className = 'ex-resources';
-        const resList = document.createElement('div');
-        resList.className = 'ex-res-list';
-        resWrap.appendChild(resList);
-
-        const existing = (ex.resources && ex.resources.length)
-            ? ex.resources
-            : (ex.resource_kind ? [{ kind: ex.resource_kind, url: ex.resource_url, bpm: ex.resource_bpm, label: ex.resource_label }] : []);
-
-        function addResourceLine(res) {
-            const line = document.createElement('div');
-            line.className = 'ex-res-line';
-            const p = parseParams(res && res.url);
-            // Settings learnt while practising (signature, pattern, style...) are
-            // carried over untouched when the exercise is edited here.
-            line._resKind = res ? res.kind : '';
-            line._resCfg = (res && res.cfg) || {};
-            line._resUrl = res ? res.url : '';
-
-            let selVal = '';
-            resources.forEach(function (r, i) {
-                if (!res) return;
-                const isFixed = (r.kind === 'metronome' || r.kind === 'drums' || r.kind === 'fretboard');
-                const match = (r.kind === 'theory')
-                    ? (res.kind === 'theory' && (p.view || 'scales') === r.view)
-                    : (res.kind === r.kind && (isFixed || r.url === res.url));
-                if (match) selVal = String(i);
-            });
-            const picker = createResourcePicker(resources, selVal);
-            const sel = picker.select;
-
-            const bpm = document.createElement('input');
-            bpm.type = 'number'; bpm.className = 'ex-res-bpm';
-            bpm.min = '40'; bpm.max = '240'; bpm.placeholder = 'BPM';
-            bpm.value = (res && res.bpm) || '';
-
-            // ---- settings of the widget (metronome / drums) ----
-            const cfgBox = document.createElement('div');
-            cfgBox.className = 'ex-res-cfgbox';
-            const sigSel = makeSel('Time signature');
-            const patSel = makeSel('Metronome click pattern');
-            const accentSel = makeSel('Accent on beat 1');
-            const styleSel = makeSel('Drum preset');
-            const resSel = makeSel('Grid resolution');
-            const swingSel = makeSel('Swing');
-            sigSel.dataset.cfg = 'sig';
-            patSel.dataset.cfg = 'pattern';
-            accentSel.dataset.cfg = 'accent';
-            styleSel.dataset.cfg = 'style';
-            resSel.dataset.cfg = 'res';
-            swingSel.dataset.cfg = 'swing';
-
-            function fillStyles() {
-                const dm = window.GPH && GPH.drumMachine;
-                const opts = (dm && dm.styleOptions) ? dm.styleOptions() : [];
-                const items = opts.map(function (o) {
-                    return { v: o.value, t: 'preset: ' + o.label };
-                });
-                fillSel(styleSel, 'preset: auto', items);
-            }
-
-            function styleSigOf(id) {
-                const dm = window.GPH && GPH.drumMachine;
-                return (dm && dm.styleSig) ? dm.styleSig(id) : '';
-            }
-
-            function styleTextOf(id) {
-                const dm = window.GPH && GPH.drumMachine;
-                return (dm && dm.styleLabel) ? dm.styleLabel(id) : id;
-            }
-
-            // Builds the controls for a kind and shows the settings stored on it.
-            // Every option carries its own label ("sig: 4/4"), so the row needs no
-            // extra captions and nothing gets truncated.
-            function buildCfg(kind) {
-                const isDrums = kind === 'drums';
-                fillSel(sigSel, 'sig: auto', (isDrums ? ['4/4', '3/4', '6/8']
-                    : ['4/4', '3/4', '2/4', '6/8']).map(function (v) {
-                    return { v: v, t: 'sig: ' + v };
-                }));
-                fillSel(patSel, 'click: auto', [
-                    { v: '1', t: 'click: 4th' }, { v: '2', t: 'click: 8ths' },
-                    { v: '4', t: 'click: 16ths' }, { v: '3', t: 'click: triplets' },
-                    { v: 'shuffle', t: 'click: shuffle' }
-                ]);
-                fillSel(accentSel, 'accent: auto', [
-                    { v: 'on', t: 'accent: on' }, { v: 'off', t: 'accent: off' }
-                ]);
-                fillSel(resSel, 'grid: auto', [{ v: '8', t: 'grid: 8ths' }, { v: '16', t: 'grid: 16ths' }]);
-                fillSel(swingSel, 'swing: auto', [{ v: 'on', t: 'swing: on' }, { v: 'off', t: 'swing: off' }]);
-
-                const cfg = line._resCfg || {};
-                const legacyFlat = cfg.pattern === 'flat';
-                let styleVal = cfg.style || '';
-                // Old states stored a single "custom"; map it to the custom of
-                // the saved signature.
-                if (styleVal === 'custom' && (cfg.sig === '6/8' || cfg.sig === '3/4')) {
-                    const dm = window.GPH && GPH.drumMachine;
-                    if (dm && dm.customStyleId) styleVal = dm.customStyleId(cfg.sig);
-                }
-                sigSel.value = cfg.sig || '';
-                patSel.value = legacyFlat ? '1' : (cfg.pattern != null ? String(cfg.pattern) : '');
-                accentSel.value = legacyFlat ? 'off'
-                    : (cfg.accent === true ? 'on' : (cfg.accent === false ? 'off' : ''));
-                resSel.value = cfg.res ? String(cfg.res) : '';
-                swingSel.value = cfg.swing === true ? 'on' : (cfg.swing === false ? 'off' : '');
-                fillStyles();
-                styleSel.value = styleVal;
-                if (styleVal && !styleSel.value) {
-                    // Unknown/legacy preset: keep it visible, never lose it
-                    const o = document.createElement('option');
-                    o.value = styleVal;
-                    o.textContent = 'preset: ' + styleTextOf(styleVal);
-                    styleSel.appendChild(o);
-                    styleSel.value = styleVal;
-                }
-                const styleSig = styleSigOf(styleSel.value);
-                if (styleSig) sigSel.value = styleSig;
-                patSel.style.display = isDrums ? 'none' : '';
-                accentSel.style.display = isDrums ? 'none' : '';
-                styleSel.style.display = isDrums ? '' : 'none';
-                resSel.style.display = isDrums ? '' : 'none';
-                swingSel.style.display = isDrums ? '' : 'none';
-                cfgBox.dataset.kind = kind;
-            }
-
-            // All styles stay visible. Choosing one loads its meter; changing
-            // the meter manually clears an incompatible preset.
-            sigSel.addEventListener('change', function () {
-                if (cfgBox.dataset.kind !== 'drums') return;
-                const sig = sigSel.value;
-                const styleSig = styleSigOf(styleSel.value);
-                if (sig && styleSig && styleSig !== sig) styleSel.value = '';
-            });
-            styleSel.addEventListener('change', function () {
-                if (cfgBox.dataset.kind !== 'drums') return;
-                const sig = styleSigOf(styleSel.value);
-                if (sig) sigSel.value = sig;
-            });
-
-            cfgBox.appendChild(bpm);
-            cfgBox.appendChild(sigSel);
-            cfgBox.appendChild(patSel);
-            cfgBox.appendChild(accentSel);
-            cfgBox.appendChild(styleSel);
-            cfgBox.appendChild(resSel);
-            cfgBox.appendChild(swingSel);
-
-            const thBox = document.createElement('div');
-            thBox.className = 'ex-theory';
-
-            function sync() {
-                const r = sel.value !== '' ? resources[Number(sel.value)] : null;
-                const kind = r ? r.kind : '';
-                const isWidget = (kind === 'metronome' || kind === 'drums');
-                bpm.style.display = isWidget ? '' : 'none';
-                cfgBox.style.display = isWidget ? '' : 'none';
-                if (isWidget && cfgBox.dataset.kind !== kind) buildCfg(kind);
-                const isTheory = !!(r && r.kind === 'theory');
-                thBox.style.display = isTheory ? '' : 'none';
-                if (isTheory && thBox.dataset.view !== r.view) {
-                    buildTheoryControls(thBox, r.view, (res && res.kind === 'theory') ? p : {});
-                }
-            }
-            sel.addEventListener('change', sync);
-
-            const del = document.createElement('button');
-            del.type = 'button'; del.className = 'btn small danger ex-res-del';
-            del.textContent = '\u2715'; del.title = 'Remove this resource';
-            del.addEventListener('click', function () {
-                if (resList.querySelectorAll('.ex-res-line').length > 1) {
-                    line.remove();
-                    refreshDeleteButtons();
-                } else {
-                    sel.value = '';
-                    picker.refresh();
-                    sync();
-                }
-            });
-
-            line.appendChild(picker.root);
-            line.appendChild(cfgBox);
-            line.appendChild(thBox);
-            line.appendChild(del);
-            resList.appendChild(line);
-            sync();
-            return line;
-        }
-
-        function refreshDeleteButtons() {
-            const lines = resList.querySelectorAll('.ex-res-line');
-            Array.prototype.forEach.call(lines, function (l) {
-                const btn = l.querySelector('.ex-res-del');
-                if (btn) btn.disabled = lines.length <= 1;
-            });
-        }
-
-        (existing.length ? existing : [null]).forEach(addResourceLine);
-        refreshDeleteButtons();
-
-        const addRes = document.createElement('button');
-        addRes.type = 'button'; addRes.className = 'btn small ex-res-add';
-        addRes.textContent = '+ Add resource';
-        addRes.title = 'Add another resource to this exercise';
-        addRes.addEventListener('click', function () {
-            addResourceLine(null);
-            refreshDeleteButtons();
-        });
-        resWrap.appendChild(addRes);
-        row.appendChild(resWrap);
         return row;
     }
 
@@ -1290,35 +1344,10 @@
                 const item = pathPool[Number(pathSel.value)];
                 pathId = item ? item.id : null;
             }
-            const list = [];
-
-            Array.prototype.forEach.call(row.querySelectorAll('.ex-res-line'), function (line) {
-                const sel = line.querySelector('.ex-res');
-                if (!sel || sel.value === '') return;
-                const r = resources[Number(sel.value)];
-                if (!r) return;
-                const item = { kind: r.kind, url: r.url || '', bpm: 0, label: r.label || '' };
-                if (r.kind === 'theory') {
-                    const thBox = line.querySelector('.ex-theory');
-                    item.url = readTheoryUrl(thBox);
-                    item.label = readTheoryLabel(thBox, item.label || 'Theory');
-                }
-                if (r.kind === 'metronome' || r.kind === 'drums') {
-                    const bpmIn = line.querySelector('.ex-res-bpm');
-                    let bpm = parseInt(bpmIn && bpmIn.value, 10);
-                    if (!bpm || bpm < 40 || bpm > 240) bpm = 120;
-                    item.bpm = bpm;
-                    // signature / pattern / preset / grid / swing ("auto" = not forced)
-                    item.cfg = readLineCfg(line);
-                }
-                list.push(item);
-            });
-
             out.push({
                 id: Number(row.dataset.eid),
                 name: name ? name.value : '',
                 duration_seconds: toSeconds(dur ? dur.value : 0),
-                resources: list,
                 area_id: areaSel ? areaSel.value : '',
                 catalog_exercise_id: catalogId,
                 catalog_path_id: pathId
@@ -1338,7 +1367,7 @@
         for (const ex of rows) {
             await api('PUT', '/api/exercises/' + ex.id,
                 { name: ex.name, duration_seconds: ex.duration_seconds,
-                  resources: ex.resources, area_id: ex.area_id,
+                  area_id: ex.area_id,
                   catalog_exercise_id: ex.catalog_exercise_id,
                   catalog_path_id: ex.catalog_path_id || null });
         }
@@ -1580,6 +1609,8 @@
                 resources = buildResources(secs);
                 finishResources = buildFinishResources(secs);
                 populateFinishSelect();
+                // The exercise editor builds its resource picker from this list.
+                document.dispatchEvent(new CustomEvent('resources:ready'));
             })
             .catch(function () { /* noop */ })
             .then(function () { return loadRoutines().catch(function (e) { toast('Error: ' + e.message, true); }); })

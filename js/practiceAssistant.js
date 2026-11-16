@@ -1330,7 +1330,17 @@
             }
         });
         if (!changed) return;
-        if (ex.id != null) {
+        // The BPM and the widget settings belong to the exercise, not to the
+        // slot: they are saved on the catalog exercise, so the same material
+        // sounds the same wherever it is scheduled.
+        if (ex.catalog_exercise_id != null) {
+            fetch('/api/catalog/' + ex.catalog_exercise_id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resources: ex.recursos })
+            }).catch(function () {});
+        } else if (ex.id != null) {
+            // Slots without a catalog exercise keep the old per-slot behaviour.
             fetch('/api/exercises/' + ex.id, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },

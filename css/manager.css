@@ -113,7 +113,6 @@ textarea { resize: vertical; min-height: 44px; }
 .exercise.has-drag > .drag-handle,
 .item-row.has-drag > .drag-handle { grid-column: 1; grid-row: 1; margin-top: 10px; }
 .exercise.has-drag > .ex-fields,
-.exercise.has-drag > .ex-resources,
 .item-row.has-drag > .item-head,
 .item-row.has-drag > .item-foot,
 .item-row.has-drag > .song-list { grid-column: 2; }
@@ -186,8 +185,9 @@ textarea { resize: vertical; min-height: 44px; }
 .add-main .mini { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) { .add-head, .add-head--compact { grid-template-columns: 1fr; } }
 /* Form fields that live next to text inputs: same control as the inputs.
-   #sLane belongs to the section editor, between the title and subtitle fields. */
-#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane {
+   #sLane belongs to the section editor, between the title and subtitle fields.
+   #catArea is the Area select of the exercise editor. */
+#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane, #catArea {
     background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
     padding: 8px 10px; font-family: inherit; font-size: 0.9rem;
 }
@@ -675,7 +675,10 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 
 .cat-search input {
     width: 240px; padding: 6px 8px; font-family: inherit; font-size: 0.82rem;
+    background: #111; color: var(--text); border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
 }
+.cat-search input:focus { outline: none; border-color: var(--accent); }
 .cat-item {
     display: flex; flex-direction: column; gap: 2px;
     padding: 6px 8px; border-radius: 5px; cursor: pointer;
