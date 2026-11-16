@@ -72,6 +72,81 @@
         return h + ' h' + (m ? ' ' + m + ' min' : '');
     }
 
+    // ---- Weekly summary on the welcome screen -----------------------------
+    // A glance, not a report: one number, one line, seven bars and the
+    // exercise that took the most time. Everything comes from the History
+    // aggregates, so it says exactly the same as the Manager.
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+    function dayKey(date) {
+        return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate());
+    }
+
+    function loadWelcomeStats() {
+        if (!document.getElementById('welcomeStatTime')) return;
+        fetch('/api/sessions/stats?days=7', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(renderWelcomeStats)
+            .catch(function () { renderWelcomeStats(null); });
+    }
+
+    function renderWelcomeStats(data) {
+        const timeEl = document.getElementById('welcomeStatTime');
+        const lineEl = document.getElementById('welcomeStatLine');
+        const barsEl = document.getElementById('welcomeBars');
+        const mostEl = document.getElementById('welcomeStatMost');
+        if (!timeEl || !lineEl || !barsEl || !mostEl) return;
+
+        const totals = (data && data.totals) || {};
+        const real = totals.real_seconds || 0;
+        const sessions = totals.sessions || 0;
+        const days = totals.days_practised || 0;
+
+        timeEl.classList.toggle('is-empty', !real);
+        timeEl.textContent = real ? (fmtMinutes(Math.round(real / 60)) || '0 min')
+                                  : 'No practice yet';
+        lineEl.textContent = real
+            ? sessions + (sessions === 1 ? ' session' : ' sessions') +
+              ' \u00b7 ' + days + ' of 7 days'
+            : 'Start a routine and it shows up here.';
+
+        // Seven bars, one per day, today on the right.
+        const byDay = {};
+        ((data && data.activity) || []).forEach(function (a) {
+            byDay[a.date] = a.seconds || 0;
+        });
+        const today = new Date();
+        const values = [];
+        for (let i = 6; i >= 0; i -= 1) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+            values.push({ date: d, seconds: byDay[dayKey(d)] || 0, today: i === 0 });
+        }
+        const max = Math.max.apply(null, values.map(function (v) { return v.seconds; })
+            .concat([1]));
+        barsEl.innerHTML = '';
+        values.forEach(function (v) {
+            const bar = document.createElement('div');
+            bar.className = 'welcome-bar' + (v.today ? ' is-today' : '') +
+                (v.seconds ? '' : ' is-empty');
+            // 8% of the track is ~4px: an empty day still reads as a day.
+            bar.style.height = Math.max(8, Math.round(v.seconds / max * 100)) + '%';
+            bar.title = v.date.toLocaleDateString('en-US', { weekday: 'short' }) + ': ' +
+                (fmtMinutes(Math.round(v.seconds / 60)) || '0 min');
+            barsEl.appendChild(bar);
+        });
+
+        // Where the time went. Newer sessions are linked to the catalog, so the
+        // exercise name is the material; older ones only know their slot.
+        const withTime = function (list) {
+            return (list || []).filter(function (e) { return (e.seconds || 0) > 0; })[0];
+        };
+        const top = withTime(data && data.by_exercise) || withTime(data && data.by_slot);
+        mostEl.textContent = top
+            ? 'Most time: ' + top.name + ' \u00b7 ' + fmtMinutes(Math.round(top.seconds / 60))
+            : '';
+        mostEl.title = top ? top.name : '';
+    }
+
     // ---- Shared dark tooltip (welcome list, Start button…) ----------------
     // The native `title` cannot be styled, so both use the same `.ex-tip` panel.
     let tipEl = null;
@@ -227,6 +302,7 @@
         loadStates();
         loadSessionId();
         flushSessionQueue();
+        loadWelcomeStats();
         hideTip();
         wireTimerFloat();
         const changeBtn = document.getElementById('exChangeBtn');
@@ -1699,7 +1775,9 @@
         sessionId = null;
         try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) {}
         sessionPost('POST', '/api/sessions/' + sid + '/finish',
-                    { finished_at: new Date().toISOString(), items: items });
+                    { finished_at: new Date().toISOString(), items: items },
+                    // The week summary on the welcome screen is now stale.
+                    function () { loadWelcomeStats(); });
     }
 
     // ---- Reconciliation with the server -----------------------------------
