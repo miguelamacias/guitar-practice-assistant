@@ -4,15 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=57">
+    <link rel="stylesheet" href="css/manager.css?v=69">
 </head>
 <body>
 <div class="mgr">
     <div class="topbar">
         <div class="tabs">
             <button id="tabRoutines" class="tab active">Routines</button>
-            <button id="tabSections" class="tab">Sections</button>
             <button id="tabExercises" class="tab">Exercises</button>
+            <button id="tabSections" class="tab">Sections</button>
             <button id="tabHistory" class="tab">History</button>
             <button id="tabAbout" class="tab">Settings</button>
         </div>
@@ -38,8 +38,8 @@
     <div class="layout">
         <div class="panel">
             <h2>Routines</h2>
-            <div id="routineList"></div>
             <button id="newRoutineBtn" class="btn primary block">+ New routine</button>
+            <div id="routineList"></div>
         </div>
 
         <div class="panel">
@@ -144,8 +144,8 @@
     <div class="layout">
         <div class="panel">
             <h2>Sections</h2>
-            <div id="sectionList"></div>
             <button id="newSectionBtn" class="btn primary block">+ New section</button>
+            <div id="sectionList"></div>
             <button id="resetLayoutBtn" class="btn block" title="Spread the sections across the three columns by size">Reset layout</button>
         </div>
         <div class="panel">
@@ -220,9 +220,18 @@
         </div>
     </div>
 
+    <div class="cat-tabs" role="tablist" aria-label="Catalog panels">
+        <button id="catTabCatalog" class="cat-tab is-active" type="button"
+                role="tab" aria-selected="true">Catalog</button>
+        <button id="catTabPaths" class="cat-tab" type="button"
+                role="tab" aria-selected="false">Paths</button>
+    </div>
+
+    <div id="catPanelCatalog">
     <div class="layout">
         <div class="panel">
             <h2>Catalog <span class="sub" id="catCount"></span></h2>
+            <button id="newCatalogBtn" class="btn primary block" type="button">+ New exercise</button>
             <div class="field">
                 <select id="catSort">
                     <option value="name">Sort: name</option>
@@ -230,9 +239,17 @@
                     <option value="recent">Sort: last practised</option>
                     <option value="time">Sort: total time</option>
                 </select>
+                <select id="catFilter" aria-label="Archived filter">
+                    <option value="active">Show: active</option>
+                    <option value="all">Show: all</option>
+                    <option value="archived">Show: archived</option>
+                </select>
+                <select id="catGroup" aria-label="Group list">
+                    <option value="area">Group: area</option>
+                    <option value="none">Group: none</option>
+                </select>
             </div>
             <div id="catalogList"></div>
-            <button id="newCatalogBtn" class="btn primary block" type="button">+ New exercise</button>
         </div>
 
         <div class="panel">
@@ -246,8 +263,17 @@
                     <label>Description</label>
                     <textarea id="catDesc" rows="3"></textarea>
                 </div>
+                <div class="field">
+                    <label>Area <span class="sub">(classification, not statistics)</span></label>
+                    <select id="catArea" aria-label="Area"></select>
+                </div>
+                <div class="field">
+                    <label>Resources <span class="sub">(backing track, theory, metronome&hellip;)</span></label>
+                    <div id="catResources"></div>
+                </div>
                 <div class="editor-actions">
                     <button id="saveCatalogBtn" class="btn primary" type="button">Save exercise</button>
+                    <button id="archiveCatalogBtn" class="btn" type="button">Archive</button>
                     <button id="delCatalogBtn" class="btn danger" type="button">Delete</button>
                     <span id="catUsage" class="cat-usage"></span>
                 </div>
@@ -255,6 +281,43 @@
                 <div id="catUsedIn" class="cat-used"></div>
                 <h3 class="cat-h3">Recent practices</h3>
                 <div id="catRecent" class="cat-recent"></div>
+            </div>
+        </div>
+    </div>
+    </div><!-- /catPanelCatalog -->
+
+    <div id="catPanelPaths" class="layout" hidden>
+        <div class="panel">
+            <h2>Paths <span class="sub" id="pathCount"></span></h2>
+            <button id="newPathBtn" class="btn primary block" type="button">+ New path</button>
+            <div id="pathList"></div>
+        </div>
+
+        <div class="panel">
+            <div id="pathEmpty" class="empty">Select or create a path.</div>
+            <div id="pathEditor" hidden>
+                <div class="field">
+                    <label>Name</label>
+                    <input type="text" id="pathName">
+                </div>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea id="pathDesc" rows="2"></textarea>
+                </div>
+                <div class="editor-actions">
+                    <button id="savePathBtn" class="btn primary" type="button">Save path</button>
+                    <button id="delPathBtn" class="btn danger" type="button">Delete</button>
+                    <span id="pathUsage" class="cat-usage"></span>
+                </div>
+                <h3 class="cat-h3">Steps</h3>
+                <div id="pathSteps" class="path-steps"></div>
+                <div id="pathStepsEmpty" class="empty" hidden>
+                    Empty path &mdash; it cannot be assigned to a slot yet.
+                </div>
+                <div class="path-add">
+                    <select id="pathAddSel" aria-label="Exercise to add"></select>
+                    <button id="pathAddBtn" class="btn small" type="button">+ Add exercise</button>
+                </div>
             </div>
         </div>
     </div>
@@ -417,7 +480,7 @@
     </div>
 
     <div class="about-card">
-        <h2>About <span class="about-version">v1.4.0</span></h2>
+        <h2>About <span class="about-version">v1.4.2</span></h2>
         <p>A personal practice companion to organize your daily guitar routine. It combines a step-by-step practice assistant with a countdown timer, a metronome, a drum machine and your backing tracks &amp; resources — all in one place.</p>
         <ul class="about-list">
             <li><b>Practice Assistant</b> — guided routine with a per-exercise timer, progress bar, and an end-of-time chime + flash.</li>
@@ -453,12 +516,13 @@
 <script src="js/theory.js?v=20"></script>
 <script src="js/chords.js?v=3"></script>
 <script src="js/chordDiagrams.js?v=2"></script>
-<script src="js/managerCommon.js?v=7"></script>
+<script src="js/managerCommon.js?v=8"></script>
 <!-- the drum preset catalog comes from the widget itself (single source of truth) -->
 <script src="js/drumMachine.js?v=14"></script>
-<script src="js/manager.js?v=31"></script>
-<script src="js/managerExercises.js?v=2"></script>
-<script src="js/managerSections.js?v=23"></script>
+<script src="js/manager.js?v=37"></script>
+<script src="js/managerExercises.js?v=8"></script>
+<script src="js/managerPaths.js?v=3"></script>
+<script src="js/managerSections.js?v=24"></script>
 <script src="js/managerHistory.js?v=31"></script>
 </body>
 </html>

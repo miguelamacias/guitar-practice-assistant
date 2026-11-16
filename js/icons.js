@@ -10,6 +10,8 @@
         prev: '<path d="M6.4 5v14"/><path d="M18.4 5.4v13.2L9.1 12z" fill="currentColor" stroke="none"/>',
         next: '<path d="M17.6 5v14"/><path d="M5.6 5.4v13.2L14.9 12z" fill="currentColor" stroke="none"/>',
         check: '<path d="M5 12.6l4.2 4.2L19 7"/>',
+        /* Curved back arrow: "park this routine and go back". */
+        undo: '<path d="M9 5.4 4.2 10.2 9 15"/><path d="M4.2 10.2h9.6a5.4 5.4 0 0 1 0 10.8H9.4"/>',
         chevrons: '<path d="M7.6 6.6L13 12l-5.4 5.4"/><path d="M13.4 6.6L18.8 12l-5.4 5.4"/>',
         'check-box': '<rect x="4.2" y="4.2" width="15.6" height="15.6" rx="3"/><path d="M8 12.3l2.9 2.9 5.4-5.6"/>',
         box: '<rect x="4.2" y="4.2" width="15.6" height="15.6" rx="3"/>',

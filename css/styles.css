@@ -599,8 +599,22 @@
 .is-hidden { display: none !important; }
 
 /* Assistant card */
-.practice-assistant-section { grid-column: span 2; }
+.practice-assistant-section {
+    grid-column: span 2;
+    /* The two states share the same frame: height of the card and the width of
+       the left strip (the exercise list, or the weekly summary). */
+    --assistant-h: 380px;
+    --ex-sidebar-w: 340px;
+    --ex-col-gap: 20px;
+}
 .assistant-content { padding-top: 4px; }
+/* The welcome screen and the practice view are swapped in the same place, so
+   the section must not change size when one replaces the other (it used to
+   jump ~190px). The floor is the practice view's own height, bounded by the
+   sidebar (max-height 340px) plus the card paddings; the welcome screen
+   centres its content inside the same box. border-box so the two cards agree
+   on what "380" means (they have different paddings). */
+.assistant-content > .card-panel { min-height: var(--assistant-h); box-sizing: border-box; }
 
 .card-panel {
     background: rgba(0, 0, 0, 0.3);
@@ -608,28 +622,78 @@
     border-radius: 6px;
 }
 
-/* Pantalla de bienvenida */
+/* Pantalla de bienvenida: dos columnas, la izquierda del ancho de la lista de
+   ejercicios para que al empezar la sesión solo cambie el contenido. */
 .welcome-card {
-    padding: 30px 20px;
-    text-align: center;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: var(--ex-sidebar-w) 1fr;
+    gap: var(--ex-col-gap);
+    position: relative;
+    text-align: left;
+}
+/* Left strip: same grammar as the exercise list (quiet panel). */
+.welcome-aside {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 8px 10px 10px;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 15px;
-    position: relative;
+    gap: 8px;
+    min-width: 0;
 }
-/* Discreet History shortcut in the card's top-right corner (same idea as the
-   header's Manage link). Absolute, so the card's rhythm does not move. */
+.welcome-aside-head { display: flex; align-items: center; gap: 6px; }
+.welcome-aside-label {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px;
+    color: #8f8f8f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.welcome-stats {
+    flex: 1 1 auto; display: flex; flex-direction: column;
+    gap: 6px; min-width: 0;
+}
+.welcome-stat-time { font-size: 1.5rem; font-weight: bold; color: #fff; line-height: 1.1; }
+.welcome-stat-time.is-empty { font-size: 0.95rem; font-weight: normal; color: #8f8f8f; }
+.welcome-stat-line { font-size: 0.78rem; color: var(--muted); }
+.welcome-stat-most {
+    font-size: 0.78rem; color: #9a9a9a;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.welcome-stat-most:empty { display: none; }
+/* Seven quiet bars, one per day ending today: a glance, not a chart. They grow
+   with the strip, so the numbers stay together at the top. */
+.welcome-bars {
+    flex: 1 1 auto; min-height: 56px; max-height: 118px;
+    display: flex; align-items: flex-end; gap: 4px;
+    padding: 2px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.welcome-bar {
+    flex: 1 1 0; min-width: 0; border-radius: 3px 3px 0 0;
+    background: rgba(255, 255, 255, 0.16);
+}
+/* A day without practice is a short stub, not a missing bar. */
+.welcome-bar.is-empty { background: rgba(255, 255, 255, 0.07); min-height: 6px; }
+.welcome-bar.is-today { background: var(--accent); }
+/* Last 30 days: one square per day, sitting at the bottom of the strip. The
+   squares light up in accent steps with the same thresholds as the Manager
+   calendar (see actLevel in js/managerHistory.js). */
+.welcome-month {
+    margin-top: auto; display: flex; flex-direction: column; gap: 5px;
+    padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.welcome-month-grid { display: grid; grid-template-columns: repeat(15, 1fr); gap: 3px; }
+.welcome-day { aspect-ratio: 1; border-radius: 2px; background: rgba(255, 255, 255, 0.07); }
+/* Right column: the routine name, its description and the big button, centred
+   in the space the practice view uses for its main panel. */
+.welcome-main {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 15px; text-align: center;
+    padding: 10px; min-width: 0;
+}
+/* Discreet History shortcut at the top-left corner of the card. */
 .welcome-hist {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 6px;
-    border-radius: 6px;
-    color: #6f6f6f;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 4px; border-radius: 6px; color: #6f6f6f; flex: 0 0 auto;
     transition: color 0.15s, background 0.15s;
 }
 .welcome-hist svg { width: 15px; height: 15px; display: block; }
@@ -642,6 +706,19 @@
 .welcome-name { font-size: 1.4rem; font-weight: bold; color: var(--accent); }
 .welcome-mins { font-size: 0.66em; }
 .welcome-desc { font-size: 0.95rem; color: #aaa; max-width: 500px; }
+/* Narrow screens: no room for two columns, so the strip becomes a one-line
+   summary above the content (the bars and the "most time" line step aside). */
+@media (max-width: 700px) {
+    .welcome-card { grid-template-columns: 1fr; gap: 10px; }
+    .welcome-aside { flex-direction: row; align-items: center; gap: 10px; padding: 6px 10px; }
+    .welcome-stats {
+        flex: 1 1 auto; flex-direction: row; align-items: baseline;
+        justify-content: flex-end; gap: 8px;
+    }
+    .welcome-stat-time { font-size: 1rem; }
+    .welcome-stat-line { font-size: 0.75rem; }
+    .welcome-bars, .welcome-stat-most, .welcome-month { display: none; }
+}
 /* Anything with a custom tooltip: help cursor (+ focus ring for keyboard) */
 .has-tip { cursor: help; }
 .has-tip:focus-visible { outline: 1px dotted rgba(255, 255, 255, 0.35); outline-offset: 3px; }
@@ -721,10 +798,8 @@
     flex-direction: column;
     gap: 15px;
     position: relative;
-    /* Single source of truth for the two-column body, so the header row can
-       indent the start time exactly to the main panel. */
-    --ex-sidebar-w: 340px;
-    --ex-col-gap: 20px;
+    /* --ex-sidebar-w / --ex-col-gap come from the section: the welcome screen
+       uses the same two-column frame (see .welcome-card). */
 }
 
 /* Panel toolbar: start time (left) · exercise counter (dead centre) · Reset
@@ -823,6 +898,16 @@
 /* The title icon uses the same box as the row checkboxes so both columns line up.
    The 1px nudge is optical (the clipboard glyph is drawn slightly left of the check). */
 .ex-sidebar-icon { display: inline-flex; align-items: center; font-size: 1.1rem; transform: translateX(1px); color: var(--accent); }
+/* Park the routine and go back to the welcome screen: quiet, top-right of the
+   list header. */
+.ex-sidebar-back {
+    margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px;
+    background: transparent; color: #8a8a8a; font-size: 1rem; cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+}
+.ex-sidebar-back:hover,
+.ex-sidebar-back:focus-visible { color: var(--accent); background: rgba(255, 255, 255, 0.08); outline: none; }
 .ex-row {
     display: flex;
     align-items: center;
@@ -939,21 +1024,40 @@
 .ex-main {
     max-width: 60vw; color: #b8b8b8;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;                 /* the name opens the picker as well */
 }
 .ex-main.is-exercise { color: #fff; font-weight: 600; }
+/* Slot with a path but no exercise yet: show which pool to pick from. */
+.ex-main.is-path-hint { color: #8f8f8f; font-style: italic; }
+/* Header of the picker menu when the slot has a learning path. */
+.ex-catalog-head,
+.ex-catalog-group {
+    padding: 2px 8px 6px; margin-bottom: 2px;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--accent); border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Area groups inside the catalog pool: quieter than the path header. */
+.ex-catalog-group { color: #9a9a9a; margin-top: 4px; }
 /* The description on hover is a bonus, not a help affordance: no `?` cursor
-   (same as the routine name on the welcome screen). */
-.ex-main.has-tip { cursor: default; }
+   (same as the routine name on the welcome screen), but the name is still the
+   picker trigger, so it keeps the pointer. */
+.ex-main.has-tip { cursor: pointer; }
+/* Live attempt: the picker is locked, so the name must not promise a click. */
+.ex-main.is-locked { cursor: default; }
 /* Small caret right next to the exercise name. */
 .ex-change-btn {
     flex: 0 0 auto; padding: 0 2px; border: 0; background: transparent;
     color: #8a8a8a; font-size: 1.05rem; line-height: 1; cursor: pointer;
 }
 .ex-change-btn:hover:not(:disabled), .ex-change-btn.is-open { color: var(--accent); }
+/* Hovering the exercise name lights the caret too: both open the same picker. */
+#exMain:hover ~ .ex-change-btn:not(:disabled) { color: var(--accent); }
 .ex-change-btn:disabled { opacity: 0.4; cursor: default; }
-/* Floating catalog menu, anchored under the exercise name (JS positions it). */
+/* Floating catalog menu: a fixed panel in body (JS moves it there and positions
+   it), so no section can clip it and the assistant layout never moves. */
 .ex-catalog-menu {
-    position: absolute; z-index: 40;
+    position: fixed; z-index: 1200;
     max-height: 260px; overflow-y: auto; padding: 4px;
     background: #1b1b1b; border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 8px; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65);
@@ -970,6 +1074,15 @@
 .ex-catalog-option:hover, .ex-catalog-option.is-highlighted { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .ex-catalog-option.is-current { color: var(--accent); }
 .ex-catalog-option.is-current::after { content: ' \2713'; }
+/* Filter box at the top of the exercise picker (only for long pools). */
+.ex-catalog-search {
+    display: block; width: 100%; box-sizing: border-box;
+    margin: 2px 0 6px; padding: 5px 8px;
+    background: #111; color: var(--text); border: 1px solid #333; border-radius: 6px;
+    font-family: inherit; font-size: 0.85rem;
+}
+.ex-catalog-search:focus { outline: none; border-color: var(--accent); }
+.ex-catalog-empty { padding: 6px 8px; color: #8f8f8f; font-size: 0.85rem; }
 /* line-height 1: the digits box hugs the glyphs, so the air above and below the
    clock is the same 12 px gap as the rest of the stack. */
 .ex-timer { font-size: 3rem; font-weight: bold; font-family: monospace; color: #fff; line-height: 1; }

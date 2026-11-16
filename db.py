@@ -62,20 +62,54 @@ CREATE TABLE IF NOT EXISTS catalog_exercises (
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT DEFAULT (datetime('now'))
 );
+-- Learning paths: an ordered subset of the catalog. A slot may point at one
+-- path and then only picks exercises from it.
+CREATE TABLE IF NOT EXISTS catalog_paths (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS catalog_path_steps (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_id             INTEGER NOT NULL REFERENCES catalog_paths(id) ON DELETE CASCADE,
+    catalog_exercise_id INTEGER NOT NULL REFERENCES catalog_exercises(id) ON DELETE CASCADE,
+    position            INTEGER NOT NULL DEFAULT 0,
+    note                TEXT NOT NULL DEFAULT '',
+    UNIQUE(path_id, catalog_exercise_id)
+);
+CREATE INDEX IF NOT EXISTS idx_path_steps_path ON catalog_path_steps(path_id);
+-- Resources belong to the exercise, not to the slot: a backing track or a
+-- metronome preset travels with the material. One row per resource, shared by
+-- as many exercises as need it.
+CREATE TABLE IF NOT EXISTS resources (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT NOT NULL DEFAULT '',
+    url         TEXT NOT NULL DEFAULT '',
+    bpm         INTEGER NOT NULL DEFAULT 0,
+    label       TEXT NOT NULL DEFAULT '',
+    cfg         TEXT NOT NULL DEFAULT '',      -- per-kind settings (JSON)
+    created_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS catalog_exercise_resources (
+    catalog_exercise_id INTEGER NOT NULL REFERENCES catalog_exercises(id) ON DELETE CASCADE,
+    resource_id         INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+    position            INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(catalog_exercise_id, resource_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cat_res_exercise
+    ON catalog_exercise_resources(catalog_exercise_id);
 CREATE TABLE IF NOT EXISTS exercises (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    description TEXT DEFAULT '',
     duration_seconds INTEGER DEFAULT 0,
     position INTEGER DEFAULT 0,
-    resource_kind TEXT DEFAULT '',
-    resource_url TEXT DEFAULT '',
-    resource_bpm INTEGER DEFAULT 0,
-    resource_label TEXT DEFAULT '',
-    resources_json TEXT DEFAULT '',
     area_id TEXT NOT NULL DEFAULT '',
-    catalog_exercise_id INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL
+    catalog_exercise_id INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL,
+    catalog_path_id INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS sections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,17 +368,6 @@ def init_db():
 
 def _migrate(conn):
     """Anade columnas nuevas a tablas existentes (bases de datos antiguas)."""
-    cols = [r[1] for r in conn.execute('PRAGMA table_info(exercises)').fetchall()]
-    wanted = [
-        ('resource_kind', "TEXT DEFAULT ''"),
-        ('resource_url', "TEXT DEFAULT ''"),
-        ('resource_bpm', 'INTEGER DEFAULT 0'),
-        ('resource_label', "TEXT DEFAULT ''"),
-        ('resources_json', "TEXT DEFAULT ''"),
-    ]
-    for name, ddl in wanted:
-        if name not in cols:
-            conn.execute('ALTER TABLE exercises ADD COLUMN %s %s' % (name, ddl))
     scols = [r[1] for r in conn.execute('PRAGMA table_info(sections)').fetchall()]
     if 'full_width' not in scols:
         conn.execute('ALTER TABLE sections ADD COLUMN full_width INTEGER DEFAULT 0')
@@ -379,11 +402,17 @@ def _migrate(conn):
                                   ('n_partial', 'INTEGER NOT NULL DEFAULT 0')])
     # Slots get an area and a pointer into the global exercise catalog; session
     # items keep a snapshot of both so the history survives renames/deletions.
-    # Both columns are nullable-with-NULL-default, the only shape SQLite accepts
+    # Those columns are nullable-with-NULL-default, the only shape SQLite accepts
     # for ADD COLUMN ... REFERENCES.
     add_cols('exercises', [('area_id', "TEXT NOT NULL DEFAULT ''"),
                            ('catalog_exercise_id',
-                            'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL')])
+                            'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL'),
+                           ('catalog_path_id',
+                            'INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL')])
+    # Catalog hygiene: archiving instead of deleting, and a classification hint
+    # (the area that counts in the statistics is still the slot's).
+    add_cols('catalog_exercises', [('archived', 'INTEGER NOT NULL DEFAULT 0'),
+                                   ('area_id', "TEXT NOT NULL DEFAULT ''")])
     add_cols('routine_session_items', [
         ('area_id', "TEXT NOT NULL DEFAULT ''"),
         ('catalog_exercise_id',
@@ -391,6 +420,7 @@ def _migrate(conn):
         ('catalog_name', "TEXT NOT NULL DEFAULT ''"),
     ])
     for stmt in ('CREATE INDEX IF NOT EXISTS idx_exercises_area ON exercises(area_id)',
+                 'CREATE INDEX IF NOT EXISTS idx_exercises_path ON exercises(catalog_path_id)',
                  'CREATE INDEX IF NOT EXISTS idx_session_items_area'
                  ' ON routine_session_items(area_id)',
                  'CREATE INDEX IF NOT EXISTS idx_session_items_catalog'
@@ -441,10 +471,9 @@ def seed_if_empty(conn):
         rid = cur.lastrowid
         for i, e in enumerate(r.get('exercises', [])):
             conn.execute(
-                'INSERT INTO exercises(routine_id, name, description, duration_seconds, position) '
-                'VALUES(?,?,?,?,?)',
-                (rid, e.get('name', ''), e.get('description', ''),
-                 int(e.get('duration_seconds', 0)), i),
+                'INSERT INTO exercises(routine_id, name, duration_seconds, position) '
+                'VALUES(?,?,?,?)',
+                (rid, e.get('name', ''), int(e.get('duration_seconds', 0)), i),
             )
         rpos += 1
 
@@ -470,9 +499,9 @@ def seed_if_empty(conn):
 def _resource_labels(conn):
     """url -> label shown for a section item ("Section: TAG - label").
 
-    ``exercises.resource_label`` is only a snapshot taken when the exercise was
-    saved, so it misses later edits of the section/item (the tag above all).
-    The live section data wins, so already saved exercises get the full title.
+    The label stored on a resource is only a snapshot taken when the exercise
+    was saved, so it misses later edits of the section/item (the tag above all).
+    The live section data wins, so already saved resources get the full title.
     """
     out = {}
     try:
@@ -504,42 +533,6 @@ def _label_for(labels, url, fallback):
     return labels.get((url or '').strip()) or (fallback or '')
 
 
-def _exercise_resources(e):
-    """Resources of an exercise as a list.
-
-    `resources_json` holds the list; the old single-resource columns are used as
-    a fallback so databases created before this feature keep working.
-    """
-    arr = []
-    try:
-        raw = json.loads(e['resources_json'] or '[]')
-        if isinstance(raw, list):
-            arr = raw
-    except Exception:  # noqa: BLE001
-        arr = []
-    out = []
-    for r in arr:
-        if not isinstance(r, dict):
-            continue
-        kind = (r.get('kind') or '').strip()
-        if not kind:
-            continue
-        out.append({
-            'kind': kind,
-            'url': r.get('url') or '',
-            'bpm': int(r.get('bpm') or 0),
-            'label': r.get('label') or '',
-            'cfg': r.get('cfg') if isinstance(r.get('cfg'), dict) else {},
-        })
-    if not out and (e['resource_kind'] or ''):
-        out = [{
-            'kind': e['resource_kind'], 'url': e['resource_url'] or '',
-            'bpm': e['resource_bpm'] or 0, 'label': e['resource_label'] or '',
-            'cfg': {},
-        }]
-    return out
-
-
 def _with_labels(resources, labels):
     """Same list with the labels refreshed from the live section data."""
     out = []
@@ -555,18 +548,27 @@ def _with_labels(resources, labels):
     return out
 
 
-def _exercise_payload(e, labels, catalog=None, areas_map=None):
+def _exercise_payload(e, labels, catalog=None, areas_map=None, paths=None,
+                      resources_map=None):
     """Exercise dict for the app: `recursos` plus the legacy single-resource keys.
 
-    `catalog` is a {id: {id, name, description}} map and `areas_map` an
-    {area_id: label} map, both resolved once per call by the caller.
+    `catalog` is a {id: {id, name, description}} map, `areas_map` an
+    {area_id: label} map, `paths` an {id: name} map of the learning paths and
+    `resources_map` a {catalog_exercise_id: [resource]} map, all resolved once
+    per call by the caller.
+
+    Resources belong to the catalog exercise: the slot only says *which*
+    exercise is played, so the list travels with the material and rotating a
+    slot brings its own backing track along.
     """
-    res = _with_labels(_exercise_resources(e), labels)
-    first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     cid = e['catalog_exercise_id'] if 'catalog_exercise_id' in e.keys() else None
+    pid = e['catalog_path_id'] if 'catalog_path_id' in e.keys() else None
     aid = (e['area_id'] if 'area_id' in e.keys() else '') or ''
+    res = _with_labels(((resources_map or {}).get(cid) or []) if cid is not None else [],
+                       labels)
+    first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     return {
-        'id': e['id'], 'nombre': e['name'], 'descripcion': e['description'],
+        'id': e['id'], 'nombre': e['name'],
         'tiempo': e['duration_seconds'],
         'recursos': res,
         'recurso_kind': first['kind'], 'recurso_url': first['url'],
@@ -575,6 +577,9 @@ def _exercise_payload(e, labels, catalog=None, areas_map=None):
         'area': (areas_map or {}).get(aid, ''),
         'catalog_exercise_id': cid,
         'catalog_exercise': (catalog or {}).get(cid) if cid is not None else None,
+        'catalog_path_id': pid,
+        'catalog_path': ({'id': pid, 'name': (paths or {}).get(pid, '')}
+                         if pid is not None else None),
     }
 
 
@@ -594,13 +599,15 @@ def api_state(conn):
         rid, name, desc = row['id'], row['name'], row['description']
         labels = _resource_labels(conn)
         exs = conn.execute(
-            'SELECT id, name, description, duration_seconds, resource_kind, resource_url, '
-            'resource_bpm, resource_label, resources_json, area_id, catalog_exercise_id '
+            'SELECT id, name, duration_seconds, area_id, catalog_exercise_id, '
+            'catalog_path_id '
             'FROM exercises WHERE routine_id=? ORDER BY position, id',
             (rid,),
         ).fetchall()
         catalog = _catalog_map(conn, [e['catalog_exercise_id'] for e in exs])
+        resources_map = _resource_rows(conn, [e['catalog_exercise_id'] for e in exs])
         areas_map = area_map(conn)
+        paths = path_names(conn)
         active = {
             'id': rid,
             'nombre': name,
@@ -609,7 +616,9 @@ def api_state(conn):
             'finish_url': row['finish_url'] or '',
             'finish_label': _label_for(labels, row['finish_url'], row['finish_label']),
             'finish_bpm': row['finish_bpm'] or 0,
-            'ejercicios': [_exercise_payload(e, labels, catalog, areas_map) for e in exs],
+            'ejercicios': [_exercise_payload(e, labels, catalog, areas_map, paths,
+                                             resources_map)
+                           for e in exs],
         }
 
     sources = {}
@@ -652,20 +661,23 @@ def _routine_full(conn, rid):
         return None
     labels = _resource_labels(conn)
     exs = conn.execute(
-        'SELECT id, name, description, duration_seconds, position, '
-        'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
-        'area_id, catalog_exercise_id FROM exercises '
+        'SELECT id, name, duration_seconds, position, '
+        'area_id, catalog_exercise_id, catalog_path_id FROM exercises '
         'WHERE routine_id=? ORDER BY position, id',
         (rid,),
     ).fetchall()
     catalog = _catalog_map(conn, [e['catalog_exercise_id'] for e in exs])
+    resources_map = _resource_rows(conn, [e['catalog_exercise_id'] for e in exs])
+    paths = path_names(conn)
     out_exs = []
     for e in exs:
-        res = _with_labels(_exercise_resources(e), labels)
+        res = _with_labels(((resources_map.get(e['catalog_exercise_id'])) or [])
+                           if e['catalog_exercise_id'] is not None else [], labels)
         first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
         cid = e['catalog_exercise_id']
+        pid = e['catalog_path_id']
         out_exs.append({
-            'id': e['id'], 'name': e['name'], 'description': e['description'],
+            'id': e['id'], 'name': e['name'],
             'duration_seconds': e['duration_seconds'], 'position': e['position'],
             'resources': res,
             'resource_kind': first['kind'], 'resource_url': first['url'],
@@ -673,6 +685,9 @@ def _routine_full(conn, rid):
             'area_id': e['area_id'] or '',
             'catalog_exercise_id': cid,
             'catalog_exercise': catalog.get(cid) if cid is not None else None,
+            'catalog_path_id': pid,
+            'catalog_path': ({'id': pid, 'name': paths.get(pid, '')}
+                             if pid is not None else None),
         })
     return {
         'id': r['id'], 'name': r['name'], 'description': r['description'],
@@ -738,26 +753,32 @@ def activate_routine(conn, rid):
 
 
 def duplicate_routine(conn, rid):
-    r = conn.execute('SELECT name, description FROM routines WHERE id=?', (rid,)).fetchone()
+    r = conn.execute('SELECT name, description, finish_kind, finish_url, finish_label,'
+                     ' finish_bpm FROM routines WHERE id=?', (rid,)).fetchone()
     if r is None:
         return None
     name = (r['name'] or 'Routine') + ' - copy'
     desc = r['description'] or ''
     pos = conn.execute('SELECT COALESCE(MAX(position), -1) + 1 FROM routines').fetchone()[0]
     cur = conn.execute(
-        'INSERT INTO routines(name, description, is_active, position) VALUES(?,?,0,?)',
-        (name, desc, pos),
+        'INSERT INTO routines(name, description, is_active, position, finish_kind,'
+        ' finish_url, finish_label, finish_bpm) VALUES(?,?,0,?,?,?,?,?)',
+        (name, desc, pos, r['finish_kind'] or '', r['finish_url'] or '',
+         r['finish_label'] or '', r['finish_bpm'] or 0),
     )
     nid = cur.lastrowid
     exs = conn.execute(
-        'SELECT name, description, duration_seconds, position FROM exercises '
-        'WHERE routine_id=? ORDER BY position, id', (rid,)
+        'SELECT name, duration_seconds, position, area_id, catalog_exercise_id,'
+        ' catalog_path_id FROM exercises WHERE routine_id=? ORDER BY position, id', (rid,)
     ).fetchall()
     for e in exs:
+        # The copy points at the same catalog exercises, so it also gets their
+        # resources: that is what makes a duplicated routine usable as is.
         conn.execute(
-            'INSERT INTO exercises(routine_id, name, description, duration_seconds, position) '
-            'VALUES(?,?,?,?,?)',
-            (nid, e['name'], e['description'], e['duration_seconds'], e['position']),
+            'INSERT INTO exercises(routine_id, name, duration_seconds, position, area_id,'
+            ' catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?)',
+            (nid, e['name'], e['duration_seconds'], e['position'], e['area_id'] or '',
+             e['catalog_exercise_id'], e['catalog_path_id']),
         )
     conn.commit()
     return _routine_full(conn, nid)
@@ -814,23 +835,6 @@ def _clean_resources(arr):
     return out
 
 
-def _resources_from_data(data):
-    """Resource list sent by the manager, or None when the key is missing."""
-    if 'resources' not in data:
-        return None
-    return _clean_resources(data.get('resources'))
-
-
-def _mirror_first(conn, eid, resources):
-    """Keeps the legacy single-resource columns in sync with the first item."""
-    first = resources[0] if resources else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
-    conn.execute(
-        'UPDATE exercises SET resource_kind=?, resource_url=?, resource_bpm=?, resource_label=? '
-        'WHERE id=?',
-        (first['kind'], first['url'], first['bpm'], first['label'], eid),
-    )
-
-
 def create_exercise(conn, rid, data):
     if conn.execute('SELECT id FROM routines WHERE id=?', (rid,)).fetchone() is None:
         return None
@@ -838,28 +842,16 @@ def create_exercise(conn, rid, data):
     if err:
         return {'error': err}
     name = (data.get('name') or 'New Exercise').strip()
-    desc = data.get('description') or ''
     dur = int(data.get('duration_seconds') or 0)
     pos = conn.execute(
         'SELECT COALESCE(MAX(position), -1) + 1 FROM exercises WHERE routine_id=?', (rid,)
     ).fetchone()[0]
-    resources = _resources_from_data(data)
-    if resources is None:
-        resources = _clean_resources([{
-            'kind': data.get('resource_kind') or '',
-            'url': data.get('resource_url') or '',
-            'bpm': data.get('resource_bpm') or 0,
-            'label': data.get('resource_label') or '',
-        }])
-    first = resources[0] if resources else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     conn.execute(
-        'INSERT INTO exercises(routine_id, name, description, duration_seconds, position, '
-        'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
-        'area_id, catalog_exercise_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-        (rid, name, desc, dur, pos,
-         first['kind'], first['url'], first['bpm'], first['label'],
-         json.dumps(resources, ensure_ascii=False),
-         meta.get('area_id', ''), meta.get('catalog_exercise_id')),
+        'INSERT INTO exercises(routine_id, name, duration_seconds, position, '
+        'area_id, catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?)',
+        (rid, name, dur, pos,
+         meta.get('area_id', ''), meta.get('catalog_exercise_id'),
+         meta.get('catalog_path_id')),
     )
     conn.commit()
     return _routine_full(conn, rid)
@@ -876,41 +868,22 @@ def update_exercise(conn, eid, data):
     if 'catalog_exercise_id' in meta:
         conn.execute('UPDATE exercises SET catalog_exercise_id=? WHERE id=?',
                      (meta['catalog_exercise_id'], eid))
+    if 'catalog_path_id' in meta:
+        conn.execute('UPDATE exercises SET catalog_path_id=? WHERE id=?',
+                     (meta['catalog_path_id'], eid))
     if data.get('name') is not None:
         conn.execute('UPDATE exercises SET name=? WHERE id=?', (data['name'], eid))
-    if data.get('description') is not None:
-        conn.execute('UPDATE exercises SET description=? WHERE id=?', (data['description'], eid))
     if data.get('duration_seconds') is not None:
         conn.execute('UPDATE exercises SET duration_seconds=? WHERE id=?',
                      (int(data['duration_seconds']), eid))
-    if data.get('resource_kind') is not None:
-        conn.execute('UPDATE exercises SET resource_kind=? WHERE id=?', (data['resource_kind'], eid))
-    if data.get('resource_url') is not None:
-        conn.execute('UPDATE exercises SET resource_url=? WHERE id=?', (data['resource_url'], eid))
-    if data.get('resource_bpm') is not None:
-        conn.execute('UPDATE exercises SET resource_bpm=? WHERE id=?',
-                     (int(data['resource_bpm'] or 0), eid))
-    if data.get('resource_label') is not None:
-        conn.execute('UPDATE exercises SET resource_label=? WHERE id=?', (data['resource_label'], eid))
 
-    resources = _resources_from_data(data)
-    if resources is not None:
-        conn.execute('UPDATE exercises SET resources_json=? WHERE id=?',
-                     (json.dumps(resources, ensure_ascii=False), eid))
-        _mirror_first(conn, eid, resources)
-    elif any(k in data for k in ('resource_kind', 'resource_url', 'resource_bpm', 'resource_label')):
-        # Legacy single-resource update: keep the list in sync with the columns
-        # (otherwise the stale list would win when the app reads the exercise).
-        row = conn.execute(
-            'SELECT resource_kind, resource_url, resource_bpm, resource_label FROM exercises WHERE id=?',
-            (eid,),
-        ).fetchone()
-        res = _clean_resources([{
-            'kind': row['resource_kind'] or '', 'url': row['resource_url'] or '',
-            'bpm': row['resource_bpm'] or 0, 'label': row['resource_label'] or '',
-        }])
-        conn.execute('UPDATE exercises SET resources_json=? WHERE id=?',
-                     (json.dumps(res, ensure_ascii=False), eid))
+    if 'resources' in data:
+        # Compatibility shim: resources belong to the catalog exercise, so a
+        # stale client still posting them to the slot lands on the right row.
+        cid = conn.execute('SELECT catalog_exercise_id FROM exercises WHERE id=?',
+                           (eid,)).fetchone()['catalog_exercise_id']
+        if cid is not None:
+            set_exercise_resources(conn, cid, data.get('resources'))
     conn.commit()
     return {'updated': eid}
 
@@ -1227,9 +1200,86 @@ def areas_in_use(conn):
     return out
 
 
+# ------------------------- Resources (catalog side) ------------------------
+
+def _resource_rows(conn, cids):
+    """{catalog_exercise_id: [resource, ...]} in one query.
+
+    A resource carries its own settings (`cfg`): the metronome preset of an
+    exercise is part of the exercise's material, so it travels with it.
+    """
+    clean = sorted({int(c) for c in cids if c is not None})
+    out = {c: [] for c in clean}
+    if not clean:
+        return out
+    marks = ','.join('?' * len(clean))
+    rows = conn.execute(
+        'SELECT l.catalog_exercise_id AS cid, r.id, r.kind, r.url, r.bpm, r.label, r.cfg'
+        ' FROM catalog_exercise_resources l'
+        ' JOIN resources r ON r.id = l.resource_id'
+        ' WHERE l.catalog_exercise_id IN (' + marks + ')'
+        ' ORDER BY l.catalog_exercise_id, l.position, r.id', clean).fetchall()
+    for r in rows:
+        cfg = {}
+        if r['cfg']:
+            try:
+                cfg = json.loads(r['cfg'])
+            except (TypeError, ValueError):
+                cfg = {}
+            if not isinstance(cfg, dict):
+                cfg = {}
+        out.setdefault(r['cid'], []).append({
+            'id': r['id'], 'kind': r['kind'] or '', 'url': r['url'] or '',
+            'bpm': r['bpm'] or 0, 'label': r['label'] or '', 'cfg': cfg,
+        })
+    return out
+
+
+def _cfg_text(cfg):
+    """Settings stored as canonical JSON, or '' when there is nothing forced."""
+    clean = _clean_cfg(cfg)
+    return json.dumps(clean, ensure_ascii=False, sort_keys=True) if clean else ''
+
+
+def set_exercise_resources(conn, cid, resources):
+    """Replaces the resource list of one catalog exercise.
+
+    Rows are shared: an identical resource (same kind, url, bpm, label and
+    settings) already in the table is reused, so two exercises pointing at the
+    same backing track do not duplicate it.
+    """
+    clean = _clean_resources(resources)
+    conn.execute('DELETE FROM catalog_exercise_resources WHERE catalog_exercise_id=?', (cid,))
+    for pos, res in enumerate(clean):
+        cfg_text = _cfg_text(res.get('cfg'))
+        row = conn.execute(
+            'SELECT id FROM resources WHERE kind=? AND url=? AND bpm=? AND label=? AND cfg=?',
+            (res['kind'], res['url'], res['bpm'], res['label'], cfg_text)).fetchone()
+        if row is not None:
+            rid = row['id']
+        else:
+            rid = conn.execute(
+                'INSERT INTO resources(kind, url, bpm, label, cfg) VALUES(?,?,?,?,?)',
+                (res['kind'], res['url'], res['bpm'], res['label'], cfg_text)).lastrowid
+        conn.execute('INSERT OR IGNORE INTO catalog_exercise_resources'
+                     '(catalog_exercise_id, resource_id, position) VALUES(?,?,?)',
+                     (cid, rid, pos))
+    drop_orphan_resources(conn)
+    conn.commit()
+
+
+def drop_orphan_resources(conn):
+    """Removes resources nobody points at (they would only accumulate)."""
+    conn.execute('DELETE FROM resources WHERE id NOT IN'
+                 ' (SELECT resource_id FROM catalog_exercise_resources)')
+
+
 def _catalog_dict(row):
+    keys = row.keys()
     return {'id': row['id'], 'name': row['name'] or '',
             'description': row['description'] or '',
+            'archived': bool(row['archived']) if 'archived' in keys else False,
+            'area_id': (row['area_id'] or '') if 'area_id' in keys else '',
             'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
 
@@ -1248,9 +1298,13 @@ def _catalog_map(conn, ids):
 
 def get_catalog_exercise(conn, cid):
     row = conn.execute(
-        'SELECT id, name, description, created_at, updated_at'
+        'SELECT id, name, description, archived, area_id, created_at, updated_at'
         ' FROM catalog_exercises WHERE id=?', (cid,)).fetchone()
-    return _catalog_dict(row) if row else None
+    if row is None:
+        return None
+    item = _catalog_dict(row)
+    item['resources'] = _resource_rows(conn, [cid]).get(cid, [])
+    return item
 
 
 def catalog_exists(conn, cid):
@@ -1263,7 +1317,8 @@ def list_catalog(conn, q=''):
     query = (q or '').strip()
     like = '%' + query + '%'
     rows = conn.execute(
-        'SELECT c.id, c.name, c.description, c.created_at, c.updated_at,'
+        'SELECT c.id, c.name, c.description, c.archived, c.area_id, c.created_at,'
+        ' c.updated_at,'
         ' (SELECT COUNT(*) FROM routine_session_items i'
         '   WHERE i.catalog_exercise_id = c.id AND i.elapsed_seconds > 0) AS practices,'
         ' (SELECT COALESCE(SUM(i.elapsed_seconds), 0) FROM routine_session_items i'
@@ -1289,6 +1344,9 @@ def list_catalog(conn, q=''):
         ' ORDER BY area_id').fetchall():
         used.setdefault(r['cid'], []).append(r['area_id'])
     out = []
+    labels = area_map(conn)
+    order = {a['id']: a.get('position', 0) for a in areas(conn)}
+    resources_map = _resource_rows(conn, [r['id'] for r in rows])
     for r in rows:
         item = _catalog_dict(r)
         item.update({
@@ -1297,8 +1355,15 @@ def list_catalog(conn, q=''):
             'last_practiced_on': r['last_practiced_on'] or '',
             'slots': slots.get(r['id'], []),
             'areas': used.get(r['id'], []),
+            # Classification for browsing: never used for statistics.
+            'area': labels.get(item['area_id'], ''),
+            'resources': resources_map.get(r['id'], []),
         })
         out.append(item)
+    # Area first (in the user's order), then name: the lists and the assistant
+    # picker can group without sorting again. Unclassified exercises go last.
+    out.sort(key=lambda i: (order.get(i['area_id'], 999) if i['area_id'] else 1000,
+                            (i['name'] or '').lower()))
     return out
 
 
@@ -1334,37 +1399,72 @@ def catalog_detail(conn, cid):
     return item
 
 
-def _catalog_fields(data):
-    """Validated name/description of a catalog exercise -> (fields, error)."""
+def _catalog_fields(conn, data):
+    """Validated fields of a catalog exercise -> (fields, error).
+
+    `archived` and `area_id` are optional: the keys only appear when the caller
+    sends them, so saving a name never touches either flag.
+    """
     name = str(data.get('name') or '').strip()
     if not name or len(name) > 200:
         return None, 'invalid_name'
     desc = str(data.get('description') or '').strip()
     if len(desc) > 2000:
         return None, 'invalid_description'
-    return {'name': name, 'description': desc}, None
+    out = {'name': name, 'description': desc}
+    if 'archived' in data:
+        out['archived'] = 1 if data.get('archived') else 0
+    if 'area_id' in data:
+        aid = str(data.get('area_id') or '').strip()
+        if aid and aid not in area_map(conn):
+            return None, 'unknown_area'
+        out['area_id'] = aid
+    return out, None
 
 
 def create_catalog_exercise(conn, data):
-    fields, err = _catalog_fields(data)
+    fields, err = _catalog_fields(conn, data)
     if err:
         return {'error': err}
-    cur = conn.execute('INSERT INTO catalog_exercises(name, description) VALUES(?, ?)',
-                       (fields['name'], fields['description']))
+    cur = conn.execute('INSERT INTO catalog_exercises(name, description, archived,'
+                       ' area_id) VALUES(?, ?, ?, ?)',
+                       (fields['name'], fields['description'],
+                        fields.get('archived', 0), fields.get('area_id', '')))
     conn.commit()
-    return get_catalog_exercise(conn, cur.lastrowid)
+    cid = cur.lastrowid
+    if 'resources' in data:
+        set_exercise_resources(conn, cid, data.get('resources'))
+    return get_catalog_exercise(conn, cid)
 
 
 def update_catalog_exercise(conn, cid, data):
-    if not catalog_exists(conn, cid):
+    row = conn.execute('SELECT name, description FROM catalog_exercises WHERE id=?',
+                       (cid,)).fetchone()
+    if row is None:
         return None
-    fields, err = _catalog_fields(data)
+    # Partial update: a client that only sends `resources` (the assistant saves
+    # the BPM and the widget settings while practising) keeps the rest as is.
+    merged = {'name': row['name'] or '', 'description': row['description'] or ''}
+    for key in ('name', 'description', 'archived', 'area_id'):
+        if key in data:
+            merged[key] = data[key]
+    fields, err = _catalog_fields(conn, merged)
     if err:
         return {'error': err}
-    conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
-                 " updated_at=datetime('now') WHERE id=?",
-                 (fields['name'], fields['description'], cid))
+    sets = ['name=?', 'description=?', "updated_at=datetime('now')"]
+    args = [fields['name'], fields['description']]
+    if 'archived' in fields:
+        sets.insert(2, 'archived=?')
+        args.append(fields['archived'])
+    if 'area_id' in fields:
+        sets.insert(2, 'area_id=?')
+        args.append(fields['area_id'])
+    args.append(cid)
+    conn.execute('UPDATE catalog_exercises SET ' + ', '.join(sets) + ' WHERE id=?', args)
     conn.commit()
+    # Only when the caller sends the list: a rename must never wipe resources.
+    if 'resources' in data:
+        set_exercise_resources(conn, cid, data.get('resources'))
     return get_catalog_exercise(conn, cid)
 
 
@@ -1376,14 +1476,174 @@ def delete_catalog_exercise(conn, cid):
     # ON DELETE SET NULL clears the slot pointers; item snapshots keep their
     # catalog_name, so the history stays readable.
     conn.execute('DELETE FROM catalog_exercises WHERE id=?', (cid,))
+    # The links went with the exercise (ON DELETE CASCADE); its exclusive
+    # resources are now orphans.
+    drop_orphan_resources(conn)
     conn.commit()
     return {'deleted': cid, 'slots_cleared': slots}
 
 
-def _slot_meta(conn, data):
-    """Validates the area / catalog pointer of a slot payload.
+# ------------------------- Learning paths (catalog) ------------------------
 
-    Returns ({only the keys present in `data`}, error).
+def _path_dict(row):
+    return {'id': row['id'], 'name': row['name'] or '',
+            'description': row['description'] or '',
+            'position': row['position'] or 0,
+            'created_at': row['created_at'], 'updated_at': row['updated_at']}
+
+
+def path_exists(conn, pid):
+    return conn.execute('SELECT 1 FROM catalog_paths WHERE id=?',
+                        (pid,)).fetchone() is not None
+
+
+def path_names(conn):
+    """{id: name} for the slot payloads (one query per call, like the catalog)."""
+    return {r['id']: r['name'] or '' for r in
+            conn.execute('SELECT id, name FROM catalog_paths').fetchall()}
+
+
+def _path_steps_map(conn, ids=None):
+    """{path_id: [step, ...]} in one query; `ids` limits the paths to load."""
+    sql = ('SELECT s.path_id, s.catalog_exercise_id, s.position, s.note,'
+           " COALESCE(c.name, '') AS name"
+           ' FROM catalog_path_steps s'
+           ' LEFT JOIN catalog_exercises c ON c.id = s.catalog_exercise_id')
+    args = []
+    if ids is not None:
+        ids = [int(i) for i in ids]
+        if not ids:
+            return {}
+        sql += ' WHERE s.path_id IN (' + ','.join('?' * len(ids)) + ')'
+        args = ids
+    sql += ' ORDER BY s.path_id, s.position, s.id'
+    out = {}
+    for r in conn.execute(sql, args).fetchall():
+        out.setdefault(r['path_id'], []).append({
+            'catalog_exercise_id': r['catalog_exercise_id'],
+            'name': r['name'],
+            'position': r['position'],
+            'note': r['note'] or '',
+        })
+    return out
+
+
+def get_path(conn, pid):
+    row = conn.execute('SELECT * FROM catalog_paths WHERE id=?', (pid,)).fetchone()
+    if row is None:
+        return None
+    item = _path_dict(row)
+    item['steps'] = _path_steps_map(conn, [pid]).get(pid, [])
+    item['slots'] = conn.execute('SELECT COUNT(*) n FROM exercises'
+                                 ' WHERE catalog_path_id=?', (pid,)).fetchone()['n']
+    return item
+
+
+def list_paths(conn):
+    """Every path with its ordered steps and how many slots use it."""
+    rows = conn.execute('SELECT * FROM catalog_paths ORDER BY position, id').fetchall()
+    steps = _path_steps_map(conn)
+    used = {r['catalog_path_id']: r['n'] for r in conn.execute(
+        'SELECT catalog_path_id, COUNT(*) n FROM exercises'
+        ' WHERE catalog_path_id IS NOT NULL GROUP BY catalog_path_id').fetchall()}
+    out = []
+    for row in rows:
+        item = _path_dict(row)
+        item['steps'] = steps.get(row['id'], [])
+        item['slots'] = used.get(row['id'], 0)
+        out.append(item)
+    return out
+
+
+def _path_fields(data):
+    """Validated name/description of a path -> (fields, error)."""
+    name = str(data.get('name') or '').strip()
+    if not name or len(name) > 120:
+        return None, 'invalid_name'
+    desc = str(data.get('description') or '').strip()
+    if len(desc) > 2000:
+        return None, 'invalid_description'
+    return {'name': name, 'description': desc}, None
+
+
+def create_path(conn, data):
+    fields, err = _path_fields(data)
+    if err:
+        return {'error': err}
+    pos = conn.execute('SELECT COALESCE(MAX(position), -1) + 1'
+                       ' FROM catalog_paths').fetchone()[0]
+    cur = conn.execute('INSERT INTO catalog_paths(name, description, position)'
+                       ' VALUES(?,?,?)',
+                       (fields['name'], fields['description'], pos))
+    conn.commit()
+    return get_path(conn, cur.lastrowid)
+
+
+def update_path(conn, pid, data):
+    if not path_exists(conn, pid):
+        return None
+    fields, err = _path_fields(data)
+    if err:
+        return {'error': err}
+    conn.execute("UPDATE catalog_paths SET name=?, description=?,"
+                 " updated_at=datetime('now') WHERE id=?",
+                 (fields['name'], fields['description'], pid))
+    conn.commit()
+    return get_path(conn, pid)
+
+
+def delete_path(conn, pid):
+    if not path_exists(conn, pid):
+        return None
+    slots = conn.execute('SELECT COUNT(*) n FROM exercises WHERE catalog_path_id=?',
+                         (pid,)).fetchone()['n']
+    # ON DELETE CASCADE removes its steps and ON DELETE SET NULL clears the slots,
+    # which fall back to the whole catalog.
+    conn.execute('DELETE FROM catalog_paths WHERE id=?', (pid,))
+    conn.commit()
+    return {'deleted': pid, 'slots_cleared': slots}
+
+
+def set_path_steps(conn, pid, steps):
+    """Replaces the whole step list (the position is the order of the list)."""
+    if not path_exists(conn, pid):
+        return None
+    if not isinstance(steps, list):
+        return {'error': 'invalid_steps'}
+    clean = []
+    seen = set()
+    for raw in steps:
+        if not isinstance(raw, dict):
+            return {'error': 'invalid_steps'}
+        try:
+            cid = int(raw.get('catalog_exercise_id'))
+        except (TypeError, ValueError):
+            return {'error': 'unknown_exercise'}
+        if not catalog_exists(conn, cid):
+            return {'error': 'unknown_exercise'}
+        if cid in seen:
+            return {'error': 'duplicate_step'}
+        seen.add(cid)
+        note = str(raw.get('note') or '').strip()
+        if len(note) > 200:
+            return {'error': 'invalid_note'}
+        clean.append((cid, note))
+    conn.execute('DELETE FROM catalog_path_steps WHERE path_id=?', (pid,))
+    for pos, (cid, note) in enumerate(clean):
+        conn.execute('INSERT INTO catalog_path_steps(path_id, catalog_exercise_id,'
+                     ' position, note) VALUES(?,?,?,?)', (pid, cid, pos, note))
+    conn.execute("UPDATE catalog_paths SET updated_at=datetime('now') WHERE id=?",
+                 (pid,))
+    conn.commit()
+    return get_path(conn, pid)
+
+
+def _slot_meta(conn, data):
+    """Validates the area / catalog / path pointers of a slot payload.
+
+    Returns ({only the keys present in `data`}, error). A catalog exercise that
+    is not part of the chosen path is allowed on purpose: the Manager warns about
+    it instead of blocking the save.
     """
     out = {}
     if 'area_id' in data:
@@ -1403,6 +1663,18 @@ def _slot_meta(conn, data):
             if not catalog_exists(conn, cid):
                 return None, 'unknown_exercise'
             out['catalog_exercise_id'] = cid
+    if 'catalog_path_id' in data:
+        raw = data.get('catalog_path_id')
+        if raw in (None, '', 0, '0'):
+            out['catalog_path_id'] = None
+        else:
+            try:
+                pid = int(raw)
+            except (TypeError, ValueError):
+                return None, 'unknown_path'
+            if not path_exists(conn, pid):
+                return None, 'unknown_path'
+            out['catalog_path_id'] = pid
     return out, None
 
 
@@ -1701,8 +1973,13 @@ def _apply_item(conn, sid, item):
     return cur.rowcount > 0
 
 
-def _session_totals(conn, sid, finished_at):
-    """Item counters plus the wall clock for a session that stopped at `finished_at`."""
+def _session_totals(conn, sid, finished_at, wall_override=None):
+    """Item counters plus the wall clock for a session that stopped at `finished_at`.
+
+    `wall_override` (seconds) wins when the client knows the real wall time: a
+    routine can be parked on the welcome screen and resumed later, so the span
+    between start and finish is not the time spent on it any more.
+    """
     c = conn.execute(
         "SELECT COUNT(*) n, COALESCE(SUM(state='timed'),0) t, COALESCE(SUM(state='untimed'),0) u,"
         " COALESCE(SUM(state='skipped'),0) s, COALESCE(SUM(played_seconds),0) played,"
@@ -1711,7 +1988,9 @@ def _session_totals(conn, sid, finished_at):
         " FROM routine_session_items WHERE session_id=?", (sid,)).fetchone()
     row = conn.execute('SELECT started_at FROM routine_sessions WHERE id=?', (sid,)).fetchone()
     wall = 0
-    if row and row['started_at'] and finished_at:
+    if wall_override is not None:
+        wall = max(0, int(wall_override))
+    elif row and row['started_at'] and finished_at:
         try:
             start = datetime.strptime(str(row['started_at']), '%Y-%m-%d %H:%M:%S')
             end = datetime.strptime(str(finished_at), '%Y-%m-%d %H:%M:%S')
@@ -1765,9 +2044,9 @@ def sweep_open_sessions(conn, hours=8):
     return len(rows)
 
 
-def _close_session(conn, sid, finished_at):
+def _close_session(conn, sid, finished_at, wall_seconds=None):
     """Recomputes the counters from the items and marks the session finished."""
-    c, wall = _session_totals(conn, sid, finished_at)
+    c, wall = _session_totals(conn, sid, finished_at, wall_seconds)
     conn.execute(
         "UPDATE routine_sessions SET status='finished', finished_at=?, n_total=?, n_timed=?,"
         " n_untimed=?, n_skipped=?, n_done=?, n_partial=?, practiced_seconds=?,"
@@ -1826,7 +2105,14 @@ def finish_session(conn, sid, data):
         return _session_full(conn, sid)          # idempotent
     for item in (data.get('items') or []):
         _apply_item(conn, sid, item)
-    _close_session(conn, sid, _iso_to_db(data.get('finished_at')) or _utc_now())
+    # The client tracks the wall time of the routine (it can be parked on the
+    # welcome screen), so its figure wins over the start -> finish span.
+    wall = data.get('wall_seconds')
+    try:
+        wall = max(0, int(float(wall))) if wall is not None else None
+    except (TypeError, ValueError):
+        wall = None
+    _close_session(conn, sid, _iso_to_db(data.get('finished_at')) or _utc_now(), wall)
     return _session_full(conn, sid)
 
 

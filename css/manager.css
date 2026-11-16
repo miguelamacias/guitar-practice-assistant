@@ -58,6 +58,9 @@ body {
 .btn.small { padding: 4px 8px; font-size: 0.78rem; }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn.block { width: 100%; margin-top: 12px; }
+/* Create buttons moved to the top of their panel: they need air below them,
+   not above (the ones still at the bottom, like + Add area, keep margin-top). */
+.panel > .btn.block { margin-top: 0; margin-bottom: 12px; }
 /* Unsaved changes: the Save button gets a soft highlight (no size change) */
 .btn.is-dirty {
     border-color: rgba(255, 179, 0, 0.75);
@@ -110,7 +113,6 @@ textarea { resize: vertical; min-height: 44px; }
 .exercise.has-drag > .drag-handle,
 .item-row.has-drag > .drag-handle { grid-column: 1; grid-row: 1; margin-top: 10px; }
 .exercise.has-drag > .ex-fields,
-.exercise.has-drag > .ex-resources,
 .item-row.has-drag > .item-head,
 .item-row.has-drag > .item-foot,
 .item-row.has-drag > .song-list { grid-column: 2; }
@@ -118,7 +120,7 @@ textarea { resize: vertical; min-height: 44px; }
 .section-item.has-drag { padding-left: 4px; }
 .section-item > .drag-handle { margin-right: -2px; }
 .exercise { background: var(--panel); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
-.exercise .ex-fields { display: grid; grid-template-columns: 1.4fr 1.6fr 90px auto; gap: 8px; align-items: center; }
+.exercise .ex-fields { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; align-items: center; }
 @media (max-width: 720px) { .exercise .ex-fields { grid-template-columns: 1fr; } }
 .ex-actions { display: flex; gap: 4px; }
 .empty { color: var(--muted); font-size: 0.9rem; padding: 10px; }
@@ -155,7 +157,8 @@ textarea { resize: vertical; min-height: 44px; }
 }
 .section-item .lane-badge.is-rail { color: var(--accent); border-color: rgba(233, 30, 99, 0.45); }
 .section-head-row .section-lane-field { flex: 0 0 auto; }
-#resetLayoutBtn { margin-top: 8px; }
+/* Reset layout still closes the list: space above it, none below (as before). */
+#resetLayoutBtn { margin-top: 8px; margin-bottom: 0; }
 /* Section editor header: title + color + actions on a single line */
 .section-head-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .section-head-row .field { margin-bottom: 0; }
@@ -182,8 +185,9 @@ textarea { resize: vertical; min-height: 44px; }
 .add-main .mini { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) { .add-head, .add-head--compact { grid-template-columns: 1fr; } }
 /* Form fields that live next to text inputs: same control as the inputs.
-   #sLane belongs to the section editor, between the title and subtitle fields. */
-#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane {
+   #sLane belongs to the section editor, between the title and subtitle fields.
+   #catArea is the Area select of the exercise editor. */
+#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane, #catArea {
     background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
     padding: 8px 10px; font-family: inherit; font-size: 0.9rem;
 }
@@ -591,6 +595,9 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 }
 .ex-cat-picker { flex: 1 1 240px; min-width: 180px; max-width: 460px; }
 .ex-cat-picker .ex-res-trigger { height: 34px; font-size: 0.82rem; }
+/* Path picker on the same row: narrower than the exercise one. */
+.ex-path-picker { flex: 0 1 190px; min-width: 140px; max-width: 240px; }
+.ex-path-picker .ex-res-trigger { height: 34px; font-size: 0.82rem; }
 .chip-warn {
     font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.5px;
     color: #f0b429; border: 1px solid rgba(240, 180, 41, 0.45);
@@ -626,15 +633,82 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 /* --------------------------- Exercise catalog -------------------------- */
+/* Catalog | Paths segment, above the two-column layout. */
+.cat-tabs {
+    display: inline-flex; gap: 4px; padding: 3px; margin: 0 0 12px;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+}
+.cat-tab {
+    border: 0; background: transparent; color: #b9b9b9; cursor: pointer;
+    padding: 6px 14px; border-radius: 6px; font-family: inherit;
+    font-size: 0.82rem; letter-spacing: 0.3px;
+}
+.cat-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.cat-tab.is-active {
+    background: var(--accent); color: #fff; font-weight: 600;
+}
+
+/* Path editor: one row per step, same grammar as the slot list. */
+.path-steps { display: grid; gap: 6px; margin-bottom: 10px; }
+.path-step {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.path-step.dragging { opacity: 0.5; }
+.path-step-n { min-width: 1.6em; text-align: right; color: var(--muted); font-size: 0.8rem; }
+.path-step-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+.path-step-name {
+    font-size: 0.86rem; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.path-step-del { flex: 0 0 auto; }
+.path-add { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.path-add select {
+    flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 6px;
+    background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
+    font-family: inherit; font-size: 0.82rem;
+}
+.path-add select:disabled { opacity: 0.6; }
+
 .cat-search input {
     width: 240px; padding: 6px 8px; font-family: inherit; font-size: 0.82rem;
+    background: #111; color: var(--text); border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 6px;
 }
+.cat-search input:focus { outline: none; border-color: var(--accent); }
 .cat-item {
     display: flex; flex-direction: column; gap: 2px;
     padding: 6px 8px; border-radius: 5px; cursor: pointer;
 }
 .cat-item:hover { background: rgba(255, 255, 255, 0.05); }
 .cat-item.selected { background: rgba(255, 255, 255, 0.1); }
+/* Section headers of the catalog list (grouped by area, click to collapse). */
+.cat-group {
+    display: flex; align-items: center; gap: 6px; width: 100%;
+    margin: 10px 0 2px; padding: 3px 2px;
+    background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--muted); cursor: pointer; text-align: left;
+    font-family: inherit; font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.6px;
+}
+.cat-group:first-child { margin-top: 0; }
+.cat-group:hover { color: #fff; }
+.cat-group::before { content: '\25be'; font-size: 0.8rem; line-height: 1; }
+.cat-group.is-collapsed::before { content: '\25b8'; }
+.cat-group-body { display: block; }
+
+/* Archived: out of the active list, still readable when shown. */
+.cat-item.is-archived { opacity: 0.55; }
+.cat-item.is-archived .cat-name { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); }
+.cat-tag {
+    align-self: flex-start; margin-top: 1px;
+    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #9a9a9a; border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px; padding: 0 5px;
+}
 .cat-name { font-size: 0.86rem; }
 .cat-meta { font-size: 0.72rem; color: var(--muted); }
 .cat-usage { font-size: 0.74rem; color: var(--muted); margin-left: auto; }
@@ -659,8 +733,8 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 
 /* --------------------- History: filters + breakdown -------------------- */
 .hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* Small select: History filters and the catalog sort share the same control */
-.hist-select, #catSort {
+/* Small select: History filters and the catalog controls share the same look */
+.hist-select, #catSort, #catFilter, #catGroup {
     padding: 5px 8px; border-radius: 6px; font-family: inherit; font-size: 0.78rem;
     background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
 }

@@ -275,25 +275,6 @@
         document.body.appendChild(overlay);
     }
 
-    // Turns the slot description into a catalog exercise and points the slot at
-    // it (the description itself is kept as fallback text).
-    async function createFromDescription(row) {
-        const eid = Number(row.dataset.eid);
-        const descIn = row.querySelector('.ex-desc');
-        const desc = (descIn ? descIn.value : '').trim();
-        if (!desc) { toast('This slot has no description to convert', true); return; }
-        const name = prompt('Name for the new catalog exercise:', desc.slice(0, 120));
-        if (!name) return;
-        try {
-            const created = await api('POST', '/api/catalog',
-                { name: name, description: desc.slice(0, 2000) });
-            await api('PUT', '/api/exercises/' + eid, { catalog_exercise_id: created.id });
-            await GPH.mgr.loadMeta(true);
-            await loadRoutines(current ? current.id : undefined);
-            toast('Exercise created and linked');
-        } catch (e) { toast('Error: ' + e.message, true); }
-    }
-
     function renderEditor() {
         if (!current) { clearEditor(); return; }
         $('editorEmpty').hidden = true;
@@ -766,137 +747,19 @@
         return { kind: kind, url: url, label: label, bpm: bpmVal };
     }
 
-    function buildExerciseRow(ex, idx, total) {
-        const row = document.createElement('div');
-        row.className = 'exercise has-drag';
-        row.dataset.eid = ex.id;
-        row.appendChild(GPH.mgr.dragHandle('Drag to reorder this exercise'));
-
-        const fields = document.createElement('div');
-        fields.className = 'ex-fields';
-
-        const nameIn = document.createElement('input');
-        nameIn.type = 'text';
-        nameIn.className = 'ex-name';
-        nameIn.value = ex.name || '';
-
-        const descIn = document.createElement('input');
-        descIn.type = 'text';
-        descIn.className = 'ex-desc';
-        descIn.value = ex.description || '';
-        descIn.title = 'Description (used when no exercise is set)';
-
-        const durIn = document.createElement('input');
-        durIn.type = 'number';
-        durIn.className = 'ex-dur';
-        durIn.min = '0';
-        durIn.step = '0.5';
-        durIn.value = toMinutes(ex.duration_seconds);
-        durIn.title = 'minutes';
-        durIn.addEventListener('input', updateRoutineTotal);
-
-        const actions = document.createElement('div');
-        actions.className = 'ex-actions';
-
-        const upBtn = mk('↑', 'Move up', function () { moveExercise(idx, -1); });
-        upBtn.disabled = idx === 0;
-        const downBtn = mk('↓', 'Move down', function () { moveExercise(idx, 1); });
-        downBtn.disabled = idx === total - 1;
-        const delBtn = mk('🗑', 'Delete', function () { deleteExercise(ex.id); });
-        delBtn.classList.add('danger');
-
-        actions.appendChild(upBtn);
-        actions.appendChild(downBtn);
-        actions.appendChild(delBtn);
-
-        fields.appendChild(nameIn);
-        fields.appendChild(descIn);
-        fields.appendChild(durIn);
-        fields.appendChild(actions);
-        row.appendChild(fields);
-
-        // ---- area + current exercise (the catalog pointer) ----
-        // Kept on its own line above the resources so the existing grid holds.
-        const metaRow = document.createElement('div');
-        metaRow.className = 'ex-meta';
-
-        const areaSel = document.createElement('select');
-        areaSel.className = 'ex-area';
-        areaSel.title = 'Area this slot belongs to';
-        const noArea = document.createElement('option');
-        noArea.value = '';
-        noArea.textContent = '\u2014 No area \u2014';
-        areaSel.appendChild(noArea);
-        GPH.mgr.areas().forEach(function (a) {
-            const o = document.createElement('option');
-            o.value = a.id;
-            o.textContent = a.label;
-            areaSel.appendChild(o);
-        });
-        areaSel.value = ex.area_id || '';
-
-        const catItems = GPH.mgr.catalog().map(function (c) { return { label: c.name, id: c.id }; });
-        let catIndex = '';
-        catItems.forEach(function (c, i) {
-            if (c.id === ex.catalog_exercise_id) catIndex = String(i);
-        });
-        const catPicker = createResourcePicker(catItems, catIndex,
-            { noneLabel: '\u2014 None (use description) \u2014' });
-        catPicker.root.classList.add('ex-cat-picker');
-        catPicker.select.classList.add('ex-cat');
-        catPicker.trigger.setAttribute('aria-label', 'Current exercise');
-        const catSel = catPicker.select;
-
-        const noAreaChip = document.createElement('span');
-        noAreaChip.className = 'chip-warn';
-        noAreaChip.textContent = 'No area';
-        noAreaChip.title = 'Assign an area to see this slot in the statistics';
-
-        function syncNoAreaChip() { noAreaChip.hidden = !!areaSel.value; }
-        areaSel.addEventListener('change', function () {
-            syncNoAreaChip();
-            setDirty(true);
-            updateAreaBanner();   // the count follows the editor, saved or not
-        });
-        syncNoAreaChip();
-
-        const fromDesc = mk('\u21aa From description',
-            'Create a catalog exercise from this slot description', function () {
-                createFromDescription(row);
-            });
-
-        // Only useful while the slot has no exercise and there is something to
-        // convert; it follows the picker and the description as they change.
-        function syncFromDesc() {
-            const hasExercise = !!catSel.value;
-            const hasDesc = !!(descIn.value || '').trim();
-            fromDesc.hidden = hasExercise || !hasDesc;
-            fromDesc.title = hasExercise
-                ? 'This slot already has an exercise'
-                : (hasDesc ? 'Create a catalog exercise from this slot description'
-                           : 'Write a description first');
-        }
-        catSel.addEventListener('change', syncFromDesc);
-        descIn.addEventListener('input', syncFromDesc);
-        syncFromDesc();
-
-        metaRow.appendChild(areaSel);
-        metaRow.appendChild(catPicker.root);
-        metaRow.appendChild(fromDesc);
-        metaRow.appendChild(noAreaChip);
-        row.appendChild(metaRow);
-        row._areaSel = areaSel;
-
-        // ---- resources: a list (a scale + a backing track is a normal combo) ----
+    // ---- resources editor ---------------------------------------------------
+    // One exercise can hold several resources (a scale plus a backing track is a
+    // normal combo). The list belongs to the catalog exercise, so the editor is
+    // mounted there and never on a routine slot: the slot only says which
+    // exercise is played.
+    function createResourceEditor(list) {
         const resWrap = document.createElement('div');
         resWrap.className = 'ex-resources';
         const resList = document.createElement('div');
         resList.className = 'ex-res-list';
         resWrap.appendChild(resList);
 
-        const existing = (ex.resources && ex.resources.length)
-            ? ex.resources
-            : (ex.resource_kind ? [{ kind: ex.resource_kind, url: ex.resource_url, bpm: ex.resource_bpm, label: ex.resource_label }] : []);
+        const existing = (list || []).filter(function (r) { return r && r.kind; });
 
         function addResourceLine(res) {
             const line = document.createElement('div');
@@ -1052,6 +915,7 @@
                 if (isTheory && thBox.dataset.view !== r.view) {
                     buildTheoryControls(thBox, r.view, (res && res.kind === 'theory') ? p : {});
                 }
+                refreshAdd();
             }
             sel.addEventListener('change', sync);
 
@@ -1062,6 +926,7 @@
                 if (resList.querySelectorAll('.ex-res-line').length > 1) {
                     line.remove();
                     refreshDeleteButtons();
+                    refreshAdd();
                 } else {
                     sel.value = '';
                     picker.refresh();
@@ -1086,19 +951,278 @@
             });
         }
 
-        (existing.length ? existing : [null]).forEach(addResourceLine);
-        refreshDeleteButtons();
-
         const addRes = document.createElement('button');
         addRes.type = 'button'; addRes.className = 'btn small ex-res-add';
         addRes.textContent = '+ Add resource';
         addRes.title = 'Add another resource to this exercise';
+        addRes.hidden = true;
         addRes.addEventListener('click', function () {
-            addResourceLine(null);
+            const line = addResourceLine(null);
             refreshDeleteButtons();
+            refreshAdd();
+            const trigger = line.querySelector('.ex-res-trigger');
+            if (trigger) trigger.click();
         });
         resWrap.appendChild(addRes);
-        row.appendChild(resWrap);
+
+        (existing.length ? existing : [null]).forEach(addResourceLine);
+        refreshDeleteButtons();
+        refreshAdd();
+
+        // Only shown once a resource has been picked: with an empty list the
+        // job is to assign the first one, not to add a second one.
+        function refreshAdd() {
+            let filled = 0;
+            Array.prototype.forEach.call(resList.querySelectorAll('.ex-res-line'), function (l) {
+                const sel = l.querySelector('.ex-res');
+                if (sel && sel.value !== '') filled += 1;
+            });
+            addRes.hidden = filled === 0;
+        }
+
+        // Current values of every filled line, ready for the API.
+        function collectResources() {
+            const out = [];
+            Array.prototype.forEach.call(resList.querySelectorAll('.ex-res-line'), function (line) {
+                const sel = line.querySelector('.ex-res');
+                if (!sel || sel.value === '') return;
+                const r = resources[Number(sel.value)];
+                if (!r) return;
+                const item = { kind: r.kind, url: r.url || '', bpm: 0, label: r.label || '' };
+                if (r.kind === 'theory') {
+                    const thBox = line.querySelector('.ex-theory');
+                    item.url = readTheoryUrl(thBox);
+                    item.label = readTheoryLabel(thBox, item.label || 'Theory');
+                }
+                if (r.kind === 'metronome' || r.kind === 'drums') {
+                    const bpmIn = line.querySelector('.ex-res-bpm');
+                    let bpm = parseInt(bpmIn && bpmIn.value, 10);
+                    if (!bpm || bpm < 40 || bpm > 240) bpm = 120;
+                    item.bpm = bpm;
+                    // signature / pattern / preset / grid / swing ("auto" = not forced)
+                    item.cfg = readLineCfg(line);
+                }
+                out.push(item);
+            });
+            return out;
+        }
+
+        return { root: resWrap, getResources: collectResources };
+    }
+
+    GPH.mgr.createResourceEditor = createResourceEditor;
+
+    function buildExerciseRow(ex, idx, total) {
+        const row = document.createElement('div');
+        row.className = 'exercise has-drag';
+        row.dataset.eid = ex.id;
+        row.appendChild(GPH.mgr.dragHandle('Drag to reorder this exercise'));
+
+        const fields = document.createElement('div');
+        fields.className = 'ex-fields';
+
+        const nameIn = document.createElement('input');
+        nameIn.type = 'text';
+        nameIn.className = 'ex-name';
+        nameIn.value = ex.name || '';
+
+        const durIn = document.createElement('input');
+        durIn.type = 'number';
+        durIn.className = 'ex-dur';
+        durIn.min = '0';
+        durIn.step = '0.5';
+        durIn.value = toMinutes(ex.duration_seconds);
+        durIn.title = 'minutes';
+        durIn.addEventListener('input', updateRoutineTotal);
+
+        const actions = document.createElement('div');
+        actions.className = 'ex-actions';
+
+        const upBtn = mk('↑', 'Move up', function () { moveExercise(idx, -1); });
+        upBtn.disabled = idx === 0;
+        const downBtn = mk('↓', 'Move down', function () { moveExercise(idx, 1); });
+        downBtn.disabled = idx === total - 1;
+        const delBtn = mk('🗑', 'Delete', function () { deleteExercise(ex.id); });
+        delBtn.classList.add('danger');
+
+        actions.appendChild(upBtn);
+        actions.appendChild(downBtn);
+        actions.appendChild(delBtn);
+
+        fields.appendChild(nameIn);
+        fields.appendChild(durIn);
+        fields.appendChild(actions);
+        row.appendChild(fields);
+
+        // ---- area + current exercise (the catalog pointer) ----
+        // Kept on its own line: the slot only decides *which* exercise is played
+        // (and in which area), the exercise owns its resources.
+        const metaRow = document.createElement('div');
+        metaRow.className = 'ex-meta';
+
+        const areaSel = document.createElement('select');
+        areaSel.className = 'ex-area';
+        areaSel.title = 'Area this slot belongs to';
+        const noArea = document.createElement('option');
+        noArea.value = '';
+        noArea.textContent = '\u2014 No area \u2014';
+        areaSel.appendChild(noArea);
+        GPH.mgr.areas().forEach(function (a) {
+            const o = document.createElement('option');
+            o.value = a.id;
+            o.textContent = a.label;
+            areaSel.appendChild(o);
+        });
+        areaSel.value = ex.area_id || '';
+
+        const catItems = GPH.mgr.catalog().map(function (c) { return { label: c.name, id: c.id }; });
+
+        // ---- learning path (optional): narrows the exercise picker to its pool
+        const pathItems = GPH.mgr.paths()
+            .filter(function (p) { return (p.steps || []).length; })
+            .map(function (p) { return { label: p.name, id: p.id }; });
+        let pathIndex = '';
+        pathItems.forEach(function (p, i) {
+            if (p.id === ex.catalog_path_id) pathIndex = String(i);
+        });
+        const pathPicker = createResourcePicker(pathItems, pathIndex,
+            { noneLabel: '\u2014 No path \u2014' });
+        pathPicker.root.classList.add('ex-path-picker');
+        pathPicker.select.classList.add('ex-path');
+        pathPicker.trigger.setAttribute('aria-label', 'Learning path');
+        pathPicker.trigger.title = 'Learning path: the exercise picker only offers its steps';
+        const pathSel = pathPicker.select;
+
+        function pathSteps(id) {
+            const p = GPH.mgr.pathById(Number(id));
+            return (p && p.steps) || [];
+        }
+
+        // The picker stores an index into `pathItems`, not the path id.
+        pathSel._pool = pathItems;
+        function selectedPathId() {
+            if (!pathSel.value) return null;
+            const item = pathItems[Number(pathSel.value)];
+            return item ? item.id : null;
+        }
+
+        // The exercise picker is rebuilt when the path changes, so it only shows
+        // the pool of that path (or the whole catalog when there is no path).
+        let catPicker = null;
+        let catSel = null;
+
+        function buildCatPicker(currentId) {
+            const pathId = selectedPathId();
+            const allowed = pathId ? pathSteps(pathId) : null;
+            const pool = allowed
+                ? allowed.map(function (s) {
+                    return { label: s.name, id: s.catalog_exercise_id };
+                })
+                : catItems.slice();
+            // An exercise outside the path must stay visible and selectable.
+            if (pathId && currentId != null &&
+                !pool.some(function (c) { return c.id === currentId; })) {
+                const known = GPH.mgr.catalogById(currentId);
+                pool.unshift({
+                    label: (known ? known.name : 'exercise ' + currentId) + ' (not in path)',
+                    id: currentId
+                });
+            }
+            let initial = '';
+            pool.forEach(function (c, i) {
+                if (c.id === currentId) initial = String(i);
+            });
+            const picker = createResourcePicker(pool, initial,
+                { noneLabel: '\u2014 No exercise \u2014' });
+            picker.root.classList.add('ex-cat-picker');
+            picker.root._pool = pool;      // select.value indexes this pool
+            picker.select.classList.add('ex-cat');
+            picker.trigger.setAttribute('aria-label', 'Current exercise');
+            return picker;
+        }
+
+        function mountCatPicker(currentId) {
+            const old = catPicker ? catPicker.root : null;
+            catPicker = buildCatPicker(currentId);
+            catSel = catPicker.select;
+            catSel._pool = catPicker.root._pool;
+            if (old && old.parentNode) old.parentNode.replaceChild(catPicker.root, old);
+            else if (metaRow) metaRow.appendChild(catPicker.root);
+            catSel.addEventListener('change', function () {
+                suggestSlotArea();
+                syncPathChip();
+                setDirty(true);
+            });
+        }
+
+        // The area of a catalog exercise is a suggestion: it only fills a slot
+        // that has no area yet (a slot with its own area is never overwritten).
+        function suggestSlotArea() {
+            if (!areaSel || areaSel.value) return;
+            const cid = currentCatId();
+            if (cid == null) return;
+            const cat = GPH.mgr.catalogById(cid);
+            if (!cat || !cat.area_id) return;
+            areaSel.value = cat.area_id;
+            syncNoAreaChip();
+            updateAreaBanner();
+        }
+
+        // Id of the exercise currently selected in the (possibly filtered) picker.
+        function currentCatId() {
+            if (!catSel || catSel.value === '' || !catSel._pool) return null;
+            const item = catSel._pool[Number(catSel.value)];
+            return item ? item.id : null;
+        }
+
+        const noAreaChip = document.createElement('span');
+        noAreaChip.className = 'chip-warn';
+        noAreaChip.textContent = 'No area';
+        noAreaChip.title = 'Assign an area to see this slot in the statistics';
+
+        function syncNoAreaChip() { noAreaChip.hidden = !!areaSel.value; }
+        areaSel.addEventListener('change', function () {
+            syncNoAreaChip();
+            setDirty(true);
+            updateAreaBanner();   // the count follows the editor, saved or not
+        });
+        syncNoAreaChip();
+
+        // Amber chip when the slot's exercise is not part of the chosen path.
+        const pathChip = document.createElement('span');
+        pathChip.className = 'chip-warn';
+        pathChip.textContent = 'not in path';
+        pathChip.hidden = true;
+
+        function syncPathChip() {
+            const pid = selectedPathId();
+            const cid = currentCatId();
+            const outside = !!(pid && cid != null &&
+                !pathSteps(pid).some(function (s) { return s.catalog_exercise_id === cid; }));
+            pathChip.hidden = !outside;
+            pathChip.title = outside
+                ? 'This exercise is not part of the chosen path. It is kept until you ' +
+                  'pick one from the path.'
+                : '';
+        }
+
+        // Changing the path narrows the exercise pool but keeps the current one.
+        pathSel.addEventListener('change', function () {
+            mountCatPicker(currentCatId());
+            syncPathChip();
+            setDirty(true);
+        });
+
+
+        metaRow.appendChild(areaSel);
+        metaRow.appendChild(pathPicker.root);
+        mountCatPicker(ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id);
+        metaRow.appendChild(pathChip);
+        metaRow.appendChild(noAreaChip);
+        syncPathChip();
+        row.appendChild(metaRow);
+        row._areaSel = areaSel;
+
         return row;
     }
 
@@ -1203,47 +1327,30 @@
         const out = [];
         rows.forEach(function (row) {
             const name = row.querySelector('.ex-name');
-            const desc = row.querySelector('.ex-desc');
             const dur = row.querySelector('.ex-dur');
             const areaSel = row.querySelector('.ex-area');
             const catSel = row.querySelector('.ex-cat');
+            const pathSel = row.querySelector('.ex-path');
             let catalogId = null;
             if (catSel && catSel.value !== '') {
-                const cat = GPH.mgr.catalog()[Number(catSel.value)];
+                const pool = catSel._pool || GPH.mgr.catalog();
+                const cat = pool[Number(catSel.value)];
                 catalogId = cat ? cat.id : null;
             }
-            const list = [];
-
-            Array.prototype.forEach.call(row.querySelectorAll('.ex-res-line'), function (line) {
-                const sel = line.querySelector('.ex-res');
-                if (!sel || sel.value === '') return;
-                const r = resources[Number(sel.value)];
-                if (!r) return;
-                const item = { kind: r.kind, url: r.url || '', bpm: 0, label: r.label || '' };
-                if (r.kind === 'theory') {
-                    const thBox = line.querySelector('.ex-theory');
-                    item.url = readTheoryUrl(thBox);
-                    item.label = readTheoryLabel(thBox, item.label || 'Theory');
-                }
-                if (r.kind === 'metronome' || r.kind === 'drums') {
-                    const bpmIn = line.querySelector('.ex-res-bpm');
-                    let bpm = parseInt(bpmIn && bpmIn.value, 10);
-                    if (!bpm || bpm < 40 || bpm > 240) bpm = 120;
-                    item.bpm = bpm;
-                    // signature / pattern / preset / grid / swing ("auto" = not forced)
-                    item.cfg = readLineCfg(line);
-                }
-                list.push(item);
-            });
-
+            // The path picker stores an index into its pool, not the path id.
+            let pathId = null;
+            if (pathSel && pathSel.value !== '') {
+                const pathPool = pathSel._pool || [];
+                const item = pathPool[Number(pathSel.value)];
+                pathId = item ? item.id : null;
+            }
             out.push({
                 id: Number(row.dataset.eid),
                 name: name ? name.value : '',
-                description: desc ? desc.value : '',
                 duration_seconds: toSeconds(dur ? dur.value : 0),
-                resources: list,
                 area_id: areaSel ? areaSel.value : '',
-                catalog_exercise_id: catalogId
+                catalog_exercise_id: catalogId,
+                catalog_path_id: pathId
             });
         });
         return out;
@@ -1259,9 +1366,10 @@
         const rows = collectExerciseRows();
         for (const ex of rows) {
             await api('PUT', '/api/exercises/' + ex.id,
-                { name: ex.name, description: ex.description, duration_seconds: ex.duration_seconds,
-                  resources: ex.resources, area_id: ex.area_id,
-                  catalog_exercise_id: ex.catalog_exercise_id });
+                { name: ex.name, duration_seconds: ex.duration_seconds,
+                  area_id: ex.area_id,
+                  catalog_exercise_id: ex.catalog_exercise_id,
+                  catalog_path_id: ex.catalog_path_id || null });
         }
         setDirty(false);
         updateAreaBanner();
@@ -1490,12 +1598,19 @@
             if (current && !dirty) renderEditor();
             updateAreaBanner();
         });
+        // A path was created, edited or deleted: the slot rows rebuild their path
+        // and exercise pickers (same rule: never over unsaved edits).
+        document.addEventListener('paths:changed', function () {
+            if (current && !dirty) renderEditor();
+        });
         GPH.mgr.loadMeta()
             .then(function () { return api('GET', '/api/sections'); })
             .then(function (secs) {
                 resources = buildResources(secs);
                 finishResources = buildFinishResources(secs);
                 populateFinishSelect();
+                // The exercise editor builds its resource picker from this list.
+                document.dispatchEvent(new CustomEvent('resources:ready'));
             })
             .catch(function () { /* noop */ })
             .then(function () { return loadRoutines().catch(function (e) { toast('Error: ' + e.message, true); }); })

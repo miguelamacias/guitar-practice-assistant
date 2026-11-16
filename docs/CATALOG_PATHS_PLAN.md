@@ -38,7 +38,8 @@ duración propia, no mueve ejercicios solo y no añade estado de "maestría".
   final**, después de que los paths funcionen: si hubiera que revertir algo,
   paths y descripción no se arrastran entre sí.
 - Merge a `main` sólo con pruebas en verde, con `--no-ff`, y **la versión se
-  decide en ese momento** (propuesta: **1.5.0**, por ser funcionalidad nueva).
+  decide en ese momento** (decidido: **1.4.1**, un parche dentro de la 1.4:
+  los paths completan el trabajo de ejercicios que quedó fuera).
 - Antes de tocar la BD real: backup verificado con ruta conocida (§11).
 
 ## 4. Modelo de datos
@@ -61,7 +62,7 @@ CREATE TABLE IF NOT EXISTS catalog_path_steps (
     path_id             INTEGER NOT NULL REFERENCES catalog_paths(id) ON DELETE CASCADE,
     catalog_exercise_id INTEGER NOT NULL REFERENCES catalog_exercises(id) ON DELETE CASCADE,
     position            INTEGER NOT NULL DEFAULT 0,
-    note                TEXT NOT NULL DEFAULT '',
+    note                TEXT NOT NULL DEFAULT '',   -- reservada: sin UI en la v1
     UNIQUE(path_id, catalog_exercise_id)
 );
 CREATE INDEX IF NOT EXISTS idx_path_steps_path ON catalog_path_steps(path_id);
@@ -148,7 +149,7 @@ no perderlo al recargar.
 **Editor (columna derecha)**: nombre, descripción y la lista de pasos:
 
 - una fila por paso con `drag-handle` (mismo patrón que los slots), el nombre
-  del ejercicio, un `input` para `note` y `×` para quitarlo;
+  del ejercicio y `×` para quitarlo;
 - `+ Add exercise`: buscador sobre `GPH.mgr.catalog()` y clic para añadir;
 - si el path no tiene pasos: aviso ámbar `Empty path — it cannot be assigned to
   a slot yet` y guardado deshabilitado;
@@ -204,6 +205,48 @@ SELECT id, routine_id, name, description FROM exercises
 - Si devuelve **0 filas**: todo migrado, se puede retirar la columna.
 - Si devuelve filas: **parar**. Convertir esas descripciones en ejercicios del
   catálogo (o exportarlas a un `.txt`) y volver a comprobar.
+
+### 8.1.1 Resultado del pre-flight (2026-11-16)
+
+En la BD real devolvió **6 filas**, todas fuera de la rutina diaria:
+
+| Rutina | Slot | Texto |
+|---|---|---|
+| 6 | Warmup | Play some scales and barre chords to warmup |
+| 6 | Guitar Aerobics | The main exercise of the day |
+| 6 | Rhythm Guitar 365 | Complementary exercise |
+| 28 | Live Song #1 | Besos |
+| 28 | Live Song #2 | Clavado en un Bar |
+| 28 | Live Song #3 | Europa |
+
+Se hizo backup verificado
+(`practice-backup-20261116-pre-drop-slot-description.db`) y se exportaron las
+17 descripciones a `practice-backup-20261116-slot-descriptions.txt`.
+
+**Resuelto (2026-11-16)**: se migraron los 6 textos al catálogo y después se
+eliminó la columna.
+
+| Slot | Ejercicio del catálogo | Descripción |
+|---|---|---|
+| Warmup | Warmup | Play some scales and barre chords to warmup |
+| Guitar Aerobics | Guitar Aerobics | The main exercise of the day |
+| Rhythm Guitar 365 | Rhythm Guitar 365 | Complementary exercise |
+| Live Song #1 | Besos | — |
+| Live Song #2 | Clavado en un Bar | — |
+| Live Song #3 | Europa | — |
+
+Regla aplicada: un nombre de slot con `#` (marcador de posición) toma el texto
+como nombre del ejercicio — es lo que la canción *es*; un nombre real se
+conserva y el texto pasa a ser la descripción del ejercicio.
+
+Backups de esa operación:
+`practice-backup-20261116-pre-migrate-descriptions.db` (antes de escribir) y
+`practice-backup-20261116-pre-drop-slot-description.db` (antes de tocar nada),
+más el export `practice-backup-20261116-slot-descriptions.txt`.
+
+El `DROP COLUMN` se hizo con un script de una sola vez (no en `_migrate()`), así
+que una copia antigua de la BD conserva la columna sin que nadie la borre por
+sorpresa.
 
 Comprobar además que `ALTER TABLE ... DROP COLUMN` está disponible:
 
@@ -336,8 +379,9 @@ temporal, como en el lote anterior. Nada de datos reales.
     columna `catalog_path_id` se queda a `NULL`, inofensiva.
   - descripción → restaurar el `.db` del backup (parando el servidor) y
     `git revert` del commit de §8.
-- **Versión**: 1.5.0 al mergear (funcionalidad nueva). El bump se hace en el
-  último commit de la rama, previo al merge.
+- **Versión**: 1.4.1 al mergear (parche: los paths completan el trabajo de
+  ejercicios de la 1.4). El bump se hace en el último commit de la rama,
+  previo al merge.
 
 ## 12. Fases, commits y estimación
 
@@ -346,7 +390,7 @@ temporal, como en el lote anterior. Nada de datos reales.
 | F1 | Tablas, columna, funciones `db.py`, endpoints `/api/paths`, `_exercise_payload` + `_slot_meta` | `Add catalog paths to the data layer and the API` | media jornada |
 | F2 | Manager: segmento `Catalog \| Paths`, editor con drag & drop, control en la fila del slot, chip `not in path` | `Add the paths editor and the slot path picker to the Manager` | 1 día |
 | F3 | Asistente: filtrado del picker, cabecera del menú, `#exMain` con el nombre del path, degradación | `Filter the assistant picker by the slot path` | 2–3 h |
-| F4 | Retirada de la descripción del slot (§8) + bump a 1.5.0 (a confirmar en el merge) | `Drop the slot description now that it lives in the catalog` | 2–3 h |
+| F4 | Retirada de la descripción del slot (§8) + bump a 1.4.1 | `Drop the slot description now that it lives in the catalog` | 2–3 h |
 
 Cada fase termina con sus pruebas (§10) y su `node --check` /
 `py_compile`. La rama se mergea a `main` con `--no-ff` cuando F1–F4 estén
@@ -359,6 +403,8 @@ verdes.
 - Estadísticas por path (`by_path`): la pertenencia cambia con el tiempo, así
   que no habría histórico fiable.
 - Varios paths por slot, paths anidados, o paths dentro de rutinas.
+- Notas por paso: la columna existe en el esquema, pero sin UI. Encaja en un
+  futuro *learning log* con objetivos y avances, no aquí.
 - Sincronización de paths entre dispositivos (no hay backend remoto).
 
 - La etiqueta `— None (use description) —` pasa a `— No exercise —`.

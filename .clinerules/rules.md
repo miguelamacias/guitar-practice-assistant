@@ -55,12 +55,31 @@
 - No usar datos reales para tests ni seeds que puedan sobrescribir datos.
 - Ante la más mínima posibilidad de perder datos: parar y consultar al usuario.
 
+## Verificación proporcional al riesgo
+- La verificación se ajusta al riesgo del cambio, no al revés. Probar de más también cuesta tiempo del usuario.
+- **Cambio sencillo / riesgo bajo**: 1–2 archivos, sólo HTML/CSS/textos, estilos, una etiqueta o un handler pequeño; sin tocar esquema, datos, endpoints ni lógica compartida (`db.py`, `server.py`, cálculos de estadísticas); reversible con el `revert` de un commit.
+  - Basta con: `node --check` o `py_compile` si se tocó código, y **una** comprobación (una captura, un vistazo en la app o un único smoke check).
+  - **No** hace falta montar fixtures headless, bases de datos temporales, ni repetir baterías de pruebas ya pasadas.
+- **Cambio medio/alto**: base de datos o datos de usuario, endpoints, lógica compartida, más de 2–3 archivos, o algo que el usuario notaría roto.
+  - Verificación completa: fixtures y BD temporal cuando aplique, casos límite, y un repaso de regresión de lo tocado.
+- **Cualquier cambio de interfaz** (HTML, CSS o JS que pinte UI), aunque sea "sencillo":
+  - La comprobación obligatoria es **visual**, no sólo de comportamiento: una captura de la zona afectada y **cero errores en consola** al abrir la página.
+  - Un control sin estilo o un `ReferenceError` no rompen `node --check` ni las pruebas funcionales: pasan desapercibidos y los ve el usuario.
+  - Si añades un `input`, `select` o `textarea`, comprueba que hereda el estilo del resto (no que tengas que añadirlo a mano a una lista de ids) y que un control vacío o deshabilitado también se ve bien.
+  - Si el proyecto tiene script de auditoría visual o de errores JS, ejecutarlo; si no lo tiene, la captura es el mínimo.
+- Suelo que **no** se negocia aunque el cambio sea pequeño:
+  - backup verificado antes de tocar esquema o datos,
+  - nada destructivo sin permiso,
+  - decir lo que **no** se ha probado.
+- Si un cambio trivial empieza a pedir pruebas grandes, es señal de que el cambio no era trivial: parar y comentarlo.
+
 ## Buenas prácticas
 - Hacer el cambio mínimo correcto. Evitar refactors colaterales no pedidos.
 - Mantener el diff pequeño y revisable.
 - No añadir dependencias nuevas sin preguntar.
 - No cambiar arquitectura sin plan previo y confirmación.
-- Ejecutar tests/build/lint si existen. Si no se puede, decirlo.
+- Ejecutar tests/build/lint si existen, con la intensidad que pide el riesgo (ver *Verificación proporcional*). Si no se puede, decirlo.
+- No repetir pruebas ya superadas sobre código que no ha cambiado.
 - Priorizar la solución correcta desde el punto de vista de ingeniería, aunque requiera más trabajo, para facilitar la expansión futura.
 - El código debe ser fácilmente mantenible por un usuario humano.
 - Al terminar, reportar: resumen, archivos tocados, verificaciones realizadas, riesgos y pendientes.
@@ -72,5 +91,5 @@
 4. Si el riesgo es medio/alto: proponer plan/rama y esperar confirmación.
 5. Si hay base de datos o datos de usuario: backup verificado y permiso antes de tocar.
 6. Implementar el cambio mínimo.
-7. Verificar con tests/build/lint si existen.
+7. Verificar con la intensidad que pida el riesgo (ver *Verificación proporcional al riesgo*): rápido si es sencillo, completo si es medio/alto.
 8. No hacer Git ni cambiar versión sin petición explícita.

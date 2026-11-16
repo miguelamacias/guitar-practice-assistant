@@ -72,6 +72,143 @@
         return h + ' h' + (m ? ' ' + m + ' min' : '');
     }
 
+    // ---- Weekly summary on the welcome screen -----------------------------
+    // A glance, not a report: one number, one line, seven bars and the
+    // exercise that took the most time. Everything comes from the History
+    // aggregates, so it says exactly the same as the Manager.
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+    function dayKey(date) {
+        return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate());
+    }
+
+    function loadWelcomeStats() {
+        if (!document.getElementById('welcomeStatTime')) return;
+        const load = function (days) {
+            return fetch('/api/sessions/stats?days=' + days, { cache: 'no-store' })
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .catch(function () { return null; });
+        };
+        Promise.all([load(7), load(30)]).then(function (res) {
+            renderWelcomeStats(res[0], res[1]);
+        });
+    }
+
+    // Same steps as the Manager calendar (js/managerHistory.js): the two grids
+    // must read the same way.
+    function actLevel(seconds, max) {
+        if (!seconds) return 0;
+        const ratio = max ? seconds / max : 1;
+        if (ratio >= 0.75) return 4;
+        if (ratio >= 0.45) return 3;
+        if (ratio >= 0.2) return 2;
+        return 1;
+    }
+
+    function renderWelcomeStats(week, month) {
+        const timeEl = document.getElementById('welcomeStatTime');
+        const lineEl = document.getElementById('welcomeStatLine');
+        const barsEl = document.getElementById('welcomeBars');
+        const mostEl = document.getElementById('welcomeStatMost');
+        if (!timeEl || !lineEl || !barsEl || !mostEl) return;
+        const data = week;
+        renderWelcomeMonth(month);
+
+        const totals = (data && data.totals) || {};
+        const real = totals.real_seconds || 0;
+        const sessions = totals.sessions || 0;
+        const days = totals.days_practised || 0;
+
+        timeEl.classList.toggle('is-empty', !real);
+        timeEl.textContent = real ? (fmtMinutes(Math.round(real / 60)) || '0 min')
+                                  : 'No practice yet';
+        lineEl.textContent = real
+            ? sessions + (sessions === 1 ? ' session' : ' sessions') +
+              ' \u00b7 ' + days + ' of 7 days'
+            : 'Start a routine and it shows up here.';
+
+        // Seven bars, one per day, today on the right.
+        const byDay = {};
+        ((data && data.activity) || []).forEach(function (a) {
+            byDay[a.date] = a.seconds || 0;
+        });
+        const today = new Date();
+        const values = [];
+        for (let i = 6; i >= 0; i -= 1) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+            values.push({ date: d, seconds: byDay[dayKey(d)] || 0, today: i === 0 });
+        }
+        const max = Math.max.apply(null, values.map(function (v) { return v.seconds; })
+            .concat([1]));
+        barsEl.innerHTML = '';
+        values.forEach(function (v) {
+            const bar = document.createElement('div');
+            const level = actLevel(v.seconds, max);
+            bar.className = 'welcome-bar' + (v.today ? ' is-today' : '') +
+                (level ? '' : ' is-empty');
+            // 8% of the track is a visible stub: an empty day still reads as a day.
+            bar.style.height = Math.max(8, Math.round(v.seconds / max * 100)) + '%';
+            if (level && !v.today) {
+                // Same encoding as the 30-day squares, a bit calmer for a big bar.
+                bar.style.background = 'var(--accent)';
+                bar.style.opacity = (0.34 + 0.12 * level).toFixed(2);
+            }
+            bar.title = v.date.toLocaleDateString('en-US', { weekday: 'short' }) + ': ' +
+                (fmtMinutes(Math.round(v.seconds / 60)) || '0 min');
+            barsEl.appendChild(bar);
+        });
+
+        // Where the time went. Newer sessions are linked to the catalog, so the
+        // exercise name is the material; older ones only know their slot.
+        const withTime = function (list) {
+            return (list || []).filter(function (e) { return (e.seconds || 0) > 0; })[0];
+        };
+        const top = withTime(data && data.by_exercise) || withTime(data && data.by_slot);
+        mostEl.textContent = top
+            ? 'Most time: ' + top.name + ' \u00b7 ' + fmtMinutes(Math.round(top.seconds / 60))
+            : '';
+        mostEl.title = top ? top.name : '';
+    }
+
+    // Thirty squares, oldest first, today at the bottom right. Level 0 is a grey
+    // square; 1..4 light up in accent, exactly like the Manager calendar.
+    function renderWelcomeMonth(month) {
+        const box = document.getElementById('welcomeMonth');
+        if (!box) return;
+        const byDay = {};
+        ((month && month.activity) || []).forEach(function (a) {
+            byDay[a.date] = a;
+        });
+        const today = new Date();
+        const cells = [];
+        let max = 0;
+        for (let i = 29; i >= 0; i -= 1) {
+            const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+            const hit = byDay[dayKey(d)] || null;
+            const seconds = (hit && hit.seconds) || 0;
+            if (seconds > max) max = seconds;
+            cells.push({ date: d, seconds: seconds, sessions: (hit && hit.sessions) || 0 });
+        }
+        box.innerHTML = '';
+        cells.forEach(function (c) {
+            const cell = document.createElement('div');
+            const level = actLevel(c.seconds, max);
+            cell.className = 'welcome-day is-l' + level + (level ? '' : ' is-empty');
+            if (level) {
+                cell.style.background = 'var(--accent)';
+                cell.style.opacity = (0.3 + 0.17 * level).toFixed(2);
+            }
+            const minutes = Math.round(c.seconds / 60);
+            cell.title = c.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                ' \u00b7 ' + (c.seconds
+                    ? (minutes ? fmtMinutes(minutes) : 'under 1 min') +
+                      (c.sessions ? ' \u00b7 ' + c.sessions +
+                          (c.sessions === 1 ? ' session' : ' sessions') : '')
+                    : 'no practice');
+            box.appendChild(cell);
+        });
+    }
+
     // ---- Shared dark tooltip (welcome list, Start button…) ----------------
     // The native `title` cannot be styled, so both use the same `.ex-tip` panel.
     let tipEl = null;
@@ -131,6 +268,69 @@
         window.addEventListener('scroll', hideTip, { passive: true });
     }
 
+    // ---- Session on hold: wall clock -------------------------------------
+    // The routine can be parked on the welcome screen (back arrow in the list
+    // header) and resumed later. The wall time is the real time spent on it, so
+    // the parked stretch must not count: it is accumulated here and sent with
+    // the finish request, where it wins over the start -> finish span.
+    const WALL_MS_KEY = 'routineSessionWallMs';
+    const WALL_SINCE_KEY = 'routineSessionWallSince';
+
+    function wallTracked() {
+        return localStorage.getItem(WALL_MS_KEY) != null;
+    }
+
+    function wallSince() {
+        const value = parseInt(localStorage.getItem(WALL_SINCE_KEY) || '', 10);
+        return isNaN(value) ? null : value;
+    }
+
+    function wallElapsedMs() {
+        const since = wallSince();
+        return (parseInt(localStorage.getItem(WALL_MS_KEY) || '0', 10) || 0) +
+            (since ? Math.max(0, Date.now() - since) : 0);
+    }
+
+    function wallReset() {
+        localStorage.setItem(WALL_MS_KEY, '0');
+        localStorage.setItem(WALL_SINCE_KEY, String(Date.now()));
+    }
+
+    function wallContinue() {
+        if (!wallTracked() || wallSince()) return;
+        localStorage.setItem(WALL_SINCE_KEY, String(Date.now()));
+    }
+
+    function wallPause() {
+        const since = wallSince();
+        if (!since) return;
+        const total = (parseInt(localStorage.getItem(WALL_MS_KEY) || '0', 10) || 0) +
+            Math.max(0, Date.now() - since);
+        localStorage.setItem(WALL_MS_KEY, String(total));
+        localStorage.removeItem(WALL_SINCE_KEY);
+    }
+
+    function wallClear() {
+        localStorage.removeItem(WALL_MS_KEY);
+        localStorage.removeItem(WALL_SINCE_KEY);
+    }
+
+    // A session exists but is parked on the welcome screen.
+    function pausedSession() {
+        return localStorage.getItem('routineSessionActive') === 'true' &&
+            localStorage.getItem('routineSessionPaused') === 'true';
+    }
+
+    // Start → Resume while a session is on hold (same button, same place).
+    function syncStartLabel() {
+        const paused = pausedSession();
+        const label = document.getElementById('startRoutineLabel');
+        if (label) label.textContent = paused ? 'Resume Routine' : 'Start Practicing';
+        const btn = document.getElementById('startRoutineBtn');
+        if (btn) btn.classList.toggle('is-resume', paused);
+        return paused;
+    }
+
     // Text used by the Start button tooltip (updated on every init/refresh).
     let startTipText = '';
 
@@ -139,6 +339,12 @@
         if (!btn) return;
         btn.removeAttribute('title');                  // no native tooltip
         startTipText = '';
+        // A routine on hold is not "the last routine": the tooltip would point
+        // at the very session that is waiting.
+        if (localStorage.getItem('routineSessionActive') === 'true') {
+            btn.classList.remove('has-tip');
+            return;
+        }
 
         const startISO = localStorage.getItem('lastRoutineStartedAt');
         const start = startISO ? new Date(startISO) : null;
@@ -227,20 +433,30 @@
         loadStates();
         loadSessionId();
         flushSessionQueue();
+        loadWelcomeStats();
         hideTip();
         wireTimerFloat();
         const changeBtn = document.getElementById('exChangeBtn');
         if (changeBtn) changeBtn.addEventListener('click', openCatalogMenu);
+        // The name is the thing you aim at: same action as the caret next to it.
+        const mainName = document.getElementById('exMain');
+        if (mainName) mainName.addEventListener('click', openCatalogMenu);
         const catalogMenu = document.getElementById('exCatalogMenu');
         if (catalogMenu) catalogMenu.addEventListener('keydown', catalogMenuKeys);
         // A click outside (menu or caret) closes it, like the Manager pickers.
         document.addEventListener('mousedown', function (e) {
             const menu = document.getElementById('exCatalogMenu');
             const btn = document.getElementById('exChangeBtn');
+            const main = document.getElementById('exMain');
             if (!menu || menu.hidden) return;
-            if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+            // The name and the caret are the picker anchor: they toggle it.
+            if (menu.contains(e.target) || (btn && btn.contains(e.target)) ||
+                (main && main.contains(e.target))) return;
             closeCatalogMenu();
         });
+        // The menu is a fixed panel: scrolling or resizing would leave it adrift.
+        window.addEventListener('scroll', closeCatalogMenu, { passive: true });
+        window.addEventListener('resize', closeCatalogMenu);
         const desc = document.getElementById('welcomeRoutineDesc');
         if (!rActiva().ejercicios.length) {
             const nameEl = document.getElementById('welcomeRoutineName');
@@ -276,6 +492,16 @@
         // server keeps it open (the 8 h rule). Otherwise it gets closed as
         // abandoned and we land on the welcome screen, ready for a clean start.
         if (localStorage.getItem('routineSessionActive') === 'true') {
+            // Parked on purpose (back arrow): stay on the welcome screen and
+            // leave the Resume button ready. Never resume by itself.
+            if (pausedSession()) {
+                document.getElementById('welcomeCard').classList.remove('is-hidden');
+                document.getElementById('exerciseCard').classList.add('is-hidden');
+                syncStartLabel();
+                loadWelcomeStats();
+                syncTimerFloat();
+                return;
+            }
             resumeLocalSession();
             return;
         }
@@ -300,6 +526,8 @@
         // Close the DB session with the final states, before they are wiped.
         if (wasRunning) sessionFinish();
         localStorage.setItem('routineSessionActive', 'false');
+        localStorage.removeItem('routineSessionPaused');
+        wallClear();
         localStorage.removeItem('currentExerciseIndex');
         exerciseStates = {};
         playedSet = {};
@@ -314,18 +542,58 @@
             localStorage.setItem('lastRoutineFinishedAt', new Date().toISOString());
         }
         updateStartBtnTip();
+        syncStartLabel();
         document.getElementById('welcomeCard').classList.remove('is-hidden');
         document.getElementById('exerciseCard').classList.add('is-hidden');
         syncTimerFloat();
     }
 
+    // Back arrow of the exercise list: park the routine and return to the
+    // welcome screen. The session stays open — nothing is finished or wiped —
+    // the wall clock stops and Start turns into Resume.
+    function pauseToWelcome() {
+        const exs = rActiva() && rActiva().ejercicios;
+        if (!exs || !exs.length) return;
+        persistCurrentBpm();
+        persistCurrentPlayed();
+        saveStates();
+        pauseExerciseTimer();
+        if (clockRunSince !== null) clockStop();
+        wallPause();
+        localStorage.setItem('routineSessionPaused', 'true');
+        hideTip();
+        syncStartLabel();
+        document.getElementById('welcomeCard').classList.remove('is-hidden');
+        document.getElementById('exerciseCard').classList.add('is-hidden');
+        syncTimerFloat();
+        loadWelcomeStats();          // the week summary may have grown
+    }
+
+    // Resume: the same session and the same slot, wall clock running again.
+    function resumeSession() {
+        if (!pausedSession()) return;
+        localStorage.setItem('routineSessionPaused', 'false');
+        wallContinue();
+        const savedStartTime = localStorage.getItem('practiceStartTimeVal');
+        if (savedStartTime) setStartTimeLabel(savedStartTime);
+        hideTip();
+        document.getElementById('welcomeCard').classList.add('is-hidden');
+        document.getElementById('exerciseCard').classList.remove('is-hidden');
+        displayCurrentExercise();
+        syncStartLabel();
+    }
+
     function startRoutineSession() {
+        // One button for both: with a session on hold it continues that one.
+        if (pausedSession()) { resumeSession(); return; }
         currentExerciseIndex = 0;
 
         const now = new Date();
         const timeString = hhmm(now);
 
         localStorage.setItem('routineSessionActive', 'true');
+        localStorage.removeItem('routineSessionPaused');
+        wallReset();
         exerciseStates = {};
         playedSet = {};
         clockSet = {};
@@ -339,6 +607,7 @@
 
         setStartTimeLabel(timeString);
         hideTip();
+        syncStartLabel();
 
         document.getElementById('welcomeCard').classList.add('is-hidden');
         document.getElementById('exerciseCard').classList.remove('is-hidden');
@@ -363,6 +632,8 @@
     // when it has none. The picker is locked while an attempt is live (§9.3).
     let catalogCache = null;
     let catalogLoading = null;
+    let pathsCache = null;
+    let pathsLoading = null;
 
     function slotExercise(ex) { return (ex && ex.catalog_exercise) || null; }
 
@@ -377,14 +648,11 @@
         parent.appendChild(span);
     }
 
-    // Text shown when hovering the exercise name: the catalog exercise description
-    // when the slot points at one (that is the real exercise), otherwise the
-    // slot's own description.
+    // Text shown when hovering the exercise name: the description of the catalog
+    // exercise (the only place descriptions live now).
     function slotDescText(ex) {
         const cat = slotExercise(ex);
-        const catDesc = cat && cat.description ? String(cat.description).trim() : '';
-        if (catDesc) return catDesc;
-        return String((ex && ex.descripcion) || '').trim();
+        return cat && cat.description ? String(cat.description).trim() : '';
     }
 
     // Panel for the exercise on screen. Null when the slot has no exercise: the
@@ -416,6 +684,9 @@
         const ex = rActiva().ejercicios[currentExerciseIndex];
         const live = attemptLive(currentExerciseIndex);
         btn.disabled = live;
+        // The name is the same trigger, so it stops promising a click too.
+        const main = document.getElementById('exMain');
+        if (main) main.classList.toggle('is-locked', live);
         btn.title = live
             ? 'The attempt is live: change it when the timer ends or press Reset'
             : (slotExercise(ex) ? 'Change exercise' : 'Pick an exercise from the catalog');
@@ -435,8 +706,10 @@
         }
         const mainEl = document.getElementById('exMain');
         if (mainEl) {
-            mainEl.textContent = cat ? cat.name : (ex.descripcion || '');
-            mainEl.className = 'ex-main' + (cat ? ' is-exercise' : '');
+            const path = slotPath(ex);
+            mainEl.textContent = cat ? cat.name
+                : (path ? path.name + ' \u2014 pick one' : '');
+            mainEl.className = 'ex-main' + (cat ? ' is-exercise' : (path ? ' is-path-hint' : ''));
             // Hover on the exercise name (not on the slot name): its description,
             // which is not displayed anywhere else. Only when the slot points at
             // an exercise: without one the line already shows the slot text.
@@ -461,11 +734,45 @@
         return catalogLoading;
     }
 
+    // Learning paths: only the picker needs them, cached like the catalog.
+    // A failure is not fatal: the picker falls back to the whole catalog.
+    function loadPaths() {
+        if (pathsCache) return Promise.resolve(pathsCache);
+        if (pathsLoading) return pathsLoading;
+        pathsLoading = fetch('/api/paths', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : { paths: [] }; })
+            .then(function (d) { pathsCache = (d && d.paths) || []; return pathsCache; })
+            .catch(function () { pathsCache = []; return pathsCache; });
+        return pathsLoading;
+    }
+
+    // The path of a slot, from the cache when possible (the payload already
+    // carries id and name, so the header can be rendered before the fetch lands).
+    function slotPath(ex) {
+        const pid = ex && ex.catalog_path_id;
+        if (pid == null) return null;
+        const found = (pathsCache || []).filter(function (p) { return p.id === pid; })[0];
+        if (found) return found;
+        return ex.catalog_path ? { id: pid, name: ex.catalog_path.name || '', steps: [] } : null;
+    }
+
     // ---- Catalog menu ------------------------------------------------------
     // A floating list anchored under the exercise name. The line does not move:
     // the menu is positioned absolutely inside the centred row.
     let menuItems = [];
+    let visibleItems = [];      // menuItems after the search filter
     let menuIndex = -1;
+    let menuSearch = null;      // the filter input, when the pool is long enough
+    let menuCurrentId = null;   // exercise id currently on the slot
+    let menuGrouped = false;    // catalog pool: group by area
+    const SEARCH_FROM = 6;      // below this, a filter is just noise
+
+    // Same idea as the Manager: ignore case, accents and punctuation.
+    function menuNorm(text) {
+        return String(text || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
 
     function menuEl() { return document.getElementById('exCatalogMenu'); }
 
@@ -475,30 +782,38 @@
         menu.hidden = true;
         menu.innerHTML = '';
         menuIndex = -1;
+        visibleItems = [];
+        menuSearch = null;
         const btn = document.getElementById('exChangeBtn');
         if (btn) btn.classList.remove('is-open');
     }
 
     function positionCatalogMenu(menu) {
-        const row = document.getElementById('exDescription');
         const main = document.getElementById('exMain');
-        if (!row || !main) return;
-        const rr = row.getBoundingClientRect();
+        if (!main) return;
         const mr = main.getBoundingClientRect();
         const width = Math.max(220, Math.min(460, Math.ceil(mr.width) + 60));
-        const left = Math.max(2, Math.min(mr.left - rr.left - 10, rr.width - width - 2));
-        menu.style.left = left + 'px';
-        menu.style.top = (mr.bottom - rr.top + 6) + 'px';
-        menu.style.width = width + 'px';
+        // Centred on the name, never outside the viewport, and flipped above
+        // when there is no room below (the panel lives in body, not in the row).
+        let left = mr.left + mr.width / 2 - width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+        const height = Math.min(menu.scrollHeight || 260, 260);
+        let top = mr.bottom + 6;
+        if (top + height > window.innerHeight - 8) top = Math.max(8, mr.top - 6 - height);
+        menu.style.left = Math.round(left) + 'px';
+        menu.style.top = Math.round(top) + 'px';
+        menu.style.width = Math.round(width) + 'px';
     }
 
     function highlightMenuOption() {
         const menu = menuEl();
         if (!menu) return;
-        Array.prototype.forEach.call(menu.children, function (child, i) {
-            child.classList.toggle('is-highlighted', i === menuIndex);
+        const options = Array.prototype.slice.call(
+            menu.querySelectorAll('.ex-catalog-option'));
+        options.forEach(function (opt, i) {
+            opt.classList.toggle('is-highlighted', i === menuIndex);
         });
-        const active = menu.children[menuIndex];
+        const active = options[menuIndex];
         if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
     }
 
@@ -508,31 +823,132 @@
         const btn = document.getElementById('exChangeBtn');
         if (!ex || !menu || attemptLive(currentExerciseIndex)) return;
         if (!menu.hidden) { closeCatalogMenu(); return; }   // the caret toggles it
-        loadCatalog().then(function (list) {
-            menuItems = [{ id: null, name: '\u2014 None (use description) \u2014' }]
-                .concat(list.map(function (c) { return { id: c.id, name: c.name }; }));
-            menu.innerHTML = '';
+        Promise.all([loadCatalog(), loadPaths()]).then(function (res) {
+            const list = res[0];
+            const path = slotPath(ex);
+            // A path only narrows the picker when its steps are known: an empty
+            // path (or a failed /api/paths) falls back to the whole catalog.
+            const steps = (path && path.steps) || [];
+            const hasPool = steps.length > 0;
             const currentId = ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id;
-            menuItems.forEach(function (item, i) {
-                const opt = document.createElement('button');
-                opt.type = 'button';
-                opt.className = 'ex-catalog-option' + (item.id === currentId ? ' is-current' : '');
-                opt.setAttribute('role', 'option');
-                opt.textContent = item.name;
-                opt.addEventListener('click', function () { chooseCatalogItem(i); });
-                menu.appendChild(opt);
-            });
+            // With a path the picker only offers its steps (path order); without
+            // one, the whole catalog. A stale exercise outside the path stays
+            // visible so it can be recognised and replaced.
+            const pool = hasPool
+                ? steps.map(function (s) {
+                    const known = list.filter(function (c) {
+                        return c.id === s.catalog_exercise_id;
+                    })[0];
+                    return { id: s.catalog_exercise_id, name: s.name || (known ? known.name : ''), special: false };
+                })
+                : list.filter(function (c) { return !c.archived; })
+                    .map(function (c) {
+                        return { id: c.id, name: c.name, area: c.area || '', special: false };
+                    });
+            // Without a path the catalog is grouped by area: this is the hint that
+            // makes a long list readable.
+            menuGrouped = !hasPool;
+            menuItems = [{ id: null, name: '\u2014 No exercise \u2014', special: true }]
+                .concat(pool);
+            if (currentId != null &&
+                !menuItems.some(function (it) { return it.id === currentId; })) {
+                // Keep the exercise on the slot visible: it may be archived or,
+                // with a path, outside the pool. Hiding it would look like a loss.
+                const known = list.filter(function (c) { return c.id === currentId; })[0];
+                const suffix = known && known.archived ? ' (archived)'
+                    : (hasPool ? ' (not in path)' : '');
+                menuItems.splice(1, 0, {
+                    id: currentId,
+                    name: (known ? known.name : 'exercise ' + currentId) + suffix,
+                    area: (known && known.area) || '',
+                    special: true
+                });
+            }
+            menu.innerHTML = '';
+            if (hasPool) {
+                const head = document.createElement('div');
+                head.className = 'ex-catalog-head';
+                head.textContent = path.name + ' \u00b7 ' + steps.length +
+                    ' step' + (steps.length === 1 ? '' : 's');
+                menu.appendChild(head);
+            }
+            // A long list is unusable by scanning: the filter is the way in.
+            let search = null;
+            if (menuItems.length > SEARCH_FROM) {
+                search = document.createElement('input');
+                search.type = 'search';
+                search.className = 'ex-catalog-search';
+                search.placeholder = 'Search exercises\u2026';
+                search.autocomplete = 'off';
+                search.setAttribute('aria-label', 'Search exercises');
+                menu.appendChild(search);
+            }
+            menuSearch = search;
+            menuCurrentId = currentId;
+            if (search) {
+                search.addEventListener('input', function () { renderMenuOptions(); });
+                search.addEventListener('keydown', catalogMenuKeys);
+            }
+            renderMenuOptions();
             menu.hidden = false;
             if (btn) btn.classList.add('is-open');
-            menuIndex = Math.max(0, menuItems.findIndex(function (it) { return it.id === currentId; }));
-            highlightMenuOption();
+            // Out of the card: an absolutely-positioned panel was clipped by the
+            // assistant section and squeezed the layout while it was open.
+            if (menu.parentNode !== document.body) document.body.appendChild(menu);
             positionCatalogMenu(menu);
-            menu.focus();
+            if (search) search.focus();
+            else menu.focus();
         });
     }
 
+    // Rebuilds the visible options from the current filter (the menu header and
+    // the search box stay where they are).
+    function renderMenuOptions() {
+        const menu = menuEl();
+        if (!menu) return;
+        Array.prototype.forEach.call(
+            menu.querySelectorAll('.ex-catalog-option, .ex-catalog-empty, .ex-catalog-group'),
+            function (el) { el.parentNode.removeChild(el); });
+        const q = menuNorm(menuSearch ? menuSearch.value : '');
+        visibleItems = menuItems.filter(function (item) {
+            return !q || menuNorm(item.name).indexOf(q) >= 0;
+        });
+        let lastArea = null;
+        visibleItems.forEach(function (item, i) {
+            // Group headers, only in the catalog pool (a path has its own order
+            // and its own header above the list).
+            if (menuGrouped && !item.special) {
+                const area = item.area || '';
+                if (area !== lastArea) {
+                    const head = document.createElement('div');
+                    head.className = 'ex-catalog-group';
+                    head.textContent = area || 'No area';
+                    menu.appendChild(head);
+                    lastArea = area;
+                }
+            }
+            const opt = document.createElement('button');
+            opt.type = 'button';
+            opt.className = 'ex-catalog-option' + (item.id === menuCurrentId ? ' is-current' : '');
+            opt.setAttribute('role', 'option');
+            opt.textContent = item.name;
+            opt.addEventListener('click', function () { chooseCatalogItem(i); });
+            menu.appendChild(opt);
+        });
+        if (!visibleItems.length) {
+            const empty = document.createElement('div');
+            empty.className = 'ex-catalog-empty';
+            empty.textContent = 'No matches';
+            menu.appendChild(empty);
+        }
+        const currentAt = visibleItems.findIndex(function (it) { return it.id === menuCurrentId; });
+        menuIndex = currentAt >= 0 ? currentAt : (visibleItems.length ? 0 : -1);
+        highlightMenuOption();
+        if (menu.parentNode === document.body) positionCatalogMenu(menu);
+    }
+
     function chooseCatalogItem(i) {
-        const item = menuItems[i];
+        const item = visibleItems[i];
         if (!item) return;
         closeCatalogMenu();
         changeSlotExercise(item.id == null ? '' : String(item.id));
@@ -540,16 +956,23 @@
 
     function catalogMenuKeys(e) {
         if (e.key === 'Escape') { e.preventDefault(); closeCatalogMenu(); return; }
+        const typing = e.target && e.target.classList &&
+            e.target.classList.contains('ex-catalog-search');
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
-            if (!menuItems.length) return;
+            if (!visibleItems.length) return;
             const step = e.key === 'ArrowDown' ? 1 : -1;
-            menuIndex = (menuIndex + step + menuItems.length) % menuItems.length;
+            menuIndex = (menuIndex + step + visibleItems.length) % visibleItems.length;
             highlightMenuOption();
             return;
         }
-        if (e.key === 'Enter' || e.key === ' ') {
-            if (menuIndex >= 0) { e.preventDefault(); chooseCatalogItem(menuIndex); }
+        // Space only selects when it is not being typed into the filter.
+        const selectKey = e.key === 'Enter' || (e.key === ' ' && !typing);
+        if (selectKey) {
+            if (menuIndex >= 0 && visibleItems.length) {
+                e.preventDefault();
+                chooseCatalogItem(menuIndex);
+            }
         }
     }
 
@@ -557,10 +980,17 @@
         const ex = rActiva().ejercicios[currentExerciseIndex];
         if (!ex) return;
         const cid = value ? Number(value) : null;
+        const body = { catalog_exercise_id: cid };
+        // The catalog area is a suggestion: it only fills a slot with no area.
+        let picked = null;
+        if (cid) {
+            picked = (catalogCache || []).filter(function (c) { return c.id === cid; })[0] || null;
+            if (picked && picked.area_id && !ex.area_id) body.area_id = picked.area_id;
+        }
         fetch('/api/exercises/' + ex.id, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ catalog_exercise_id: cid })
+            body: JSON.stringify(body)
         }).then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
@@ -575,6 +1005,10 @@
                     ex.catalog_exercise = { id: found.id, name: found.name,
                                             description: found.description || '' };
                 }
+            }
+            if (body.area_id) {
+                ex.area_id = body.area_id;
+                ex.area = (picked && picked.area) || '';
             }
             renderSlotHeader();
         }).catch(function (e) {
@@ -806,7 +1240,22 @@
         titleIcon.innerHTML = GPH.icons.get('clipboard');
         const titleName = document.createElement('span');
         titleName.textContent = rActiva().nombre;
-        title.appendChild(titleIcon); title.appendChild(titleName);
+        title.appendChild(titleIcon);
+        title.appendChild(titleName);
+
+        // Park the routine: back to the welcome screen with the session on hold
+        // (Start becomes Resume). Same action as finishing? No: nothing closes.
+        const back = document.createElement('button');
+        back.type = 'button';
+        back.className = 'ex-sidebar-back';
+        back.title = 'Back to the welcome screen (the routine stays on hold)';
+        back.setAttribute('aria-label', 'Back to the welcome screen');
+        back.innerHTML = GPH.icons.get('undo');
+        back.addEventListener('click', function (event) {
+            event.stopPropagation();
+            pauseToWelcome();
+        });
+        title.appendChild(back);
         sidebar.appendChild(title);
 
         rActiva().ejercicios.forEach(function (ex, idx) {
@@ -1159,7 +1608,17 @@
             }
         });
         if (!changed) return;
-        if (ex.id != null) {
+        // The BPM and the widget settings belong to the exercise, not to the
+        // slot: they are saved on the catalog exercise, so the same material
+        // sounds the same wherever it is scheduled.
+        if (ex.catalog_exercise_id != null) {
+            fetch('/api/catalog/' + ex.catalog_exercise_id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ resources: ex.recursos })
+            }).catch(function () {});
+        } else if (ex.id != null) {
+            // Slots without a catalog exercise keep the old per-slot behaviour.
             fetch('/api/exercises/' + ex.id, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -1514,8 +1973,15 @@
         });
         sessionId = null;
         try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) {}
+        // The real wall time of the routine: pauses on the welcome screen do not
+        // count. Without tracking (a session recovered from the server) the field
+        // stays null and the server falls back to started_at -> finished_at.
+        const wall = wallTracked() ? Math.round(wallElapsedMs() / 1000) : null;
         sessionPost('POST', '/api/sessions/' + sid + '/finish',
-                    { finished_at: new Date().toISOString(), items: items });
+                    { finished_at: new Date().toISOString(), items: items,
+                      wall_seconds: wall },
+                    // The week summary on the welcome screen is now stale.
+                    function () { loadWelcomeStats(); });
     }
 
     // ---- Reconciliation with the server -----------------------------------
@@ -1629,6 +2095,7 @@
         const restore = function () {
             const savedStartTime = localStorage.getItem('practiceStartTimeVal');
             if (savedStartTime) setStartTimeLabel(savedStartTime);
+            wallContinue();
             const savedIndex = localStorage.getItem('currentExerciseIndex');
             if (savedIndex !== null) {
                 const idx = parseInt(savedIndex, 10);

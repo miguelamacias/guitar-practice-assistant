@@ -72,7 +72,10 @@
         const tabH = $('tabHistory'); if (tabH) tabH.classList.toggle('active', which === 'history');
         const tabE = $('tabExercises'); if (tabE) tabE.classList.toggle('active', which === 'exercises');
         if (which === 'history' && GPH.history) GPH.history.show();
-        if (which === 'exercises' && GPH.exercises) GPH.exercises.show();
+        if (which === 'exercises' && GPH.exercises) {
+            GPH.exercises.show();
+            if (GPH.paths) GPH.paths.show();
+        }
         if (which === 'about' && GPH.areas) GPH.areas.load();
     }
 

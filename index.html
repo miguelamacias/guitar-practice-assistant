@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%B8</text></svg>">
     <title>Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/styles.css?v=110">
+    <link rel="stylesheet" href="css/styles.css?v=123">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
@@ -14,11 +14,11 @@
     <script defer src="js/audioEngine.js?v=12"></script>
     <script defer src="js/players.js?v=8"></script>
     <script defer src="js/scrobbler.js?v=3"></script>
-    <script defer src="js/icons.js?v=12"></script>
+    <script defer src="js/icons.js?v=13"></script>
     <script defer src="js/ui.js?v=4"></script>
     <script defer src="js/metronome.js?v=6"></script>
     <script defer src="js/drumMachine.js?v=14"></script>
-    <script defer src="js/practiceAssistant.js?v=72"></script>
+    <script defer src="js/practiceAssistant.js?v=87"></script>
     <script defer src="js/api.js?v=1"></script>
     <script defer src="js/settings.js?v=2"></script>
     <script defer src="js/prefs.js?v=1"></script>
@@ -73,24 +73,47 @@
             <h2 class="assistant-title">Practice Assistant</h2>
             <div class="assistant-container assistant-content">
 
-                <!-- 1. Welcome screen -->
+                <!-- 1. Welcome screen: the content sits where the practice view
+                     puts its main column, and the left strip is as wide as the
+                     exercise list, so switching between the two states only
+                     changes what is inside the same frame. -->
                 <div id="welcomeCard" class="card-panel welcome-card">
-            <!-- Discreet shortcut to the practice log: opens the Manager on History -->
-            <a id="welcomeHistBtn" class="welcome-hist" href="manager.html?view=history" target="_blank"
-               title="Practice history" aria-label="Practice history">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-                    <path d="M5.5 20V11M12 20V4.5M18.5 20V14.5"></path>
-                </svg>
-            </a>
-                    <div id="welcomeRoutineName" class="welcome-name">Loading routine...</div>
-                    <div id="welcomeRoutineDesc" class="welcome-desc">Ready to start your practice routine?</div>
-                    <button id="startRoutineBtn" class="start-btn">
-                        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="12" cy="12" r="8.4"></circle>
-                            <path d="M10.2 8.6l5.2 3.4-5.2 3.4z" fill="currentColor" stroke="none"></path>
-                        </svg>
-                        Start Practicing
-                    </button>
+                    <aside class="welcome-aside">
+                        <div class="welcome-aside-head">
+                            <!-- Discreet shortcut to the practice log -->
+                            <a id="welcomeHistBtn" class="welcome-hist" href="manager.html?view=history"
+                               target="_blank" title="Practice history" aria-label="Practice history">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+                                     stroke-linecap="round" aria-hidden="true">
+                                    <path d="M5.5 20V11M12 20V4.5M18.5 20V14.5"></path>
+                                </svg>
+                            </a>
+                            <span class="welcome-aside-label">Last 7 days</span>
+                        </div>
+                        <div class="welcome-stats">
+                            <div id="welcomeStatTime" class="welcome-stat-time">&nbsp;</div>
+                            <div id="welcomeStatLine" class="welcome-stat-line"></div>
+                            <div id="welcomeBars" class="welcome-bars" aria-hidden="true"></div>
+                            <div id="welcomeStatMost" class="welcome-stat-most"></div>
+                            <!-- One square per day, 30 days: the same idea as the
+                                 Manager calendar, small enough to fit here. -->
+                            <div class="welcome-month">
+                                <span class="welcome-aside-label">Last 30 days</span>
+                                <div id="welcomeMonth" class="welcome-month-grid"></div>
+                            </div>
+                        </div>
+                    </aside>
+                    <div class="welcome-main">
+                        <div id="welcomeRoutineName" class="welcome-name">Loading routine...</div>
+                        <div id="welcomeRoutineDesc" class="welcome-desc">Ready to start your practice routine?</div>
+                        <button id="startRoutineBtn" class="start-btn">
+                            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="8.4"></circle>
+                                <path d="M10.2 8.6l5.2 3.4-5.2 3.4z" fill="currentColor" stroke="none"></path>
+                            </svg>
+                            <span id="startRoutineLabel">Start Practicing</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 2. Current exercise card -->
