@@ -24,7 +24,8 @@ from db import (
     add_cell_attempt, get_cell_stats,
     get_song_cache, set_song_cache,
     table_counts, clear_tables,
-    start_session, upsert_session_item, finish_session, list_sessions,
+    start_session, upsert_session_item, append_session_item, finish_session, list_sessions,
+    set_session_item_area,
     session_stats, _session_full, seed_sessions, active_session,
     export_csv, get_settings_prefix,
     AREAS_KEY, areas, clean_areas, areas_in_use,
@@ -406,7 +407,8 @@ class Handler(SimpleHTTPRequestHandler):
                     date_from=(qs.get('from') or [None])[0],
                     date_to=(qs.get('to') or [None])[0],
                     limit=int((qs.get('limit') or ['50'])[0] or 50),
-                    offset=int((qs.get('offset') or ['0'])[0] or 0)))
+                    offset=int((qs.get('offset') or ['0'])[0] or 0),
+                    kind=(qs.get('kind') or [None])[0]))
             if path == '/api/sessions/stats' and method == 'GET':
                 qs = parse_qs(urlparse(self.path).query)
                 return self._send_json(session_stats(
@@ -503,6 +505,24 @@ class Handler(SimpleHTTPRequestHandler):
                 if 'error' in r:
                     return self._send_json(r, 409)
                 return self._send_json(r)
+            m = re.fullmatch(r'/api/sessions/(\d+)/item/(\d+)/area', path)
+            if m and method in ('PUT', 'POST'):
+                r = set_session_item_area(conn, int(m.group(1)), int(m.group(2)),
+                                          data.get('area_id'))
+                if r is None:
+                    return self._send_json({'error': 'not_found'}, 404)
+                if 'error' in r:
+                    return self._send_json(r, 404 if r['error'] == 'not_found'
+                                           else (422 if r['error'] == 'unknown_area' else 409))
+                return self._send_json(r)
+            m = re.fullmatch(r'/api/sessions/(\d+)/items', path)
+            if m and method == 'POST':
+                r = append_session_item(conn, int(m.group(1)), data)
+                if r is None:
+                    return self._send_json({'error': 'not_found'}, 404)
+                if 'error' in r:
+                    return self._send_json(r, 409)
+                return self._send_json(r, 201)
             m = re.fullmatch(r'/api/sessions/(\d+)/finish', path)
             if m and method == 'POST':
                 r = finish_session(conn, int(m.group(1)), data)
@@ -691,7 +711,7 @@ class Handler(SimpleHTTPRequestHandler):
     def _is_blocked(self, path):
         p = unquote(path).lower()
         return p.endswith('.db') or p.endswith('.db-wal') or p.endswith('.db-shm') \
-            or p.endswith('.py') or p.endswith('seed.json')
+            or p.endswith('.py')
 
     def _serve_media(self):
         self._cache_ok = True

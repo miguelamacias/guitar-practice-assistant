@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))          # ...\PracticeAssistant
 ROOT = os.path.dirname(HERE)                                # ...\Guitar Resources
 DB_PATH = os.path.join(HERE, 'practice.db')
-SEED_PATH = os.path.join(HERE, 'seed.json')
+MAIN_DB_PATH = DB_PATH          # the real database: backups belong to it only
 DEFAULT_PORT = 8001
 
 # Controlled vocabulary for slot areas (settings key AREAS_KEY). The defaults are
@@ -195,6 +195,8 @@ CREATE TABLE IF NOT EXISTS routine_sessions (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id        INTEGER,
     routine_name      TEXT NOT NULL DEFAULT '',
+    kind              TEXT NOT NULL DEFAULT 'routine',  -- routine | free
+    note              TEXT NOT NULL DEFAULT '',         -- free practice intent
     status            TEXT NOT NULL DEFAULT 'open',   -- open | finished | abandoned
     started_at        TEXT NOT NULL,                  -- UTC 'YYYY-MM-DD HH:MM:SS'
     finished_at       TEXT,
@@ -228,6 +230,7 @@ CREATE TABLE IF NOT EXISTS routine_session_items (
     UNIQUE(session_id, position)
 );
 CREATE INDEX IF NOT EXISTS idx_routine_sessions_started ON routine_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_kind ON routine_sessions(kind);
 CREATE INDEX IF NOT EXISTS idx_session_items_session ON routine_session_items(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_items_name ON routine_session_items(name);
 CREATE INDEX IF NOT EXISTS idx_catalog_exercises_name ON catalog_exercises(name);
@@ -255,19 +258,26 @@ def set_db_path(path):
 # tolerate their absence so the debug endpoints work with any database).
 SESSION_TABLES = ('routine_sessions', 'routine_session_items')
 
-# How many daily copies of practice.db are kept next to it.
+# Daily copies live in their own folder. Only the daily ones rotate: the
+# hand-made "-pre-*" snapshots taken before a migration are never deleted.
+BACKUP_DIR = os.path.join(HERE, 'backups')
 BACKUP_KEEP = 7
+BACKUP_RE = re.compile(r'^practice-backup-\d{8}\.db$')
 
 
 def backup_db(keep=BACKUP_KEEP):
-    """Daily consolidated copy of practice.db (VACUUM INTO + rotation).
+    """Daily consolidated copy of the real practice.db (VACUUM INTO + rotation).
 
-    Sandbox databases are skipped: they are throw-away by definition.
+    Sandbox copies are skipped: they are throw-away by definition.
     """
-    if not os.path.basename(DB_PATH).startswith('practice.db'):
+    if os.path.abspath(DB_PATH) != os.path.abspath(MAIN_DB_PATH):
         return None
-    folder = os.path.dirname(DB_PATH)
-    target = os.path.join(folder, 'practice-backup-%s.db' % datetime.now().strftime('%Y%m%d'))
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+    except OSError:
+        return None
+    target = os.path.join(BACKUP_DIR,
+                          'practice-backup-%s.db' % datetime.now().strftime('%Y%m%d'))
     if os.path.exists(target):
         return target
     try:
@@ -279,11 +289,10 @@ def backup_db(keep=BACKUP_KEEP):
             conn.close()
     except sqlite3.Error:
         return None
-    files = sorted(f for f in os.listdir(folder)
-                   if f.startswith('practice-backup-') and f.endswith('.db'))
+    files = sorted(f for f in os.listdir(BACKUP_DIR) if BACKUP_RE.match(f))
     for name in files[:-max(1, int(keep))]:
         try:
-            os.remove(os.path.join(folder, name))
+            os.remove(os.path.join(BACKUP_DIR, name))
         except OSError:
             pass
     return target
@@ -360,7 +369,6 @@ def init_db():
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
     _migrate(conn)
-    seed_if_empty(conn)
     conn.commit()
     conn.close()
     backup_db()
@@ -399,7 +407,11 @@ def _migrate(conn):
     add_cols('routine_sessions', [('real_seconds', 'INTEGER NOT NULL DEFAULT 0'),
                                   ('wall_seconds', 'INTEGER NOT NULL DEFAULT 0'),
                                   ('n_done', 'INTEGER NOT NULL DEFAULT 0'),
-                                  ('n_partial', 'INTEGER NOT NULL DEFAULT 0')])
+                                  ('n_partial', 'INTEGER NOT NULL DEFAULT 0'),
+                                  # Free practice: sessions with no routine and a
+                                  # note about what they were for.
+                                  ('kind', "TEXT NOT NULL DEFAULT 'routine'"),
+                                  ('note', "TEXT NOT NULL DEFAULT ''")])
     # Slots get an area and a pointer into the global exercise catalog; session
     # items keep a snapshot of both so the history survives renames/deletions.
     # Those columns are nullable-with-NULL-default, the only shape SQLite accepts
@@ -451,47 +463,6 @@ def _migrate(conn):
         )
         conn.execute('DROP TABLE fretboard_cell_stats_old')
         conn.commit()
-
-
-def seed_if_empty(conn):
-    count = conn.execute('SELECT COUNT(*) FROM routines').fetchone()[0]
-    if count > 0:
-        return
-    if not os.path.isfile(SEED_PATH):
-        return
-    with open(SEED_PATH, encoding='utf-8') as f:
-        seed = json.load(f)
-
-    rpos = 0
-    for r in seed.get('routines', []):
-        cur = conn.execute(
-            'INSERT INTO routines(name, description, is_active, position) VALUES(?,?,?,?)',
-            (r.get('name', ''), r.get('description', ''), 1 if r.get('is_active') else 0, rpos),
-        )
-        rid = cur.lastrowid
-        for i, e in enumerate(r.get('exercises', [])):
-            conn.execute(
-                'INSERT INTO exercises(routine_id, name, duration_seconds, position) '
-                'VALUES(?,?,?,?)',
-                (rid, e.get('name', ''), int(e.get('duration_seconds', 0)), i),
-            )
-        rpos += 1
-
-    fpos = 0
-    for key, info in seed.get('songSources', {}).items():
-        folder = info.get('folder', '')
-        name = os.path.basename(folder) or folder
-        cur = conn.execute(
-            'INSERT INTO song_folders(name, rel_path, source_key, position) VALUES(?,?,?,?)',
-            (name, folder, key, fpos),
-        )
-        fid = cur.lastrowid
-        for i, s in enumerate(info.get('songs', [])):
-            conn.execute(
-                'INSERT INTO songs(folder_id, title, rel_path, position) VALUES(?,?,?,?)',
-                (fid, s.get('title', ''), s.get('rel_path', ''), i),
-            )
-        fpos += 1
 
 
 # ------------------------- API (lectura) -------------------------
@@ -1886,11 +1857,43 @@ def _utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
 
 
+def set_session_item_area(conn, sid, position, area_id):
+    """Area a free-practice material counts in, for this session only.
+
+    The catalog exercise is never touched: the user chose the area for the log,
+    not to classify the exercise. A routine item keeps the area of its slot.
+    """
+    row = conn.execute('SELECT status, kind FROM routine_sessions WHERE id=?',
+                       (sid,)).fetchone()
+    if row is None:
+        return None
+    if row['status'] != 'open':
+        return {'error': 'session_closed'}
+    if (row['kind'] or 'routine') != 'free':
+        return {'error': 'not_free'}
+    area = str(area_id or '').strip()
+    if area and area not in area_map(conn):
+        return {'error': 'unknown_area'}
+    try:
+        position = int(position)
+    except (TypeError, ValueError):
+        return {'error': 'not_found'}
+    cur = conn.execute(
+        'UPDATE routine_session_items SET area_id=? WHERE session_id=? AND position=?',
+        (area, sid, position))
+    if cur.rowcount == 0:
+        return {'error': 'not_found'}
+    conn.commit()
+    return {'ok': True, 'session_id': sid, 'position': position, 'area_id': area}
+
+
 def _session_row(row):
     return {
         'id': row['id'],
         'routine_id': row['routine_id'],
         'routine_name': row['routine_name'] or '',
+        'kind': row['kind'] if 'kind' in row.keys() else 'routine',
+        'note': row['note'] if 'note' in row.keys() else '',
         'status': row['status'],
         'started_at': _db_to_iso(row['started_at']),
         'finished_at': _db_to_iso(row['finished_at']),
@@ -1948,6 +1951,9 @@ def _apply_item(conn, sid, item):
     The area/exercise snapshot is captured from the slot on the first "touched"
     write (Play, mark done, any time), kept afterwards, and dropped when the
     client resets the item to zero. See docs/SLOTS_AND_EXERCISES_PLAN.md 6.1.
+
+    A free-practice material has no slot: its area and catalog link are what the
+    user picked, so resetting discards the attempt but keeps them.
     """
     state = item.get('state') or 'pending'
     if state not in SESSION_STATES:
@@ -1957,16 +1963,18 @@ def _apply_item(conn, sid, item):
     elapsed = max(0, int(item.get('elapsed_seconds') or 0))
     started = _iso_to_db(item.get('started_at'))
     row = conn.execute(
-        'SELECT exercise_id, area_id, catalog_exercise_id, catalog_name'
-        ' FROM routine_session_items WHERE session_id=? AND position=?',
-        (sid, position)).fetchone()
+        'SELECT i.exercise_id, i.area_id, i.catalog_exercise_id, i.catalog_name,'
+        " COALESCE(s.kind, 'routine') AS kind"
+        ' FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
+        ' WHERE i.session_id=? AND i.position=?', (sid, position)).fetchone()
     if row is None:
         return False
+    free = (row['kind'] or 'routine') == 'free'
     area_id = row['area_id'] or ''
     cid = row['catalog_exercise_id']
     cname = row['catalog_name'] or ''
     touched = started is not None or state != 'pending' or played > 0 or elapsed > 0
-    if not touched:
+    if not touched and not free:
         # Reset: the attempt is discarded, so is its snapshot.
         area_id, cid, cname = '', None, ''
     elif not area_id and cid is None and not cname and row['exercise_id']:
@@ -2073,27 +2081,69 @@ def _close_session(conn, sid, finished_at, wall_seconds=None):
 
 
 def start_session(conn, data):
-    """Opens a session with a snapshot of the routine's exercises."""
+    """Opens a session with a snapshot of the routine's exercises.
+
+    `kind` is 'routine' or 'free'. A free practice session has no routine: the
+    client sends the materials it is working on, without a plan, and a note with
+    the intent of the session.
+    """
     items = data.get('items') or []
+    kind = 'free' if str(data.get('kind') or '').strip() == 'free' else 'routine'
+    note = str(data.get('note') or '').strip()[:2000]
     started = _iso_to_db(data.get('started_at')) or _utc_now()
     # A new routine means the previous one is over: any open row gets closed here,
     # and rows older than 8 h are swept too (a session left open never finishes).
     for row in conn.execute("SELECT id FROM routine_sessions WHERE status='open'").fetchall():
         _abandon_session(conn, row['id'])
     planned = sum(max(0, int(i.get('planned_seconds') or 0)) for i in items)
+    name = (data.get('routine_name') or '').strip()
+    if kind == 'free' and not name:
+        name = 'Free practice'
     cur = conn.execute(
-        "INSERT INTO routine_sessions (routine_id, routine_name, status, started_at, planned_seconds, n_total)"
-        " VALUES (?,?, 'open', ?, ?, ?)",
-        (data.get('routine_id'), (data.get('routine_name') or '').strip(), started, planned, len(items)))
+        "INSERT INTO routine_sessions (routine_id, routine_name, kind, note, status,"
+        " started_at, planned_seconds, n_total) VALUES (?,?,?,?, 'open', ?, ?, ?)",
+        (None if kind == 'free' else data.get('routine_id'), name, kind, note,
+         started, planned, len(items)))
     sid = cur.lastrowid
     for pos, it in enumerate(items):
+        # The area and the catalog exercise are snapshotted here: a free material
+        # has no slot to read them from later.
         conn.execute(
-            'INSERT INTO routine_session_items (session_id, position, exercise_id, name, planned_seconds)'
-            ' VALUES (?,?,?,?,?)',
+            'INSERT INTO routine_session_items (session_id, position, exercise_id, name,'
+            ' planned_seconds, catalog_exercise_id, catalog_name, area_id)'
+            ' VALUES (?,?,?,?,?,?,?,?)',
             (sid, pos, it.get('exercise_id'), (it.get('name') or '').strip(),
-             max(0, int(it.get('planned_seconds') or 0))))
+             max(0, int(it.get('planned_seconds') or 0)),
+             it.get('catalog_exercise_id'),
+             (it.get('catalog_name') or '').strip(),
+             (it.get('area_id') or '').strip()))
     conn.commit()
     return _session_full(conn, sid)
+
+
+def append_session_item(conn, sid, data):
+    """Adds one material to an open session (free practice: "+ Add material")."""
+    row = conn.execute('SELECT status, kind FROM routine_sessions WHERE id=?',
+                       (sid,)).fetchone()
+    if row is None:
+        return None
+    if row['status'] != 'open':
+        return {'error': 'session_closed'}
+    pos = conn.execute(
+        'SELECT COALESCE(MAX(position), -1) + 1 FROM routine_session_items'
+        ' WHERE session_id=?', (sid,)).fetchone()[0]
+    conn.execute(
+        'INSERT INTO routine_session_items (session_id, position, exercise_id, name,'
+        ' planned_seconds, catalog_exercise_id, catalog_name, area_id)'
+        ' VALUES (?,?,?,?,?,?,?,?)',
+        (sid, pos, data.get('exercise_id'), (data.get('name') or '').strip(),
+         max(0, int(data.get('planned_seconds') or 0)),
+         data.get('catalog_exercise_id'),
+         (data.get('catalog_name') or '').strip(),
+         (data.get('area_id') or '').strip()))
+    conn.execute('UPDATE routine_sessions SET n_total=? WHERE id=?', (pos + 1, sid))
+    conn.commit()
+    return {'ok': True, 'session_id': sid, 'position': pos}
 
 
 
@@ -2112,6 +2162,37 @@ def upsert_session_item(conn, sid, data):
             'state': data.get('state') or 'pending'}
 
 
+def _insert_missing_item(conn, sid, item):
+    """Creates the row of an item that never reached the session.
+
+    A free material can be added while the session row is still being created
+    (the app started offline and the start request is still queued): those items
+    exist only in the client until the finish payload arrives.
+    """
+    name = (item.get('name') or '').strip()
+    if not name:
+        return False
+    try:
+        position = int(item.get('position'))
+    except (TypeError, ValueError):
+        return False
+    if position < 0:
+        return False
+    conn.execute(
+        'INSERT INTO routine_session_items (session_id, position, exercise_id, name,'
+        ' planned_seconds, catalog_exercise_id, catalog_name, area_id)'
+        ' VALUES (?,?,?,?,?,?,?,?)',
+        (sid, position, item.get('exercise_id'), name,
+         max(0, int(item.get('planned_seconds') or 0)),
+         item.get('catalog_exercise_id'),
+         (item.get('catalog_name') or '').strip(),
+         (item.get('area_id') or '').strip()))
+    conn.execute('UPDATE routine_sessions SET n_total ='
+                 ' (SELECT COUNT(*) FROM routine_session_items WHERE session_id=?)'
+                 ' WHERE id=?', (sid, sid))
+    return True
+
+
 def finish_session(conn, sid, data):
     """Closes the session. The items sent here win (they are the final states)."""
     row = conn.execute('SELECT status FROM routine_sessions WHERE id=?', (sid,)).fetchone()
@@ -2120,7 +2201,12 @@ def finish_session(conn, sid, data):
     if row['status'] == 'finished':
         return _session_full(conn, sid)          # idempotent
     for item in (data.get('items') or []):
-        _apply_item(conn, sid, item)
+        if not _apply_item(conn, sid, item) and _insert_missing_item(conn, sid, item):
+            _apply_item(conn, sid, item)
+    # The note of a free session can still arrive with the last write.
+    if 'note' in data:
+        conn.execute('UPDATE routine_sessions SET note=? WHERE id=?',
+                     (str(data.get('note') or '').strip()[:2000], sid))
     # The client tracks the wall time of the routine (it can be parked on the
     # welcome screen), so its figure wins over the start -> finish span.
     wall = data.get('wall_seconds')
@@ -2132,7 +2218,7 @@ def finish_session(conn, sid, data):
     return _session_full(conn, sid)
 
 
-def list_sessions(conn, date_from=None, date_to=None, limit=50, offset=0):
+def list_sessions(conn, date_from=None, date_to=None, limit=50, offset=0, kind=None):
     sweep_open_sessions(conn)
     where = ' WHERE 1=1'
     args = []
@@ -2142,6 +2228,9 @@ def list_sessions(conn, date_from=None, date_to=None, limit=50, offset=0):
     if date_to:
         where += ' AND started_at <= ?'
         args.append(_iso_to_db(date_to) or date_to)
+    if kind in ('routine', 'free'):
+        where += ' AND kind = ?'
+        args.append(kind)
     total = conn.execute('SELECT COUNT(*) n FROM routine_sessions' + where, args).fetchone()['n']
     limit = max(1, min(500, int(limit)))
     offset = max(0, int(offset))
@@ -2215,7 +2304,8 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
         " WHERE r.started_at >= ? AND COALESCE(e.name, i.name, '') <> ''"
         " AND i.state <> 'pending'"
         " GROUP BY COALESCE(i.exercise_id, -i.id)"
-        " HAVING n >= 2 ORDER BY (SUM(i.state='skipped') * 1.0 / COUNT(*)) DESC, s DESC LIMIT 5",
+        " HAVING n >= 2 AND SUM(i.state='skipped') > 0"
+        " ORDER BY (SUM(i.state='skipped') * 1.0 / COUNT(*)) DESC, s DESC LIMIT 5",
         (since,)).fetchall()]
     # Rankings. Both use the real clock (elapsed_seconds) so the slot and the
     # exercise versions mean the same thing and agree with the Breakdown.
@@ -2251,7 +2341,8 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
         " JOIN routine_sessions r ON r.id = i.session_id"
         " LEFT JOIN catalog_exercises c ON c.id = i.catalog_exercise_id"
         " WHERE r.started_at >= ? AND i.catalog_exercise_id IS NOT NULL"
-        " GROUP BY i.catalog_exercise_id HAVING n >= 2"
+        " AND i.state <> 'pending'"
+        " GROUP BY i.catalog_exercise_id HAVING n >= 2 AND SUM(i.state='skipped') > 0"
         " ORDER BY (SUM(i.state='skipped') * 1.0 / COUNT(*)) DESC, s DESC LIMIT 5",
         (since,)).fetchall()]
     finished = t['fin']
@@ -2321,6 +2412,35 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
                    ' WHERE s.started_at >= ? AND i.elapsed_seconds > 0 ' + extra +
                    ' GROUP BY i.exercise_id ORDER BY seconds DESC',
                    [since] + fargs).fetchall()]
+    # ---- Free practice and session shape -----------------------------------
+    # The time of a free session is real practice, so it counts in every total.
+    # What differs is the *shape*: a routine spreads the time over several
+    # materials, a free session usually hammers one. Both figures are computed
+    # from the log (nothing is declared by hand, no weight is applied to time).
+    by_kind = [{'kind': r['k'] or 'routine', 'sessions': r['n'],
+                'real_seconds': r['sec'] or 0}
+               for r in conn.execute(
+                   "SELECT COALESCE(kind, 'routine') k, COUNT(*) n,"
+                   " COALESCE(SUM(real_seconds),0) sec"
+                   " FROM routine_sessions WHERE started_at >= ?"
+                   " GROUP BY COALESCE(kind, 'routine')", (since,)).fetchall()]
+    free_seconds = sum(k['real_seconds'] for k in by_kind if k['kind'] == 'free')
+    real_total = sum(k['real_seconds'] for k in by_kind)
+    # How concentrated each session was in its top material, weighted by time:
+    # ~1.0 means one exercise took the whole session.
+    focus_sum, focus_weight = 0.0, 0
+    coverage_sum, coverage_sessions = 0, 0
+    for r in conn.execute(
+            'SELECT i.session_id, MAX(i.elapsed_seconds) mx, SUM(i.elapsed_seconds) tot,'
+            " COUNT(DISTINCT NULLIF(i.area_id, '')) areas"
+            ' FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
+            ' WHERE s.started_at >= ? AND i.elapsed_seconds > 0'
+            ' GROUP BY i.session_id', (since,)).fetchall():
+        if r['tot'] and r['tot'] > 0:
+            focus_sum += (r['mx'] or 0) / r['tot'] * r['tot']
+            focus_weight += r['tot']
+        coverage_sum += r['areas'] or 0
+        coverage_sessions += 1
     return {
         'range_days': days,
         'totals': {
@@ -2331,7 +2451,12 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
             'avg_real_seconds': round(t['real'] / finished) if finished else 0,
             'adherence': round(finished / (finished + t['ab']), 3) if (finished + t['ab']) else None,
             'days_practised': days_practised, 'days_total': days_total,
+            'free_seconds': free_seconds,
+            'free_share': round(free_seconds / real_total, 3) if real_total else 0,
         },
+        'by_kind': by_kind,
+        'focus': round(focus_sum / focus_weight, 3) if focus_weight else None,
+        'coverage': round(coverage_sum / coverage_sessions, 2) if coverage_sessions else None,
         'states': {'timed': t['nt'], 'untimed': t['nu'], 'skipped': t['ns'],
                    'done': t['nd'], 'partial': t['npart'],
                    'total': t['nt'] + t['nu'] + t['ns']},

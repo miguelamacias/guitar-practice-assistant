@@ -31,7 +31,10 @@
     // An exercise only counts as "timed" when at least half of its time was played.
     const TIMED_MIN_RATIO = 0.5;
 
-    function rActiva() { return (GPH.data && GPH.data.activeRoutine) || { nombre: '', ejercicios: [] }; }
+    function rActiva() {
+        if (freeMode && freeSession) return freeSession;
+        return (GPH.data && GPH.data.activeRoutine) || { nombre: '', ejercicios: [] };
+    }
 
     // True when the dry-run flag is on (js/debug.js): nothing must be recorded.
     function debugMode() { return !!(GPH.debug && GPH.debug.on); }
@@ -268,9 +271,373 @@
         // hideTip() also drops a pending timer, so leaving or scrolling cancels it.
         el.addEventListener('mouseleave', hideTip);
         // Keyboard: focusing is already deliberate, so there is nothing to wait for.
-        el.addEventListener('focus', openNow);
-        el.addEventListener('blur', hideTip);
+        // A control that opens a menu on click opts out (`focus: false`): its focus
+        // is part of the click, not a request for the hint.
+        if (!opts || opts.focus !== false) {
+            el.addEventListener('focus', openNow);
+            el.addEventListener('blur', hideTip);
+        }
         window.addEventListener('scroll', hideTip, { passive: true });
+    }
+
+    // ---- Free practice ----------------------------------------------------
+    // A session with no routine: a throwaway "routine" holding the materials
+    // worked on, driven by the same card. The timer counts up, each new material
+    // starts at zero and the ones left behind keep their time in the list.
+    const FREE_KEY = 'gphFreeSession';
+    let freeMode = false;
+    let freeSession = null;
+    let freeNote = '';
+    let assistantWired = false;
+    let freeWired = false;
+
+    function freeElapsedSeconds(idx) {
+        const running = (idx === currentExerciseIndex && clockRunSince !== null)
+            ? (Date.now() - clockRunSince) / 1000 : 0;
+        return (clockSet[idx] || 0) + running;
+    }
+
+    function fmtStopwatch(seconds) {
+        const s = Math.max(0, Math.floor(seconds || 0));
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        if (h > 0) {
+            return h + ':' + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+        }
+        return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+    }
+
+    function freeTotalSeconds() {
+        let total = 0;
+        (rActiva().ejercicios || []).forEach(function (ex, i) { total += freeElapsedSeconds(i); });
+        return total;
+    }
+
+    function freeItemFromCatalog(cat) {
+        return {
+            id: null,
+            nombre: cat.name || 'Exercise',
+            tiempo: 0,                       // no target: the timer counts up
+            area_id: cat.area_id || '',
+            area: cat.area || '',
+            catalog_exercise_id: cat.id,
+            catalog_exercise: { id: cat.id, name: cat.name || '', description: cat.description || '' },
+            catalog_path_id: null,
+            catalog_path: null,
+            recursos: cat.resources || [],
+        };
+    }
+
+    function saveFreeSnapshot() {
+        if (!freeMode || !freeSession) return;
+        try {
+            localStorage.setItem(FREE_KEY, JSON.stringify({
+                note: freeNote,
+                idx: currentExerciseIndex,
+                items: (freeSession.ejercicios || []).map(function (ex, i) {
+                    return {
+                        catalog_id: ex.catalog_exercise_id,
+                        name: ex.nombre,
+                        catalog_name: (ex.catalog_exercise && ex.catalog_exercise.name) || ex.nombre,
+                        area_id: ex.area_id,
+                        area: ex.area,
+                        recursos: ex.recursos || [],
+                        seconds: Math.round(clockSet[i] || 0),
+                        started_at: clockStartedSet[i] || null,
+                    };
+                }),
+            }));
+        } catch (e) { /* storage blocked: the session still runs */ }
+    }
+
+    function clearFreeSnapshot() {
+        try { localStorage.removeItem(FREE_KEY); } catch (e) { /* noop */ }
+    }
+
+    function loadFreeSnapshot() {
+        try {
+            const raw = JSON.parse(localStorage.getItem(FREE_KEY) || 'null');
+            if (!raw || !Array.isArray(raw.items) || !raw.items.length) return null;
+            return raw;
+        } catch (e) { return null; }
+    }
+
+    function restoreFreeSession(snap) {
+        freeMode = true;
+        freeNote = snap.note || '';
+        clockSet = {};
+        clockStartedSet = {};
+        freeSession = {
+            id: null, nombre: 'Free practice', descripcion: '', kind: 'free',
+            finish_kind: '', finish_url: '', finish_label: '', finish_bpm: 0,
+            ejercicios: snap.items.map(function (it, i) {
+                clockSet[i] = it.seconds || 0;
+                if (it.started_at) clockStartedSet[i] = it.started_at;
+                return {
+                    id: null,
+                    nombre: it.name || 'Exercise',
+                    tiempo: 0,
+                    area_id: it.area_id || '',
+                    area: it.area || '',
+                    catalog_exercise_id: it.catalog_id == null ? null : it.catalog_id,
+                    catalog_exercise: it.catalog_id == null ? null
+                        : { id: it.catalog_id, name: it.catalog_name || it.name || '', description: '' },
+                    catalog_path_id: null,
+                    catalog_path: null,
+                    recursos: it.recursos || [],
+                };
+            }),
+        };
+        currentExerciseIndex = Math.min(snap.idx || 0, freeSession.ejercicios.length - 1);
+        applyFreeUi();
+    }
+
+    // The bits of the card that only exist in one of the two modes.
+    function applyFreeUi() {
+        const card = document.getElementById('exerciseCard');
+        if (card) card.classList.toggle('is-free', freeMode);
+        const areaSpan = document.getElementById('exAreaInline');
+        if (areaSpan) areaSpan.hidden = freeMode;
+        renderAreaPick();
+        const noteWrap = document.getElementById('freeNoteWrap');
+        const noteEl = document.getElementById('freeNote');
+        if (noteWrap) noteWrap.hidden = !freeMode;
+        if (noteEl && freeMode) noteEl.value = freeNote;
+        const addBtn = document.querySelector('#exerciseListSidebar .ex-add-row');
+        const finishBtn = document.getElementById('exFinishFreeBtn');
+        const nextBtn = document.getElementById('exNextBtn');
+        const skipBtn = document.getElementById('exSkipBtn');
+        if (addBtn) addBtn.hidden = !freeMode;
+        if (finishBtn) finishBtn.hidden = !freeMode;
+        if (nextBtn) nextBtn.hidden = freeMode;
+        if (skipBtn) skipBtn.hidden = freeMode;
+    }
+
+    // The free-practice controls: welcome button, "+ Add material", "Finish
+    // session" and the session note. Bound once.
+    function wireFreePractice() {
+        if (freeWired) return;
+        freeWired = true;
+        const freeBtn = document.getElementById('freePracticeBtn');
+        if (freeBtn) {
+            freeBtn.addEventListener('click', function () {
+                openCatalogMenu('start');
+            });
+        }
+        // The "+ Add material" row is created with the list, so it carries its
+        // own handler (see renderExerciseSidebar).
+        const finishBtn = document.getElementById('exFinishFreeBtn');
+        if (finishBtn) finishBtn.addEventListener('click', finishFreeSession);
+        const noteEl = document.getElementById('freeNote');
+        if (noteEl) {
+            noteEl.addEventListener('input', function () {
+                freeNote = this.value;
+                saveFreeSnapshot();
+            });
+        }
+        // Hints use the app's own panel (`.ex-tip`), never the native `title`:
+        // both of these open a picker on click, so focus must not pop the hint.
+        const freeBtnEl = document.getElementById('freePracticeBtn');
+        if (freeBtnEl) {
+            freeBtnEl.removeAttribute('title');
+            freeBtnEl.classList.add('has-tip');
+            wireTip(freeBtnEl, function () {
+                return buildLineTip('Practise an exercise without a routine');
+            }, { focusable: false, focus: false });
+        }
+        const areaPickEl = document.getElementById('exAreaPick');
+        if (areaPickEl) {
+            areaPickEl.removeAttribute('title');
+            areaPickEl.classList.add('has-tip');
+            wireTip(areaPickEl, function () {
+                return buildLineTip('Area this session counts in');
+            }, { focusable: false, focus: false });
+        }
+        // The area of a free material: same picker as the exercise, same menu.
+        const areaPick = document.getElementById('exAreaPick');
+        if (areaPick) {
+            areaPick.addEventListener('click', function () { openCatalogMenu('area'); });
+        }
+        const areaCaret = document.getElementById('exAreaCaret');
+        if (areaCaret) {
+            areaCaret.addEventListener('click', function () { openCatalogMenu('area'); });
+        }
+    }
+
+    // Practice areas, for the picker of a free material. Read from the same
+    // setting the Manager edits, so a new area shows up here too.
+    let areasList = null;
+
+    function loadAreas() {
+        if (areasList) return Promise.resolve(areasList);
+        return fetch('/api/settings/practice_areas', { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : { value: '[]' }; })
+            .then(function (d) {
+                let list = [];
+                try { list = JSON.parse((d && d.value) || '[]'); } catch (e) { list = []; }
+                if (!Array.isArray(list)) list = [];
+                areasList = list;
+                return list;
+            })
+            .catch(function () { return []; });     // not cached: retried later
+    }
+
+    function areaLabel(id) {
+        const found = (areasList || []).filter(function (a) { return a.id === id; })[0];
+        return found ? found.label : '';
+    }
+
+    function renderAreaPick() {
+        const btn = document.getElementById('exAreaPick');
+        const caret = document.getElementById('exAreaCaret');
+        if (btn) {
+            const ex = rActiva().ejercicios[currentExerciseIndex];
+            const id = (ex && ex.area_id) || '';
+            const label = id ? (areaLabel(id) || (ex && ex.area) || id) : 'No area';
+            btn.textContent = label;
+            btn.classList.toggle('is-empty', !id);
+            btn.hidden = !freeMode;
+        }
+        if (caret) caret.hidden = !freeMode;
+        // The labels arrive with the areas list: repaint once it is known.
+        if (!freeMode || areasList) return;
+        loadAreas().then(function () { if (freeMode) renderAreaPick(); });
+    }
+
+    // Free practice only: the material counts in this area for this session.
+    // The catalog exercise is left alone, as requested.
+    function setFreeArea(areaId) {
+        if (!freeMode) return;
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        if (!ex) return;
+        ex.area_id = areaId || '';
+        ex.area = ex.area_id ? (areaLabel(ex.area_id) || ex.area_id) : '';
+        saveFreeSnapshot();
+        renderSlotHeader('keep');
+        if (sessionId) {
+            sessionPost('PUT', '/api/sessions/' + sessionId + '/item/' +
+                        currentExerciseIndex + '/area', { area_id: ex.area_id });
+        }
+    }
+
+    // Catalog material by id: the same payload the routine uses, so the card
+    // (resources included) needs no special casing.
+    function fetchCatalogExercise(id) {
+        return fetch('/api/catalog/' + id, { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; });
+    }
+
+    // The DB session pointer. Starting a session of the other mode leaves the
+    // held one behind: the server closes it as abandoned when the new one opens,
+    // which is the honest record (it was not finished).
+    function releaseHeldSession() {
+        if (!sessionId) return;
+        sessionId = null;
+        try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) { /* noop */ }
+    }
+
+    function startFreeSession(id) {
+        // A free session already on hold is resumed, not replaced.
+        if (freeMode && pausedSession()) { resumeSession(); return; }
+        releaseHeldSession();
+        fetchCatalogExercise(id).then(function (cat) {
+            if (!cat) return;
+            const now = new Date();
+            freeMode = true;
+            freeNote = '';
+            freeSession = {
+                id: null, nombre: 'Free practice', descripcion: '', kind: 'free',
+                finish_kind: '', finish_url: '', finish_label: '', finish_bpm: 0,
+                ejercicios: [freeItemFromCatalog(cat)],
+            };
+            currentExerciseIndex = 0;
+            lastShownIndex = null;
+            resourceAudioActive = false;
+            exerciseStates = {};
+            playedSet = {};
+            clockSet = {};
+            clockStartedSet = {};
+            clockRunSince = null;
+            localStorage.setItem('routineSessionActive', 'true');
+            localStorage.removeItem('routineSessionPaused');
+            localStorage.setItem('practiceStartTimeVal', hhmm(now));
+            localStorage.setItem('currentExerciseIndex', '0');
+            if (!debugMode()) localStorage.setItem('lastRoutineStartedAt', now.toISOString());
+            wallReset();
+            sessionStart();
+            saveStates();
+            saveFreeSnapshot();
+            applyFreeUi();
+            setStartTimeLabel(hhmm(now));
+            hideTip();
+            syncStartLabel();
+            document.getElementById('welcomeCard').classList.add('is-hidden');
+            document.getElementById('exerciseCard').classList.remove('is-hidden');
+            displayCurrentExercise();
+        });
+    }
+
+    function addFreeMaterial(id) {
+        if (!freeMode || !freeSession) return;
+        fetchCatalogExercise(id).then(function (cat) {
+            if (!cat) return;
+            // Freeze the material being left behind: its time stays in the list.
+            if (clockRunSince !== null) clockStop();
+            persistCurrentBpm();
+            sessionSyncItem(currentExerciseIndex);
+            const item = freeItemFromCatalog(cat);
+            freeSession.ejercicios.push(item);
+            currentExerciseIndex = freeSession.ejercicios.length - 1;
+            localStorage.setItem('currentExerciseIndex', String(currentExerciseIndex));
+            if (sessionId) {
+                sessionPost('POST', '/api/sessions/' + sessionId + '/items', {
+                    name: item.nombre,
+                    planned_seconds: 0,
+                    catalog_exercise_id: item.catalog_exercise_id,
+                    catalog_name: (item.catalog_exercise || {}).name || item.nombre,
+                    area_id: item.area_id,
+                });
+            }
+            saveStates();
+            saveFreeSnapshot();
+            displayCurrentExercise();
+        });
+    }
+
+    function finishFreeSession() {
+        if (!freeMode) return;
+        // Whatever got clock time counts as done; the rest was only opened.
+        (freeSession.ejercicios || []).forEach(function (ex, i) {
+            if (exerciseStates[i]) return;
+            exerciseStates[i] = freeElapsedSeconds(i) > 0 ? 'timed' : 'untimed';
+        });
+        if (clockRunSince !== null) clockStop();
+        persistCurrentBpm();
+        saveStates();
+        showWelcomeScreen();
+    }
+
+    // "Add "<name>"" inside the free picker: a new obsession is usually not in
+    // the catalog yet, and the exercise is what gets practised.
+    function createFreeMaterial(name) {
+        const clean = String(name || '').trim();
+        if (!clean) return;
+        fetch('/api/catalog', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: clean, description: '', area_id: '' }),
+        }).then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (cat) {
+                if (!cat || !cat.id) return;
+                catalogCache = null;                 // the next picker shows it
+                catalogLoading = null;
+                loadCatalog();
+                if (freeMode) addFreeMaterial(cat.id);
+                else startFreeSession(cat.id);
+            })
+            .catch(function () { /* offline: nothing to add */ });
     }
 
     // Should the audio bar close when the routine moves on? Read once and on
@@ -339,7 +706,10 @@
     function syncStartLabel() {
         const paused = pausedSession();
         const label = document.getElementById('startRoutineLabel');
-        if (label) label.textContent = paused ? 'Resume Routine' : 'Start Practicing';
+        if (label) {
+            label.textContent = paused ? (freeMode ? 'Resume practice' : 'Resume Routine')
+                                      : 'Start Practicing';
+        }
         const btn = document.getElementById('startRoutineBtn');
         if (btn) btn.classList.toggle('is-resume', paused);
         return paused;
@@ -451,27 +821,46 @@
         loadAudioClosePref();
         hideTip();
         wireTimerFloat();
-        const changeBtn = document.getElementById('exChangeBtn');
-        if (changeBtn) changeBtn.addEventListener('click', openCatalogMenu);
-        // The name is the thing you aim at: same action as the caret next to it.
-        const mainName = document.getElementById('exMain');
-        if (mainName) mainName.addEventListener('click', openCatalogMenu);
-        const catalogMenu = document.getElementById('exCatalogMenu');
-        if (catalogMenu) catalogMenu.addEventListener('keydown', catalogMenuKeys);
-        // A click outside (menu or caret) closes it, like the Manager pickers.
-        document.addEventListener('mousedown', function (e) {
-            const menu = document.getElementById('exCatalogMenu');
-            const btn = document.getElementById('exChangeBtn');
-            const main = document.getElementById('exMain');
-            if (!menu || menu.hidden) return;
-            // The name and the caret are the picker anchor: they toggle it.
-            if (menu.contains(e.target) || (btn && btn.contains(e.target)) ||
-                (main && main.contains(e.target))) return;
-            closeCatalogMenu();
-        });
-        // The menu is a fixed panel: scrolling or resizing would leave it adrift.
-        window.addEventListener('scroll', closeCatalogMenu, { passive: true });
-        window.addEventListener('resize', closeCatalogMenu);
+        // A free session survives a reload through its own snapshot: it holds the
+        // materials and their frozen times, which the routine state does not.
+        // Only read it on a cold start: a refresh must not reset the live clock.
+        if (!freeMode) {
+            const freeSnap = loadFreeSnapshot();
+            if (freeSnap) restoreFreeSession(freeSnap);
+        }
+        wireFreePractice();
+        // Listeners are bound once: initSimpleAssistant runs again on every
+        // refresh, and a second handler would toggle the picker twice.
+        if (!assistantWired) {
+            assistantWired = true;
+            const changeBtn = document.getElementById('exChangeBtn');
+            if (changeBtn) changeBtn.addEventListener('click', function () { openCatalogMenu(freeMode ? 'add' : null); });
+            // The name is the thing you aim at: same action as the caret next to it.
+            const mainName = document.getElementById('exMain');
+            if (mainName) mainName.addEventListener('click', function () { openCatalogMenu(freeMode ? 'add' : null); });
+            const catalogMenu = document.getElementById('exCatalogMenu');
+            if (catalogMenu) catalogMenu.addEventListener('keydown', catalogMenuKeys);
+            // A click outside (menu or caret) closes it, like the Manager pickers.
+            document.addEventListener('mousedown', function (e) {
+                const menu = document.getElementById('exCatalogMenu');
+                const btn = document.getElementById('exChangeBtn');
+                const main = document.getElementById('exMain');
+                const areaPick = document.getElementById('exAreaPick');
+                const areaCaret = document.getElementById('exAreaCaret');
+                const addRow = document.querySelector('#exerciseListSidebar .ex-add-row');
+                if (!menu || menu.hidden) return;
+                // The name and the caret are the picker anchor: they toggle it.
+                if (menu.contains(e.target) || (btn && btn.contains(e.target)) ||
+                    (main && main.contains(e.target)) ||
+                    (areaPick && areaPick.contains(e.target)) ||
+                    (areaCaret && areaCaret.contains(e.target)) ||
+                    (addRow && addRow.contains(e.target))) return;
+                closeCatalogMenu();
+            });
+            // The menu is a fixed panel: scrolling or resizing would leave it adrift.
+            window.addEventListener('scroll', closeCatalogMenu, { passive: true });
+            window.addEventListener('resize', closeCatalogMenu);
+        }
         const desc = document.getElementById('welcomeRoutineDesc');
         if (!rActiva().ejercicios.length) {
             const nameEl = document.getElementById('welcomeRoutineName');
@@ -547,6 +936,11 @@
         localStorage.setItem('routineSessionActive', 'false');
         localStorage.removeItem('routineSessionPaused');
         wallClear();
+        clearFreeSnapshot();
+        freeMode = false;
+        freeSession = null;
+        freeNote = '';
+        applyFreeUi();
         localStorage.removeItem('currentExerciseIndex');
         exerciseStates = {};
         playedSet = {};
@@ -579,6 +973,7 @@
         pauseExerciseTimer();
         if (clockRunSince !== null) clockStop();
         wallPause();
+        saveFreeSnapshot();          // the frozen times travel with the snapshot
         localStorage.setItem('routineSessionPaused', 'true');
         hideTip();
         syncStartLabel();
@@ -637,6 +1032,13 @@
     function setIndexLabel() {
         const el = document.getElementById('exIndex');
         if (!el) return;
+        const total = (rActiva().ejercicios || []).length;
+        if (freeMode) {
+            el.textContent = total > 1
+                ? 'Material ' + (currentExerciseIndex + 1) + ' of ' + total
+                : 'Free practice';
+            return;
+        }
         const state = exerciseStates[currentExerciseIndex];
         let suffix = '';
         if (DONE_STATES[state]) suffix = ' \u00b7 done';
@@ -701,7 +1103,9 @@
         const btn = document.getElementById('exChangeBtn');
         if (!btn) return;
         const ex = rActiva().ejercicios[currentExerciseIndex];
-        const live = attemptLive(currentExerciseIndex);
+        // Free practice is a stopwatch: switching material mid-work is the point,
+        // so the picker never locks there.
+        const live = !freeMode && attemptLive(currentExerciseIndex);
         btn.disabled = live;
         // The name is the same trigger, so it stops promising a click too.
         const main = document.getElementById('exMain');
@@ -722,9 +1126,23 @@
         if (areaEl) {
             areaEl.textContent = ex.area || 'No area';
             areaEl.className = 'ex-area-inline' + (ex.area_id ? '' : ' is-empty');
+            // Free practice: the material has no slot, so the label becomes the
+            // picker of the area it counts in (this session only).
+            areaEl.hidden = freeMode;
         }
+        renderAreaPick();
         const mainEl = document.getElementById('exMain');
-        if (mainEl) {
+        const sepEl = document.getElementById('exSep');
+        const chgBtn = document.getElementById('exChangeBtn');
+        if (freeMode) {
+            // Free practice: the line only carries the area of the session (the
+            // material is the title, and the list shows what was already done).
+            if (mainEl) { mainEl.hidden = true; mainEl.classList.remove('has-tip'); }
+            if (sepEl) sepEl.hidden = true;
+            if (chgBtn) chgBtn.hidden = true;
+        } else if (mainEl) {
+            mainEl.hidden = false;
+            if (sepEl) sepEl.hidden = false;
             const path = slotPath(ex);
             mainEl.textContent = cat ? cat.name
                 : (path ? path.name + ' \u2014 pick one' : '');
@@ -738,8 +1156,7 @@
                 wireTip(mainEl, currentExerciseDescTip);
             }
         }
-        const btn = document.getElementById('exChangeBtn');
-        if (btn) btn.removeAttribute('hidden');
+        if (chgBtn && !freeMode) chgBtn.removeAttribute('hidden');
         updateChangeLock();
     }
 
@@ -784,6 +1201,7 @@
     let menuSearch = null;      // the filter input, when the pool is long enough
     let menuCurrentId = null;   // exercise id currently on the slot
     let menuGrouped = false;    // catalog pool: group by area
+    let menuMode = null;        // null | 'start' | 'add' (free practice picker)
     const SEARCH_FROM = 6;      // below this, a filter is just noise
 
     // Same idea as the Manager: ignore case, accents and punctuation.
@@ -803,12 +1221,20 @@
         menuIndex = -1;
         visibleItems = [];
         menuSearch = null;
+        menuMode = null;
         const btn = document.getElementById('exChangeBtn');
         if (btn) btn.classList.remove('is-open');
     }
 
     function positionCatalogMenu(menu) {
-        const main = document.getElementById('exMain');
+        // The free picker hangs from the control that opened it: the welcome
+        // button when starting, the "+ Add material" row when adding (the
+        // material line is hidden in that mode).
+        let main = null;
+        if (menuMode === 'start') main = document.getElementById('freePracticeBtn');
+        else if (menuMode === 'add') main = document.querySelector('#exerciseListSidebar .ex-add-row');
+        else if (menuMode === 'area') main = document.getElementById('exAreaPick');
+        if (!main) main = document.getElementById('exMain');
         if (!main) return;
         const mr = main.getBoundingClientRect();
         const width = Math.max(220, Math.min(460, Math.ceil(mr.width) + 60));
@@ -836,24 +1262,36 @@
         if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
     }
 
-    function openCatalogMenu() {
+    function openCatalogMenu(mode) {
+        const freePick = (mode === 'start' || mode === 'add' || mode === 'area') ? mode : null;
         const ex = rActiva().ejercicios[currentExerciseIndex];
         const menu = menuEl();
         const btn = document.getElementById('exChangeBtn');
-        if (!ex || !menu || attemptLive(currentExerciseIndex)) return;
+        if (!menu) return;
+        if (!freePick && (!ex || (!freeMode && attemptLive(currentExerciseIndex)))) return;
         if (!menu.hidden) { closeCatalogMenu(); return; }   // the caret toggles it
-        Promise.all([loadCatalog(), loadPaths()]).then(function (res) {
+        menuMode = freePick;
+        Promise.all([loadCatalog(), loadPaths(),
+                     freePick === 'area' ? loadAreas() : null]).then(function (res) {
             const list = res[0];
-            const path = slotPath(ex);
+            const areaMode = freePick === 'area';
+            const path = (freePick || areaMode) ? null : slotPath(ex);
             // A path only narrows the picker when its steps are known: an empty
             // path (or a failed /api/paths) falls back to the whole catalog.
             const steps = (path && path.steps) || [];
             const hasPool = steps.length > 0;
-            const currentId = ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id;
+            const currentId = areaMode ? ((ex && ex.area_id) || '')
+                : ((freePick || !ex) ? null
+                    : (ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id));
             // With a path the picker only offers its steps (path order); without
             // one, the whole catalog. A stale exercise outside the path stays
             // visible so it can be recognised and replaced.
-            const pool = hasPool
+            const pool = areaMode
+                ? [{ id: '', name: 'No area', special: true }].concat(
+                    (res[2] || []).map(function (a) {
+                        return { id: a.id, name: a.label, special: false };
+                    }))
+                : hasPool
                 ? steps.map(function (s) {
                     const known = list.filter(function (c) {
                         return c.id === s.catalog_exercise_id;
@@ -866,9 +1304,9 @@
                     });
             // Without a path the catalog is grouped by area: this is the hint that
             // makes a long list readable.
-            menuGrouped = !hasPool;
-            menuItems = [{ id: null, name: '\u2014 No exercise \u2014', special: true }]
-                .concat(pool);
+            menuGrouped = areaMode ? false : !hasPool;
+            menuItems = (freePick || areaMode) ? pool
+                : [{ id: null, name: '\u2014 No exercise \u2014', special: true }].concat(pool);
             if (currentId != null &&
                 !menuItems.some(function (it) { return it.id === currentId; })) {
                 // Keep the exercise on the slot visible: it may be archived or,
@@ -891,9 +1329,10 @@
                     ' step' + (steps.length === 1 ? '' : 's');
                 menu.appendChild(head);
             }
-            // A long list is unusable by scanning: the filter is the way in.
+            // A long list is unusable by scanning: the filter is the way in. The
+            // area list is short and curated, so it never needs one.
             let search = null;
-            if (menuItems.length > SEARCH_FROM) {
+            if (!areaMode && menuItems.length > SEARCH_FROM) {
                 search = document.createElement('input');
                 search.type = 'search';
                 search.className = 'ex-catalog-search';
@@ -926,7 +1365,8 @@
         const menu = menuEl();
         if (!menu) return;
         Array.prototype.forEach.call(
-            menu.querySelectorAll('.ex-catalog-option, .ex-catalog-empty, .ex-catalog-group'),
+            menu.querySelectorAll('.ex-catalog-option, .ex-catalog-empty,'
+                + ' .ex-catalog-group, .ex-catalog-add'),
             function (el) { el.parentNode.removeChild(el); });
         const q = menuNorm(menuSearch ? menuSearch.value : '');
         visibleItems = menuItems.filter(function (item) {
@@ -960,6 +1400,22 @@
             empty.textContent = 'No matches';
             menu.appendChild(empty);
         }
+        // Free practice: a song you are obsessed with is usually not in the
+        // catalog yet. The typed name creates the exercise and starts from it.
+        const typed = menuSearch ? menuSearch.value.trim() : '';
+        if (menuMode && menuMode !== 'area' && typed && !visibleItems.some(function (it) {
+            return menuNorm(it.name) === menuNorm(typed);
+        })) {
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'ex-catalog-add';
+            add.textContent = '+ Add \u201c' + typed + '\u201d as a new exercise';
+            add.addEventListener('click', function () {
+                closeCatalogMenu();
+                createFreeMaterial(typed);
+            });
+            menu.appendChild(add);
+        }
         const currentAt = visibleItems.findIndex(function (it) { return it.id === menuCurrentId; });
         menuIndex = currentAt >= 0 ? currentAt : (visibleItems.length ? 0 : -1);
         highlightMenuOption();
@@ -969,7 +1425,11 @@
     function chooseCatalogItem(i) {
         const item = visibleItems[i];
         if (!item) return;
+        const mode = menuMode;
         closeCatalogMenu();
+        if (mode === 'area') { setFreeArea(item.id == null ? '' : String(item.id)); return; }
+        if (mode === 'start') { startFreeSession(item.id); return; }
+        if (mode === 'add') { addFreeMaterial(item.id); return; }
         changeSlotExercise(item.id == null ? '' : String(item.id));
     }
 
@@ -1110,21 +1570,30 @@
         setIndexLabel();
         renderSlotHeader();
 
-        exerciseTimeTotal = ejercicio.tiempo;
-        exerciseTimeLeft = Math.max(0, (ejercicio.tiempo || 0) - playedFor(currentExerciseIndex, ejercicio));
-        isExerciseFinished = exerciseTimeLeft <= 0;
+        if (freeMode) {
+            // No plan: the card shows the stopwatch of this material and there is
+            // never an "ended" state.
+            exerciseTimeTotal = 0;
+            exerciseTimeLeft = 0;
+            isExerciseFinished = false;
+        } else {
+            exerciseTimeTotal = ejercicio.tiempo;
+            exerciseTimeLeft = Math.max(0, (ejercicio.tiempo || 0) - playedFor(currentExerciseIndex, ejercicio));
+            isExerciseFinished = exerciseTimeLeft <= 0;
+        }
         updateResourceTag(ejercicio);
 
         updateTimerDisplay();
         updateProgressBar();
         renderExerciseSidebar();
         updateNextButtonState();
+        applyFreeUi();
 
         const playBtn = document.getElementById('exPlayBtn');
         if (playBtn) {
             playBtn.classList.remove('is-playing');
             playBtn.innerHTML = GPH.icons.get('play') + ' Play';
-            if (isExerciseFinished) {
+            if (isExerciseFinished && !freeMode) {
                 playBtn.disabled = true;
                 playBtn.classList.add('is-ended');
             } else {
@@ -1132,6 +1601,7 @@
                 playBtn.classList.remove('is-ended');
             }
         }
+        if (freeMode) saveFreeSnapshot();
     }
 
     function formatDuration(t) {
@@ -1268,7 +1738,7 @@
         titleIcon.className = 'ex-sidebar-icon';
         titleIcon.innerHTML = GPH.icons.get('clipboard');
         const titleName = document.createElement('span');
-        titleName.textContent = rActiva().nombre;
+        titleName.textContent = freeMode ? 'Free practice' : rActiva().nombre;
         title.appendChild(titleIcon);
         title.appendChild(titleName);
 
@@ -1328,19 +1798,58 @@
 
             const dur = document.createElement('span');
             dur.className = 'ex-duration';
-            dur.textContent = formatDuration(ex.tiempo);
+            // Free practice: the time this material has taken so far, so what was
+            // already done stays visible when a new one starts at zero.
+            dur.textContent = freeMode
+                ? fmtStopwatch(freeElapsedSeconds(idx))
+                : formatDuration(ex.tiempo);
             row.appendChild(dur);
 
             sidebar.appendChild(row);
         });
 
+        // Free practice: the next material is added right under the ones already
+        // worked on, where the list is read.
+        if (freeMode) {
+            const add = document.createElement('button');
+            add.type = 'button';
+            add.className = 'ex-add-row';
+            add.textContent = '+ Add material';
+            add.addEventListener('click', function () { openCatalogMenu('add'); });
+            sidebar.appendChild(add);
+        }
+
         const total = document.createElement('div');
         total.className = 'ex-sidebar-total';
-        total.innerHTML = GPH.icons.get('clock') + ' ' + getRoutineTotalMinutes() + ' mins';
+        total.innerHTML = freeMode
+            ? GPH.icons.get('clock') + ' ' + fmtStopwatch(freeTotalSeconds()) + ' this session'
+            : GPH.icons.get('clock') + ' ' + getRoutineTotalMinutes() + ' mins';
         sidebar.appendChild(total);
 
         const cur = sidebar.querySelector('.is-current');
         if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest' });
+    }
+
+    // The free-practice stopwatch ticks every second, and rebuilding the list
+    // would recreate the rows and the "+ Add material" button: the hover would
+    // flicker (and the list would jump). Only the numbers change, so only the
+    // numbers are repainted.
+    function refreshFreeSidebarTimes() {
+        const sidebar = document.getElementById('exerciseListSidebar');
+        if (!sidebar) return;
+        const exs = rActiva().ejercicios || [];
+        const rows = sidebar.querySelectorAll('.ex-row');
+        const total = sidebar.querySelector('.ex-sidebar-total');
+        if (rows.length !== exs.length || !total || !sidebar.querySelector('.ex-add-row')) {
+            renderExerciseSidebar();      // the list itself changed: rebuild
+            return;
+        }
+        exs.forEach(function (ex, i) {
+            const dur = rows[i].querySelector('.ex-duration');
+            if (dur) dur.textContent = fmtStopwatch(freeElapsedSeconds(i));
+        });
+        total.innerHTML = GPH.icons.get('clock') + ' ' + fmtStopwatch(freeTotalSeconds()) +
+            ' this session';
     }
 
     // ---- Floating clock ---------------------------------------------------
@@ -1382,6 +1891,15 @@
     }
 
     function updateTimerDisplay() {
+        if (freeMode) {
+            // Stopwatch: how much this material has taken so far.
+            const text = fmtStopwatch(freeElapsedSeconds(currentExerciseIndex));
+            document.getElementById('exTimer').textContent = text;
+            const float = document.getElementById('exTimerFloatValue');
+            if (float) float.textContent = text;
+            syncTimerFloat();
+            return;
+        }
         const minutes = Math.floor(exerciseTimeLeft / 60);
         const seconds = Math.floor(exerciseTimeLeft % 60);
         const text = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
@@ -1445,6 +1963,14 @@
     function updateNextButtonState() {
         const nextBtn = document.getElementById('exNextBtn');
         if (!nextBtn) return;
+        if (freeMode) {
+            // No plan, no done/skip: the row only holds Play + Add + Finish.
+            const controls = nextBtn.parentElement;
+            if (controls) controls.classList.remove('is-done');
+            renderExerciseSidebar();
+            updateResetButton();
+            return;
+        }
         const currentDone = !!DONE_STATES[exerciseStates[currentExerciseIndex]];
         const pending = nextPendingIndex(currentExerciseIndex);
 
@@ -1794,7 +2320,7 @@
     }
 
     function startExerciseTimer() {
-        if (exerciseTimeLeft <= 0) return;
+        if (!freeMode && exerciseTimeLeft <= 0) return;
         isExerciseRunning = true;
         clockStart();
         // Play is the moment the server records this attempt: the area and the
@@ -1809,6 +2335,19 @@
         btn.classList.add('is-playing');
         btn.classList.remove('is-ended');
         updateChangeLock();   // the attempt is live: the picker locks now
+
+        if (freeMode) {
+            // Free practice has no countdown: the tick only repaints the
+            // stopwatch and the per-material times in the list. The snapshot is
+            // refreshed every 10 s so a reload loses at most that much.
+            let ticks = 0;
+            exerciseTimerInterval = setInterval(function () {
+                updateTimerDisplay();
+                refreshFreeSidebarTimes();
+                if (++ticks % 10 === 0) saveFreeSnapshot();
+            }, 1000);
+            return;
+        }
 
         exerciseTimerInterval = setInterval(function () {
             if (exerciseTimeLeft > 0) {
@@ -1841,13 +2380,16 @@
         btn.classList.remove('is-playing');
         btn.innerHTML = GPH.icons.get('play') + ' Play';
 
-        if (isExerciseFinished || exerciseTimeLeft <= 0) {
+        if (!freeMode && (isExerciseFinished || exerciseTimeLeft <= 0)) {
             btn.classList.add('is-ended');
             btn.disabled = true;
         } else {
             btn.classList.remove('is-ended');
             btn.disabled = false;
         }
+        // Free practice: the material keeps its time, so the list is refreshed
+        // with the frozen figure.
+        if (freeMode) { saveFreeSnapshot(); renderExerciseSidebar(); }
     }
 
     function resetExerciseTimer() {
@@ -1864,6 +2406,7 @@
         delete clockStartedSet[currentExerciseIndex];
         clockRunSince = null;
         saveStates();
+        if (freeMode) saveFreeSnapshot();   // the material's time is back to 0
         sessionSyncItem(currentExerciseIndex);
         setIndexLabel();
 
@@ -1963,11 +2506,22 @@
         if (sessionId) return;                       // resumed from a previous page load
         const r = rActiva();
         const items = (r.ejercicios || []).map(function (ex) {
-            return { exercise_id: ex.id, name: ex.nombre, planned_seconds: ex.tiempo || 0 };
+            // The catalog link and the area travel with the item: a free material
+            // has no slot to read them from later.
+            return {
+                exercise_id: ex.id,
+                name: ex.nombre,
+                planned_seconds: ex.tiempo || 0,
+                catalog_exercise_id: ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id,
+                catalog_name: (ex.catalog_exercise && ex.catalog_exercise.name) || '',
+                area_id: ex.area_id || '',
+            };
         });
         sessionPost('POST', '/api/sessions/start', {
             routine_id: r.id || null,
             routine_name: r.nombre || '',
+            kind: freeMode ? 'free' : 'routine',
+            note: freeMode ? freeNote : '',
             started_at: new Date().toISOString(),
             items: items
         }, function (res) {
@@ -2003,7 +2557,13 @@
                 state: state,
                 played_seconds: playedFor(i, ex),
                 elapsed_seconds: elapsedFor(i, ex),
-                started_at: clockStartedSet[i] || null
+                started_at: clockStartedSet[i] || null,
+                // Only used when the row never reached the server (offline start).
+                name: ex.nombre,
+                planned_seconds: ex.tiempo || 0,
+                catalog_exercise_id: ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id,
+                catalog_name: (ex.catalog_exercise && ex.catalog_exercise.name) || '',
+                area_id: ex.area_id || '',
             };
         });
         sessionId = null;
@@ -2014,7 +2574,8 @@
         const wall = wallTracked() ? Math.round(wallElapsedMs() / 1000) : null;
         sessionPost('POST', '/api/sessions/' + sid + '/finish',
                     { finished_at: new Date().toISOString(), items: items,
-                      wall_seconds: wall },
+                      wall_seconds: wall,
+                      note: freeMode ? freeNote : '' },
                     // The week summary on the welcome screen is now stale.
                     function () { loadWelcomeStats(); });
     }
@@ -2026,8 +2587,11 @@
 
     function applyServerSession(full) {
         if (sessionId || localStorage.getItem('routineSessionActive') === 'true') return;
+        // A free session cannot be rebuilt without its client snapshot (its
+        // materials are catalog entries, not slots): leave it to the server sweep.
+        if (!full || full.kind === 'free') return;
         const exs = rActiva().ejercicios || [];
-        if (!full || !exs.length) return;
+        if (!exs.length) return;
 
         sessionId = full.id;
         try { localStorage.setItem(SESSION_ID_KEY, String(full.id)); } catch (e) {}
@@ -2113,7 +2677,8 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 const rid = (GPH.data && GPH.data.activeRoutine && GPH.data.activeRoutine.id) || null;
-                if (d && d.id && (!d.routine_id || !rid || d.routine_id === rid)) applyServerSession(d);
+                if (d && d.id && d.kind !== 'free' &&
+                    (!d.routine_id || !rid || d.routine_id === rid)) applyServerSession(d);
                 else syncLastRoutineTip();
             })
             .catch(function () { syncLastRoutineTip(); });
@@ -2148,9 +2713,15 @@
         // No id yet: a start queued while offline, nothing to ask the server.
         if (!sessionId) { restore(); return; }
         fetch('/api/sessions/' + sessionId, { cache: 'no-store' })
-            .then(function (r) { return r.ok ? r.json() : null; })
+            // A 404 is definitive (the row is gone): the local copy must be
+            // dropped, not restored. Any other failure is not: trust the browser.
+            .then(function (r) {
+                if (r.status === 404) return { gone: true };
+                return r.ok ? r.json() : null;
+            })
             .then(function (d) {
-                if (d && d.status && d.status !== 'open') dropStaleSession();
+                if (d && d.gone) dropStaleSession();
+                else if (d && d.status && d.status !== 'open') dropStaleSession();
                 else restore();
             })
             .catch(function () { restore(); });      // offline: trust the browser
@@ -2161,6 +2732,10 @@
         try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) {}
         // Set before the reset so showWelcomeScreen does not try to finish it.
         localStorage.setItem('routineSessionActive', 'false');
+        freeMode = false;
+        freeSession = null;
+        freeNote = '';
+        clearFreeSnapshot();
         showWelcomeScreen();
         reconcileSession();
     }

@@ -792,6 +792,28 @@
     margin-top: 5px;
 }
 .start-btn:hover { transform: scale(1.03); }
+/* Free practice: the secondary way in, quieter than Start */
+.free-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 18px; border-radius: 8px; cursor: pointer;
+    background: transparent; border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #bdbdbd; font-family: inherit; font-size: 0.86rem; font-weight: 600;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.free-btn:hover {
+    color: #fff; border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.04);
+}
+/* Free session card: no plan, so no progress bar, and the note stays visible */
+.exercise-card.is-free .ex-progress { display: none; }
+.free-note { display: flex; justify-content: center; }
+.free-note[hidden] { display: none !important; }
+.free-note textarea {
+    width: min(520px, 100%); min-height: 40px; resize: vertical;
+    background: #111; color: var(--text); border: 1px solid #333;
+    border-radius: 6px; padding: 7px 10px; font-family: inherit; font-size: 0.84rem;
+}
+.free-note textarea:focus { outline: none; border-color: var(--sec-color, var(--accent)); }
 
 /* Exercise card */
 .exercise-card {
@@ -932,6 +954,21 @@
     font-size: 0.85rem;
     background: rgba(255, 255, 255, 0.02);
 }
+/* Free practice: "add the next material" sits in the list, under the worked
+   ones, with the row rhythm of the list (dashed: it is not a material yet). */
+.ex-add-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 4px; padding: 4px 6px;
+    border: 1px dashed rgba(255, 255, 255, 0.22); border-radius: 4px;
+    background: transparent; cursor: pointer;
+    font-family: inherit; font-size: 0.85rem; font-weight: 600;
+    color: #9a9a9a; text-align: left;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.ex-add-row:hover, .ex-add-row:focus-visible {
+    color: #fff; border-color: var(--accent);
+    background: rgba(255, 255, 255, 0.04); outline: none;
+}
 .ex-row.is-current {
     background: rgba(233, 30, 99, 0.15);
     background: color-mix(in srgb, var(--accent) 15%, transparent);
@@ -1034,6 +1071,31 @@
 }
 .ex-area-inline { font-size: 0.95rem; color: #9a9a9a; white-space: nowrap; }
 .ex-area-inline.is-empty { color: #6f6f6f; font-style: italic; }
+/* Free practice: the area reads and behaves like the exercise picker of a
+   routine (white name + caret + floating menu), never like a form control. */
+.ex-area-pick {
+    flex: 0 1 auto; padding: 0; border: 0; background: transparent;
+    font-family: inherit; font-size: inherit; line-height: 1.2;
+    color: #fff; font-weight: 600; cursor: pointer;
+    max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Hover does not repaint the name (same as the exercise name of a routine):
+   the caret is what lights up, telling you it opens a picker. */
+.ex-area-pick:focus-visible {
+    outline: 1px solid var(--accent); outline-offset: 3px; border-radius: 3px;
+}
+.ex-area-pick.is-empty { color: #8f8f8f; font-weight: normal; font-style: italic; }
+/* The caret that says "this is a picker", same weight as the one next to the
+   material name (the two pickers of the line look alike). */
+.ex-area-caret {
+    flex: 0 0 auto; padding: 0 2px;
+    color: #8a8a8a; font-size: 1.05rem; line-height: 1;
+    cursor: pointer; user-select: none;
+}
+.ex-area-caret:hover { color: var(--accent); }
+/* Hovering the area lights its caret too: both open the same picker. */
+#exAreaPick:hover ~ .ex-area-caret { color: var(--accent); }
+.ex-area-caret[hidden] { display: none !important; }
 .ex-sep { color: #6f6f6f; }
 .ex-main {
     max-width: 60vw; color: #b8b8b8;
@@ -1088,6 +1150,15 @@
 .ex-catalog-option:hover, .ex-catalog-option.is-highlighted { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .ex-catalog-option.is-current { color: var(--accent); }
 .ex-catalog-option.is-current::after { content: ' \2713'; }
+/* Free practice: create the exercise from the typed name right there. */
+.ex-catalog-add {
+    display: block; width: 100%; text-align: left; margin-top: 4px;
+    padding: 7px 8px; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.1);
+    background: transparent; color: var(--accent); cursor: pointer;
+    font-family: inherit; font-size: 0.84rem; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ex-catalog-add:hover { background: rgba(255, 128, 64, 0.12); color: #fff; }
 /* Filter box at the top of the exercise picker (only for long pools). */
 .ex-catalog-search {
     display: block; width: 100%; box-sizing: border-box;
@@ -1177,6 +1248,11 @@
 .ex-controls.is-done #exNextBtn { grid-column: 2; justify-self: center; }
 .ex-controls.is-done #exPlayBtn,
 .ex-controls.is-done #exSkipBtn { display: none; }
+/* Free practice has two actions, not three: Play keeps the centre of the eye and
+   "Finish session" sits on its right (where "Skip" sits in a routine). */
+.exercise-card.is-free .ex-controls {
+    display: flex; justify-content: center; align-items: center; gap: 10px;
+}
 
 .ex-play-btn {
     background: var(--hover-bg);
@@ -1246,6 +1322,19 @@
     background: var(--accent-green);
     padding: 8px 16px;
     font-size: 0.95rem;
+}
+/* "Finish session" of a free practice: the same green, but as a border. It is on
+   screen for the whole session, so a solid green block would shout all the time;
+   the filled version is for the brief "Finish routine" moment of a routine. */
+.ex-next-btn.is-outline {
+    color: var(--accent-green);
+    border: 1px solid var(--accent-green);
+    background: rgba(255, 255, 255, 0.03);
+    font-weight: bold;
+}
+.ex-next-btn.is-outline:hover {
+    background: rgba(76, 175, 80, 0.16);
+    background: color-mix(in srgb, var(--accent-green) 16%, transparent);
 }
 
 /* "Skip" means NOT practiced. Grey (but clearly readable: it is a secondary

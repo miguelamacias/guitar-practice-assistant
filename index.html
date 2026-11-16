@@ -16,7 +16,7 @@
             }
         } catch (e) { /* private mode: the CSS default is the shipped one */ }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=128">
+    <link rel="stylesheet" href="css/styles.css?v=133">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
@@ -29,7 +29,7 @@
     <script defer src="js/ui.js?v=4"></script>
     <script defer src="js/metronome.js?v=6"></script>
     <script defer src="js/drumMachine.js?v=14"></script>
-    <script defer src="js/practiceAssistant.js?v=91"></script>
+    <script defer src="js/practiceAssistant.js?v=97"></script>
     <script defer src="js/api.js?v=1"></script>
     <script defer src="js/settings.js?v=4"></script>
     <script defer src="js/prefs.js?v=1"></script>
@@ -124,6 +124,10 @@
                             </svg>
                             <span id="startRoutineLabel">Start Practicing</span>
                         </button>
+                        <!-- Second way in: no plan, just the material you want to work on -->
+                        <button id="freePracticeBtn" class="free-btn" type="button">
+                            Free practice
+                        </button>
                     </div>
                 </div>
 
@@ -148,6 +152,13 @@
                                          exercise text itself becomes the picker. -->
                                     <div id="exDescription" class="ex-desc">
                                         <span id="exAreaInline" class="ex-area-inline"></span>
+                                        <!-- Free practice: the material has no slot, so the
+                                             area it counts in is picked here, with the same
+                                             text + caret + menu as the exercise picker. -->
+                                        <button id="exAreaPick" class="ex-area-pick" type="button"
+                                                hidden>No area</button>
+                                        <span id="exAreaCaret" class="ex-area-caret" hidden
+                                              aria-hidden="true">&#9662;</span>
                                         <span id="exSep" class="ex-sep">&#183;</span>
                                         <span id="exMain" class="ex-main">-</span>
                                         <div id="exCatalogMenu" class="ex-catalog-menu" role="listbox" aria-label="Exercises" tabindex="-1" hidden></div>
@@ -159,11 +170,19 @@
                                 <div class="ex-progress">
                                     <div id="exProgressBar" class="ex-progress-bar"></div>
                                 </div>
+                                <!-- Free practice only: what the session is about -->
+                                <div id="freeNoteWrap" class="free-note" hidden>
+                                    <textarea id="freeNote" rows="2" maxlength="2000"
+                                              placeholder="What is this session about? (optional)"></textarea>
+                                </div>
                                 <div class="ex-controls">
                                     <button id="exPlayBtn" class="ex-play-btn">
                                         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 5.4v13.2L19 12z" fill="currentColor" stroke="none"></path></svg> Play
                                     </button>
                                     <button id="exNextBtn" class="ex-next-btn">Mark done</button>
+                                    <button id="exFinishFreeBtn" class="ex-next-btn is-outline" hidden>
+                                        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 6.5"></path></svg> Finish session
+                                    </button>
                                     <button id="exSkipBtn" class="ex-skip-btn" title="Skip this exercise (not practiced)">
                                         <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.6 6.6L13 12l-5.4 5.4"></path><path d="M13.4 6.6L18.8 12l-5.4 5.4"></path></svg> Skip
                                     </button>

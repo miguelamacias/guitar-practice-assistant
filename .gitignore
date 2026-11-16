@@ -12,6 +12,8 @@ practice.db
 practice.db-*
 practice-backup-*
 practice_sandbox.db*
+# Database copies (daily backups and hand-made snapshots) live here.
+backups/
 
 # Local / temporary files
 _tmp_*

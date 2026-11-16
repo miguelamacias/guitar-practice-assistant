@@ -624,13 +624,14 @@
         const byExercise = rankMode === 'exercise';
         const tag = byExercise ? ' (by exercise)' : ' (by slot)';
         const empty = byExercise ? 'No exercises recorded in this period.' : 'Not enough data yet.';
+        const emptySkipped = 'Nothing skipped in this period.';
         const skippedSrc = (byExercise ? stats.top_skipped_exercise : stats.top_skipped) || [];
         const timeSrc = (byExercise ? stats.top_time_exercise : stats.top_time) || [];
         const skipped = skippedSrc.map(function (r) {
             const pct = r.total ? Math.round(r.skipped / r.total * 100) : 0;
             return '<li><span class="hist-rank-name">' + esc(r.name) + '</span>' +
                 '<span class="hist-rank-val">' + pct + '% skipped</span></li>';
-        }).join('') || '<li class="hist-empty-row">' + esc(empty) + '</li>';
+        }).join('') || '<li class="hist-empty-row">' + esc(emptySkipped) + '</li>';
         const time = timeSrc.map(function (r) {
             return '<li><span class="hist-rank-name">' + esc(r.name) + '</span>' +
                 '<span class="hist-rank-val">' + fmtDur(r.seconds) + '</span></li>';
