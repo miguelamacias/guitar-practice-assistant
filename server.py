@@ -347,6 +347,14 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
         super().end_headers()
 
+    def guess_type(self, path):
+        """Static files are UTF-8: say it in the header, do not rely on <meta>."""
+        guess = super().guess_type(path)
+        if (guess.startswith('text/') or guess == 'application/javascript') \
+                and 'charset' not in guess:
+            guess += '; charset=utf-8'
+        return guess
+
     def _route_api(self, method):
         self._cache_ok = False
         path = urlparse(self.path).path

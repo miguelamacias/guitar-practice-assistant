@@ -75,8 +75,14 @@
     // ---- Shared dark tooltip (welcome list, Start button…) ----------------
     // The native `title` cannot be styled, so both use the same `.ex-tip` panel.
     let tipEl = null;
+    let tipTimer = null;
+
+    function cancelTipTimer() {
+        if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+    }
 
     function hideTip() {
+        cancelTipTimer();           // a pending panel must never appear later
         if (tipEl && tipEl.parentNode) tipEl.parentNode.removeChild(tipEl);
         tipEl = null;
     }
@@ -104,14 +110,23 @@
     }
 
     // Wires hover/focus once per element; `build()` returns the panel or null.
+    // The pointer has to rest on the element for a moment before the panel shows,
+    // like the native `title`: crossing the text must not open anything.
+    const TIP_DELAY_MS = 800;
+
     function wireTip(el, build, opts) {
         if (!el || el._tipWired) return;
         el._tipWired = true;
         if (!opts || opts.focusable !== false) el.tabIndex = 0;
-        const open = function () { showTip(el, build()); };
-        el.addEventListener('mouseenter', open);
-        el.addEventListener('focus', open);
+        const openNow = function () { cancelTipTimer(); showTip(el, build()); };
+        el.addEventListener('mouseenter', function () {
+            cancelTipTimer();
+            tipTimer = setTimeout(openNow, TIP_DELAY_MS);
+        });
+        // hideTip() also drops a pending timer, so leaving or scrolling cancels it.
         el.addEventListener('mouseleave', hideTip);
+        // Keyboard: focusing is already deliberate, so there is nothing to wait for.
+        el.addEventListener('focus', openNow);
         el.addEventListener('blur', hideTip);
         window.addEventListener('scroll', hideTip, { passive: true });
     }
@@ -157,6 +172,20 @@
         return tip;
     }
 
+    // Free-text panel: descriptions can be several lines, so they are not
+    // clamped like the exercise list rows.
+    function buildDescTip(text) {
+        text = String(text || '').trim();
+        if (!text) return null;
+        const tip = tipPanel();
+        tip.classList.add('ex-tip--desc');
+        const body = document.createElement('div');
+        body.className = 'ex-tip-text';
+        body.textContent = text;
+        tip.appendChild(body);
+        return tip;
+    }
+
     function buildWelcomeTip() {
         const exs = rActiva().ejercicios || [];
         if (!exs.length) return null;
@@ -170,11 +199,18 @@
             const main = document.createElement('div');
             main.className = 'ex-tip-main';
             const name = document.createElement('span');
-            name.className = 'ex-tip-name'; name.textContent = ex.nombre || 'Exercise';
+            name.className = 'ex-tip-name';
+            // `Knowledge: Arpeggios` — area first, then the slot name, one line.
+            appendAreaPrefix(name, 'ex-tip-area', ex);
+            name.appendChild(document.createTextNode(ex.nombre || 'Exercise'));
             main.appendChild(name);
-            if (ex.descripcion) {
+
+            // Second line: the exercise the slot points at right now, so the
+            // preview answers both "what kind of slot" and "what exactly".
+            const cat = slotExercise(ex);
+            if (cat && cat.name) {
                 const d = document.createElement('span');
-                d.className = 'ex-tip-desc'; d.textContent = ex.descripcion;
+                d.className = 'ex-tip-desc'; d.textContent = cat.name;
                 main.appendChild(d);
             }
 
@@ -194,25 +230,22 @@
         hideTip();
         wireTimerFloat();
         const changeBtn = document.getElementById('exChangeBtn');
-        if (changeBtn) changeBtn.addEventListener('click', openCatalogPicker);
-        const catalogSel = document.getElementById('exCatalogSel');
-        if (catalogSel) {
-            catalogSel.addEventListener('change', function () { changeSlotExercise(this.value); });
-            catalogSel.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape') { this.hidden = true; renderSlotHeader(); }
-            });
-        }
-        // Same pattern as the Manager pickers: a click outside closes it.
+        if (changeBtn) changeBtn.addEventListener('click', openCatalogMenu);
+        const catalogMenu = document.getElementById('exCatalogMenu');
+        if (catalogMenu) catalogMenu.addEventListener('keydown', catalogMenuKeys);
+        // A click outside (menu or caret) closes it, like the Manager pickers.
         document.addEventListener('mousedown', function (e) {
-            const sel = document.getElementById('exCatalogSel');
-            if (!sel || sel.hidden) return;
-            if (e.target === sel || (e.target.closest && e.target.closest('#exCatalogSel'))) return;
-            sel.hidden = true;
-            renderSlotHeader();
+            const menu = document.getElementById('exCatalogMenu');
+            const btn = document.getElementById('exChangeBtn');
+            if (!menu || menu.hidden) return;
+            if (menu.contains(e.target) || (btn && btn.contains(e.target))) return;
+            closeCatalogMenu();
         });
         const desc = document.getElementById('welcomeRoutineDesc');
         if (!rActiva().ejercicios.length) {
-            document.getElementById('welcomeRoutineName').innerHTML = GPH.icons.get('alert') + ' No active routine loaded';
+            const nameEl = document.getElementById('welcomeRoutineName');
+            nameEl.innerHTML = GPH.icons.get('alert') + ' No active routine loaded';
+            nameEl.classList.remove('has-tip');
             desc.textContent = 'Add or activate a routine in the Manager.';
             desc.classList.remove('has-tip');
             return;
@@ -220,6 +253,8 @@
 
         const totalMins = getRoutineTotalMinutes();
         setWelcomeName(rActiva().nombre || 'Daily Guitar Routine', totalMins);
+        // Hover / focus on the name: the routine description from the Manager.
+        wireRoutineNameTip();
         desc.textContent = 'Contains ' + rActiva().ejercicios.length + ' slots to practice today.';
         // Hover / focus: the full list in a dark panel, one exercise per row.
         desc.classList.add('has-tip');
@@ -329,12 +364,46 @@
     let catalogCache = null;
     let catalogLoading = null;
 
-    function mmss(sec) {
-        const total = Math.max(0, Math.round(sec || 0));
-        return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+    function slotExercise(ex) { return (ex && ex.catalog_exercise) || null; }
+
+    // `Knowledge: ` in front of a slot name (welcome list, exercise list).
+    // Written as its own span so the area stays dimmer than the name.
+    function appendAreaPrefix(parent, cls, ex) {
+        const area = String((ex && ex.area) || '').trim();
+        if (!area) return;
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = area + ': ';
+        parent.appendChild(span);
     }
 
-    function slotExercise(ex) { return (ex && ex.catalog_exercise) || null; }
+    // Text shown when hovering the exercise name: the catalog exercise description
+    // when the slot points at one (that is the real exercise), otherwise the
+    // slot's own description.
+    function slotDescText(ex) {
+        const cat = slotExercise(ex);
+        const catDesc = cat && cat.description ? String(cat.description).trim() : '';
+        if (catDesc) return catDesc;
+        return String((ex && ex.descripcion) || '').trim();
+    }
+
+    // Panel for the exercise on screen. Null when the slot has no exercise: the
+    // line already shows the slot text itself, so a copy on hover adds nothing.
+    function currentExerciseDescTip() {
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        return slotExercise(ex) ? buildDescTip(slotDescText(ex)) : null;
+    }
+
+    // The routine description lives only in the database: hover / focus on the
+    // routine name opens it in the same dark panel used for the Start button.
+    function wireRoutineNameTip() {
+        const el = document.getElementById('welcomeRoutineName');
+        if (!el) return;
+        const text = String(rActiva().descripcion || '').trim();
+        el.classList.toggle('has-tip', !!text);
+        if (!text) return;
+        wireTip(el, function () { return buildDescTip(text); });
+    }
 
     // Live attempt: started and not resolved yet (a pause keeps the lock).
     function attemptLive(idx) {
@@ -343,44 +412,42 @@
 
     function updateChangeLock() {
         const btn = document.getElementById('exChangeBtn');
-        if (!btn || btn.hidden) return;
+        if (!btn) return;
         const ex = rActiva().ejercicios[currentExerciseIndex];
         const live = attemptLive(currentExerciseIndex);
         btn.disabled = live;
         btn.title = live
             ? 'The attempt is live: change it when the timer ends or press Reset'
-            : (slotExercise(ex) ? 'Pick another exercise for this slot'
-                                : 'Pick an exercise from the catalog');
+            : (slotExercise(ex) ? 'Change exercise' : 'Pick an exercise from the catalog');
     }
 
     function renderSlotHeader(mode) {
         const ex = rActiva().ejercicios[currentExerciseIndex];
         if (!ex) return;
-        const keepPicker = mode === 'keep';
-        const sel = document.getElementById('exCatalogSel');
-        if (sel && !keepPicker) sel.hidden = true;
-        const pickerOpen = !!(sel && !sel.hidden);
+        if (mode !== 'keep') closeCatalogMenu();
         const title = document.getElementById('exTitle');
-        if (title) {
-            const bits = [ex.nombre];
-            if (ex.area) bits.push(ex.area);
-            bits.push(mmss(ex.tiempo));
-            title.textContent = bits.join(' \u00b7 ');
-        }
-        const chip = document.getElementById('exAreaChip');
-        if (chip) chip.hidden = !!ex.area_id;
+        if (title) title.textContent = ex.nombre;   // the time lives in the timer
         const cat = slotExercise(ex);
-        const desc = document.getElementById('exDescription');
-        if (desc) {
-            desc.textContent = cat ? cat.name : (ex.descripcion || '');
-            desc.classList.toggle('is-exercise', !!cat);
+        const areaEl = document.getElementById('exAreaInline');
+        if (areaEl) {
+            areaEl.textContent = ex.area || 'No area';
+            areaEl.className = 'ex-area-inline' + (ex.area_id ? '' : ' is-empty');
+        }
+        const mainEl = document.getElementById('exMain');
+        if (mainEl) {
+            mainEl.textContent = cat ? cat.name : (ex.descripcion || '');
+            mainEl.className = 'ex-main' + (cat ? ' is-exercise' : '');
+            // Hover on the exercise name (not on the slot name): its description,
+            // which is not displayed anywhere else. Only when the slot points at
+            // an exercise: without one the line already shows the slot text.
+            const descText = cat ? slotDescText(ex) : '';
+            mainEl.classList.toggle('has-tip', !!descText);
+            if (descText) {
+                wireTip(mainEl, currentExerciseDescTip);
+            }
         }
         const btn = document.getElementById('exChangeBtn');
-        if (btn) {
-            // Never draw the button over an open picker, even after a refresh.
-            btn.hidden = pickerOpen;
-            btn.textContent = cat ? 'Change' : 'Add exercise';
-        }
+        if (btn) btn.removeAttribute('hidden');
         updateChangeLock();
     }
 
@@ -394,33 +461,100 @@
         return catalogLoading;
     }
 
-    function openCatalogPicker() {
-        const ex = rActiva().ejercicios[currentExerciseIndex];
-        const sel = document.getElementById('exCatalogSel');
+    // ---- Catalog menu ------------------------------------------------------
+    // A floating list anchored under the exercise name. The line does not move:
+    // the menu is positioned absolutely inside the centred row.
+    let menuItems = [];
+    let menuIndex = -1;
+
+    function menuEl() { return document.getElementById('exCatalogMenu'); }
+
+    function closeCatalogMenu() {
+        const menu = menuEl();
+        if (!menu || menu.hidden) return;
+        menu.hidden = true;
+        menu.innerHTML = '';
+        menuIndex = -1;
         const btn = document.getElementById('exChangeBtn');
-        if (!ex || !sel || attemptLive(currentExerciseIndex)) return;
-        loadCatalog().then(function (list) {
-            sel.innerHTML = '';
-            const none = document.createElement('option');
-            none.value = '';
-            none.textContent = '\u2014 None (use description) \u2014';
-            sel.appendChild(none);
-            list.forEach(function (c) {
-                const o = document.createElement('option');
-                o.value = String(c.id);
-                o.textContent = c.name;
-                sel.appendChild(o);
-            });
-            sel.value = ex.catalog_exercise_id ? String(ex.catalog_exercise_id) : '';
-            sel.hidden = false;
-            if (btn) btn.hidden = true;
-            sel.focus();
+        if (btn) btn.classList.remove('is-open');
+    }
+
+    function positionCatalogMenu(menu) {
+        const row = document.getElementById('exDescription');
+        const main = document.getElementById('exMain');
+        if (!row || !main) return;
+        const rr = row.getBoundingClientRect();
+        const mr = main.getBoundingClientRect();
+        const width = Math.max(220, Math.min(460, Math.ceil(mr.width) + 60));
+        const left = Math.max(2, Math.min(mr.left - rr.left - 10, rr.width - width - 2));
+        menu.style.left = left + 'px';
+        menu.style.top = (mr.bottom - rr.top + 6) + 'px';
+        menu.style.width = width + 'px';
+    }
+
+    function highlightMenuOption() {
+        const menu = menuEl();
+        if (!menu) return;
+        Array.prototype.forEach.call(menu.children, function (child, i) {
+            child.classList.toggle('is-highlighted', i === menuIndex);
         });
+        const active = menu.children[menuIndex];
+        if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
+    }
+
+    function openCatalogMenu() {
+        const ex = rActiva().ejercicios[currentExerciseIndex];
+        const menu = menuEl();
+        const btn = document.getElementById('exChangeBtn');
+        if (!ex || !menu || attemptLive(currentExerciseIndex)) return;
+        if (!menu.hidden) { closeCatalogMenu(); return; }   // the caret toggles it
+        loadCatalog().then(function (list) {
+            menuItems = [{ id: null, name: '\u2014 None (use description) \u2014' }]
+                .concat(list.map(function (c) { return { id: c.id, name: c.name }; }));
+            menu.innerHTML = '';
+            const currentId = ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id;
+            menuItems.forEach(function (item, i) {
+                const opt = document.createElement('button');
+                opt.type = 'button';
+                opt.className = 'ex-catalog-option' + (item.id === currentId ? ' is-current' : '');
+                opt.setAttribute('role', 'option');
+                opt.textContent = item.name;
+                opt.addEventListener('click', function () { chooseCatalogItem(i); });
+                menu.appendChild(opt);
+            });
+            menu.hidden = false;
+            if (btn) btn.classList.add('is-open');
+            menuIndex = Math.max(0, menuItems.findIndex(function (it) { return it.id === currentId; }));
+            highlightMenuOption();
+            positionCatalogMenu(menu);
+            menu.focus();
+        });
+    }
+
+    function chooseCatalogItem(i) {
+        const item = menuItems[i];
+        if (!item) return;
+        closeCatalogMenu();
+        changeSlotExercise(item.id == null ? '' : String(item.id));
+    }
+
+    function catalogMenuKeys(e) {
+        if (e.key === 'Escape') { e.preventDefault(); closeCatalogMenu(); return; }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (!menuItems.length) return;
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            menuIndex = (menuIndex + step + menuItems.length) % menuItems.length;
+            highlightMenuOption();
+            return;
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+            if (menuIndex >= 0) { e.preventDefault(); chooseCatalogItem(menuIndex); }
+        }
     }
 
     function changeSlotExercise(value) {
         const ex = rActiva().ejercicios[currentExerciseIndex];
-        const sel = document.getElementById('exCatalogSel');
         if (!ex) return;
         const cid = value ? Number(value) : null;
         fetch('/api/exercises/' + ex.id, {
@@ -442,10 +576,8 @@
                                             description: found.description || '' };
                 }
             }
-            if (sel) sel.hidden = true;
             renderSlotHeader();
         }).catch(function (e) {
-            if (sel) sel.hidden = true;
             renderSlotHeader();
             alert('Could not change the exercise (' + e.message + ')');
         });
@@ -701,8 +833,11 @@
 
             const name = document.createElement('span');
             name.className = 'ex-name';
-            name.textContent = ex.nombre;
-            name.title = ex.nombre;
+            // `Knowledge: Arpeggios` — the area and the slot in one line, so the
+            // plan reads at a glance while practising.
+            appendAreaPrefix(name, 'ex-row-area', ex);
+            name.appendChild(document.createTextNode(ex.nombre));
+            name.title = (ex.area ? ex.area + ': ' : '') + ex.nombre;
             row.appendChild(name);
 
             if (resourcesOf(ex).length) {

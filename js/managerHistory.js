@@ -12,6 +12,8 @@
     let filterArea = '';
     let filterRoutine = '';
     let filtersReady = false;
+    let rankMode = 'exercise';   // rankings grouped by catalog exercise or by slot
+    let lastStats = null;        // stats of the last load, reused when only the rankings change
 
     const $ = id => document.getElementById(id);
 
@@ -191,9 +193,9 @@
             ? areaRows.slice().sort(function (a, b) { return (a.seconds || 0) - (b.seconds || 0); })[0]
             : null;
         cards.push(['Most practised area', most ? areaLabel(most.area_id) : '\u2014',
-                    most ? fmtDur(most.seconds) : 'no practice yet']);
+                    most ? fmtDur(most.seconds) : 'no practice yet', 'is-text']);
         cards.push(['Least practised area', least ? areaLabel(least.area_id) : '\u2014',
-                    least ? fmtDur(least.seconds) : 'no areas yet']);
+                    least ? fmtDur(least.seconds) : 'no areas yet', 'is-text']);
         return '<div class="hist-kpis">' + cards.map(function (c) {
             // A note may carry "\n" (each line is its own row below the label)
             // and "~...~" (a fragment that must stay on one piece, e.g. a date
@@ -203,7 +205,8 @@
                     return i % 2 ? '<span class="hist-kpi-frag">' + esc(part) + '</span>' : esc(part);
                 }).join('') + '</span>';
             }).join('');
-            return '<div class="hist-kpi"><span class="hist-kpi-value">' + esc(c[1]) + '</span>' +
+            return '<div class="hist-kpi' + (c[3] ? ' ' + c[3] : '') +
+                '"><span class="hist-kpi-value">' + esc(c[1]) + '</span>' +
                 '<span class="hist-kpi-label">' + esc(c[0]) + '</span>' + note + '</div>';
         }).join('') + '</div>';
     }
@@ -590,20 +593,59 @@
         });
     }
 
-    function rankings(stats) {
-        const skipped = (stats.top_skipped || []).map(function (r) {
+    // The rankings selector lives in the section it changes, not in the header.
+    function rankSelectHtml() {
+        const options = [['exercise', 'Rank by: exercise'], ['slot', 'Rank by: slot']];
+        return '<select id="histRank" class="hist-select" aria-label="Rankings grouped by">' +
+            options.map(function (o) {
+                return '<option value="' + o[0] + '"' +
+                    (rankMode === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+            }).join('') + '</select>';
+    }
+
+    // Only this part is redrawn when the selector changes, so the page keeps its scroll.
+    function bindRank(root) {
+        const sel = root.querySelector('#histRank');
+        if (!sel) return;
+        sel.addEventListener('change', function () {
+            rankMode = this.value === 'slot' ? 'slot' : 'exercise';
+            const box = $('histRankCharts');
+            if (box && lastStats) {
+                box.innerHTML = rankCards();
+                return;
+            }
+            load();
+        });
+    }
+
+    // The two ranking cards; they read the stats of the last load (no extra request).
+    function rankCards() {
+        const stats = lastStats || {};
+        const byExercise = rankMode === 'exercise';
+        const tag = byExercise ? ' (by exercise)' : ' (by slot)';
+        const empty = byExercise ? 'No exercises recorded in this period.' : 'Not enough data yet.';
+        const skippedSrc = (byExercise ? stats.top_skipped_exercise : stats.top_skipped) || [];
+        const timeSrc = (byExercise ? stats.top_time_exercise : stats.top_time) || [];
+        const skipped = skippedSrc.map(function (r) {
             const pct = r.total ? Math.round(r.skipped / r.total * 100) : 0;
             return '<li><span class="hist-rank-name">' + esc(r.name) + '</span>' +
                 '<span class="hist-rank-val">' + pct + '% skipped</span></li>';
-        }).join('') || '<li class="hist-empty-row">Not enough data yet.</li>';
-        const time = (stats.top_time || []).map(function (r) {
+        }).join('') || '<li class="hist-empty-row">' + esc(empty) + '</li>';
+        const time = timeSrc.map(function (r) {
             return '<li><span class="hist-rank-name">' + esc(r.name) + '</span>' +
                 '<span class="hist-rank-val">' + fmtDur(r.seconds) + '</span></li>';
-        }).join('') || '<li class="hist-empty-row">Not enough data yet.</li>';
-        return '<div class="hist-charts">' +
-            '<div class="hist-chart"><h3>Most skipped</h3><ul class="hist-rank">' + skipped + '</ul></div>' +
-            '<div class="hist-chart"><h3>Most time invested</h3><ul class="hist-rank">' + time + '</ul></div>' +
-            '</div>';
+        }).join('') || '<li class="hist-empty-row">' + esc(empty) + '</li>';
+        return '<div class="hist-chart"><h3>Most skipped' + tag + '</h3><ul class="hist-rank">' +
+            skipped + '</ul></div>' +
+            '<div class="hist-chart"><h3>Most time invested' + tag + '</h3><ul class="hist-rank">' +
+            time + '</ul></div>';
+    }
+
+    function rankings(stats) {
+        lastStats = stats || null;
+        return '<div class="hist-section-head"><h3 class="hist-h3">Rankings</h3>' +
+            rankSelectHtml() + '</div>' +
+            '<div class="hist-charts" id="histRankCharts">' + rankCards() + '</div>';
     }
 
     // Pager under the log: 20 per page, newest first, no need to load them all.
@@ -709,7 +751,11 @@
             '<div class="hist-chart hist-chart-wide"><h3>When you practise</h3>' +
             heatmapChart(stats.heatmap) + '</div>' +
             '</div>' + rankings(stats) +
-            '<h3 class="hist-h3">Breakdown</h3>' + pivotTable(stats) +
+            // The day view is already covered by the charts and the session log;
+            // the pivot only adds something when grouped by area / exercise / slot.
+            (groupBy === 'day' ? '' :
+                '<h3 class="hist-h3">Breakdown · by ' + esc(groupBy) + '</h3>' +
+                pivotTable(stats)) +
             '<h3 class="hist-h3">Last sessions</h3>' +
             '<div id="histSessions">' + sessionsTable(sessions) + pager() + '</div>';
     }
@@ -735,6 +781,7 @@
                 body.innerHTML = render(res[0], list);
                 bindDetails(body);
                 bindPager(body);
+                bindRank(body);
             });
     }
 

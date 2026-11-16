@@ -39,6 +39,17 @@
                 return d || String(a.name).localeCompare(String(b.name));
             });
         }
+        // Rotation queue: never practised first, then the oldest date first.
+        if (mode === 'stale') {
+            return list.slice().sort(function (a, b) {
+                const da = String(a.last_practiced_on || '');
+                const db = String(b.last_practiced_on || '');
+                if (!da && !db) return String(a.name).localeCompare(String(b.name));
+                if (!da) return -1;              // never practised goes first
+                if (!db) return 1;
+                return da.localeCompare(db) || String(a.name).localeCompare(String(b.name));
+            });
+        }
         if (mode === 'time') {
             return list.slice().sort(function (a, b) {
                 return (b.seconds || 0) - (a.seconds || 0);

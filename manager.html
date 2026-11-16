@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=52">
+    <link rel="stylesheet" href="css/manager.css?v=57">
 </head>
 <body>
 <div class="mgr">
@@ -17,7 +17,7 @@
             <button id="tabAbout" class="tab">Settings</button>
         </div>
         <div class="topbar-actions">
-            <button id="stopServerBtn" class="btn danger small" title="Stop the local server">ðŸ›‘ Stop server</button>
+            <button id="stopServerBtn" class="btn danger small" title="Stop the local server">🛑 Stop server</button>
         </div>
     </div>
 </div>
@@ -113,7 +113,7 @@
             <select id="histAreaFilter" class="hist-select" aria-label="Area filter">
                 <option value="">All areas</option>
             </select>
-            <select id="histRoutineFilter" class="hist-select" aria-label="Routine filter">
+           <select id="histRoutineFilter" class="hist-select" aria-label="Routine filter">
                 <option value="">All routines</option>
             </select>
             <div class="hist-range">
@@ -125,7 +125,7 @@
     </div>
 
     <div id="histBody" class="hist-body">
-        <div class="hist-empty">Loadingâ€¦</div>
+        <div class="hist-empty">Loading…</div>
     </div>
 </div>
 
@@ -216,7 +216,7 @@
             <span>Exercise Catalog</span>
         </h1>
         <div class="cat-search">
-            <input type="search" id="catSearch" placeholder="Search exercisesâ€¦" autocomplete="off">
+            <input type="search" id="catSearch" placeholder="Search exercises…" autocomplete="off">
         </div>
     </div>
 
@@ -226,6 +226,7 @@
             <div class="field">
                 <select id="catSort">
                     <option value="name">Sort: name</option>
+                    <option value="stale">Sort: least recently practised</option>
                     <option value="recent">Sort: last practised</option>
                     <option value="time">Sort: total time</option>
                 </select>
@@ -324,12 +325,12 @@
             <div class="field">
                 <label>Strings enabled in the trainer</label>
                 <div style="display:flex;gap:12px;flex-wrap:wrap;">
-                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 1 â€” high E"><input type="checkbox" class="fb-str" value="1" checked> 1 Â· E</label>
-                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 2 â€” B"><input type="checkbox" class="fb-str" value="2" checked> 2 Â· B</label>
-                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 3 â€” G"><input type="checkbox" class="fb-str" value="3" checked> 3 Â· G</label>
-                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 4 â€” D"><input type="checkbox" class="fb-str" value="4" checked> 4 Â· D</label>
-                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 5 â€” A"><input type="checkbox" class="fb-str" value="5" checked> 5 Â· A</label>
-                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 6 â€” low E"><input type="checkbox" class="fb-str" value="6" checked> 6 Â· E</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 1 — high E"><input type="checkbox" class="fb-str" value="1" checked> 1 · E</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 2 — B"><input type="checkbox" class="fb-str" value="2" checked> 2 · B</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 3 — G"><input type="checkbox" class="fb-str" value="3" checked> 3 · G</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 4 — D"><input type="checkbox" class="fb-str" value="4" checked> 4 · D</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 5 — A"><input type="checkbox" class="fb-str" value="5" checked> 5 · A</label>
+                    <label style="display:inline-flex;align-items:center;gap:4px;" title="String 6 — low E"><input type="checkbox" class="fb-str" value="6" checked> 6 · E</label>
                 </div>
             </div>
             <div class="field">
@@ -345,7 +346,7 @@
         <div class="field">
             <label>API key</label>
             <div class="field-row">
-                <input type="password" id="fbApiKey" class="api-key-input" placeholder="fb_live_â€¦" autocomplete="off">
+                <input type="password" id="fbApiKey" class="api-key-input" placeholder="fb_live_…" autocomplete="off">
                 <button id="fbApiKeyShow" class="btn small" title="Show / hide the key">Show</button>
                 <button id="fbApiKeyTest" class="btn small" title="Check the key against FreqBlog">Test key</button>
             </div>
@@ -387,7 +388,7 @@
     <div class="about-card">
         <h2>Developer</h2>
         <p style="margin:0 0 10px;color:#9a9a9a;font-size:0.8rem;">
-            <b>Debug mode</b> (dry run) keeps the app fully working but blocks every write, so nothing reaches the database â€”
+            <b>Debug mode</b> (dry run) keeps the app fully working but blocks every write, so nothing reaches the database —
             ideal for testing without polluting it. Toggling reloads the app with <code>?debug=1</code> or <code>?debug=0</code>.
         </p>
         <div class="field">
@@ -416,12 +417,12 @@
     </div>
 
     <div class="about-card">
-        <h2>About <span class="about-version">v1.3.0</span></h2>
-        <p>A personal practice companion to organize your daily guitar routine. It combines a step-by-step practice assistant with a countdown timer, a metronome, a drum machine and your backing tracks &amp; resources â€” all in one place.</p>
+        <h2>About <span class="about-version">v1.4.0</span></h2>
+        <p>A personal practice companion to organize your daily guitar routine. It combines a step-by-step practice assistant with a countdown timer, a metronome, a drum machine and your backing tracks &amp; resources — all in one place.</p>
         <ul class="about-list">
-            <li><b>Practice Assistant</b> â€” guided routine with a per-exercise timer, progress bar, and an end-of-time chime + flash.</li>
-            <li><b>Sections</b> â€” tools, rhythm, backing tracks and notes, fully editable from this Manager.</li>
-            <li><b>Widgets</b> â€” metronome, drum machine, chord transposer, quick notes, delay calculator and a fretboard trainer (identify / locate notes). Scale views include CAGED and 3NPS; major modes use parent-major patterns, and harmonic/melodic minor use the relative-major anchor (A minor root is P6).</li>
+            <li><b>Practice Assistant</b> — guided routine with a per-exercise timer, progress bar, and an end-of-time chime + flash.</li>
+            <li><b>Sections</b> — tools, rhythm, backing tracks and notes, fully editable from this Manager.</li>
+            <li><b>Widgets</b> — metronome, drum machine, chord transposer, quick notes, delay calculator and a fretboard trainer (identify / locate notes). Scale views include CAGED and 3NPS; major modes use parent-major patterns, and harmonic/melodic minor use the relative-major anchor (A minor root is P6).</li>
         </ul>
     </div>
 
@@ -437,9 +438,9 @@
     <div class="about-card">
         <h2>Credits</h2>
         <ul class="about-list">
-            <li><b>Author</b>: Miguel Ãngel MacÃ­as</li>
+            <li><b>Author</b>: Miguel Ángel Macías</li>
             <li><b>Built with</b>: DeepSeek through Cline</li>
-            <li><b>Audio analysis by FreqBlog</b> â€” BPM &amp; key of the "Song Info" widget</li>
+            <li><b>Audio analysis by FreqBlog</b> — BPM &amp; key of the "Song Info" widget</li>
         </ul>
     </div>
 </div>
@@ -455,10 +456,10 @@
 <script src="js/managerCommon.js?v=7"></script>
 <!-- the drum preset catalog comes from the widget itself (single source of truth) -->
 <script src="js/drumMachine.js?v=14"></script>
-<script src="js/manager.js?v=29"></script>
-<script src="js/managerExercises.js?v=1"></script>
+<script src="js/manager.js?v=31"></script>
+<script src="js/managerExercises.js?v=2"></script>
 <script src="js/managerSections.js?v=23"></script>
-<script src="js/managerHistory.js?v=26"></script>
+<script src="js/managerHistory.js?v=31"></script>
 </body>
 </html>
 

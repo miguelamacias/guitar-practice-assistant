@@ -124,15 +124,13 @@
     }
 
     // ---- Areas: banner + bulk assignment ----------------------------------
-    let allSlotsCache = null;
-
-    async function loadAllSlots(force) {
-        if (allSlotsCache && !force) return allSlotsCache;
+    // Always fetched (three small local requests): the banner must never show a
+    // stale count after assigning areas, in the editor or in the modal.
+    async function loadAllSlots() {
         const list = await api('GET', '/api/routines');
-        allSlotsCache = await Promise.all(list.map(function (r) {
+        return Promise.all(list.map(function (r) {
             return api('GET', '/api/routines/' + r.id);
         }));
-        return allSlotsCache;
     }
 
     // Client-side guess from the slot name; never saved without confirmation.
@@ -159,9 +157,17 @@
         if (!banner || !text) return;
         try {
             const all = await loadAllSlots();
+            const liveSels = document.querySelectorAll('#exerciseList .ex-area');
             let missing = 0;
             all.forEach(function (r) {
-                (r.exercises || []).forEach(function (ex) { if (!ex.area_id) missing += 1; });
+                const rows = r.exercises || [];
+                if (current && r.id === current.id && liveSels.length === rows.length) {
+                    // The editor wins for the open routine: it may already hold
+                    // areas that are not saved yet.
+                    liveSels.forEach(function (sel) { if (!sel.value) missing += 1; });
+                } else {
+                    rows.forEach(function (ex) { if (!ex.area_id) missing += 1; });
+                }
             });
             if (!missing) { banner.hidden = true; return; }
             text.textContent = missing +
@@ -190,7 +196,7 @@
         if (dirty && !confirm('You have unsaved changes in this routine. Assign areas anyway?')) return;
         let all;
         try {
-            all = await loadAllSlots(true);
+            all = await loadAllSlots();
         } catch (e) { toast('Error: ' + e.message, true); return; }
 
         const overlay = document.createElement('div');
@@ -260,7 +266,6 @@
             }
             overlay.remove();
             toast(ok + ' slots assigned' + (failed ? ', ' + failed + ' failed' : ''), failed > 0);
-            allSlotsCache = null;
             await loadRoutines(current ? current.id : undefined);
         });
         actions.appendChild(cancel);
@@ -284,7 +289,6 @@
                 { name: name, description: desc.slice(0, 2000) });
             await api('PUT', '/api/exercises/' + eid, { catalog_exercise_id: created.id });
             await GPH.mgr.loadMeta(true);
-            allSlotsCache = null;
             await loadRoutines(current ? current.id : undefined);
             toast('Exercise created and linked');
         } catch (e) { toast('Error: ' + e.message, true); }
@@ -841,6 +845,7 @@
         catPicker.root.classList.add('ex-cat-picker');
         catPicker.select.classList.add('ex-cat');
         catPicker.trigger.setAttribute('aria-label', 'Current exercise');
+        const catSel = catPicker.select;
 
         const noAreaChip = document.createElement('span');
         noAreaChip.className = 'chip-warn';
@@ -848,13 +853,32 @@
         noAreaChip.title = 'Assign an area to see this slot in the statistics';
 
         function syncNoAreaChip() { noAreaChip.hidden = !!areaSel.value; }
-        areaSel.addEventListener('change', function () { syncNoAreaChip(); setDirty(true); });
+        areaSel.addEventListener('change', function () {
+            syncNoAreaChip();
+            setDirty(true);
+            updateAreaBanner();   // the count follows the editor, saved or not
+        });
         syncNoAreaChip();
 
         const fromDesc = mk('\u21aa From description',
             'Create a catalog exercise from this slot description', function () {
                 createFromDescription(row);
             });
+
+        // Only useful while the slot has no exercise and there is something to
+        // convert; it follows the picker and the description as they change.
+        function syncFromDesc() {
+            const hasExercise = !!catSel.value;
+            const hasDesc = !!(descIn.value || '').trim();
+            fromDesc.hidden = hasExercise || !hasDesc;
+            fromDesc.title = hasExercise
+                ? 'This slot already has an exercise'
+                : (hasDesc ? 'Create a catalog exercise from this slot description'
+                           : 'Write a description first');
+        }
+        catSel.addEventListener('change', syncFromDesc);
+        descIn.addEventListener('input', syncFromDesc);
+        syncFromDesc();
 
         metaRow.appendChild(areaSel);
         metaRow.appendChild(catPicker.root);
@@ -1240,7 +1264,6 @@
                   catalog_exercise_id: ex.catalog_exercise_id });
         }
         setDirty(false);
-        allSlotsCache = null;
         updateAreaBanner();
     }
 
@@ -1465,7 +1488,6 @@
         // unless there are unsaved edits in this routine.
         document.addEventListener('slot-meta:changed', function () {
             if (current && !dirty) renderEditor();
-            allSlotsCache = null;
             updateAreaBanner();
         });
         GPH.mgr.loadMeta()

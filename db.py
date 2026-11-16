@@ -1898,17 +1898,60 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
         " CAST(strftime('%H', started_at, 'localtime') AS INTEGER) h, COUNT(*) n"
         " FROM routine_sessions WHERE status='finished' AND started_at >= ?"
         " GROUP BY w, h ORDER BY w, h", (since,)).fetchall()]
-    top_skipped = [{'name': r['name'], 'skipped': r['s'], 'total': r['n']} for r in conn.execute(
-        "SELECT i.name, SUM(i.state='skipped') s, COUNT(*) n FROM routine_session_items i"
+    # Slot rankings group by slot id, not by the stored name: the live name comes
+    # from the exercises table, so renaming a slot does not split one line in two
+    # (same rule as by_slot). A deleted slot falls back to its snapshot name and
+    # keeps each item separate (no exercise id to join on).
+    top_skipped = [{'exercise_id': r['eid'], 'name': r['name'],
+                    'skipped': r['s'], 'total': r['n']} for r in conn.execute(
+        "SELECT COALESCE(i.exercise_id, -i.id) AS eid,"
+        " COALESCE(MAX(e.name), MAX(i.name)) AS name,"
+        " SUM(i.state='skipped') s, COUNT(*) n"
+        " FROM routine_session_items i"
         " JOIN routine_sessions r ON r.id = i.session_id"
-        " WHERE r.started_at >= ? AND i.name <> '' GROUP BY i.name"
+        " LEFT JOIN exercises e ON e.id = i.exercise_id"
+        " WHERE r.started_at >= ? AND COALESCE(e.name, i.name, '') <> ''"
+        " AND i.state <> 'pending'"
+        " GROUP BY COALESCE(i.exercise_id, -i.id)"
         " HAVING n >= 2 ORDER BY (SUM(i.state='skipped') * 1.0 / COUNT(*)) DESC, s DESC LIMIT 5",
         (since,)).fetchall()]
-    top_time = [{'name': r['name'], 'seconds': r['sec']} for r in conn.execute(
-        "SELECT i.name, COALESCE(SUM(i.played_seconds),0) sec FROM routine_session_items i"
+    # Rankings. Both use the real clock (elapsed_seconds) so the slot and the
+    # exercise versions mean the same thing and agree with the Breakdown.
+    top_time = [{'exercise_id': r['eid'], 'name': r['name'], 'seconds': r['sec']}
+                for r in conn.execute(
+        "SELECT COALESCE(i.exercise_id, -i.id) AS eid,"
+        " COALESCE(MAX(e.name), MAX(i.name)) AS name,"
+        " COALESCE(SUM(i.elapsed_seconds),0) sec"
+        " FROM routine_session_items i"
         " JOIN routine_sessions r ON r.id = i.session_id"
-        " WHERE r.started_at >= ? AND i.name <> '' GROUP BY i.name"
+        " LEFT JOIN exercises e ON e.id = i.exercise_id"
+        " WHERE r.started_at >= ? AND COALESCE(e.name, i.name, '') <> ''"
+        " GROUP BY COALESCE(i.exercise_id, -i.id)"
         " ORDER BY sec DESC LIMIT 5", (since,)).fetchall()]
+    top_time_exercise = [{'catalog_exercise_id': r['cid'], 'name': r['name'] or '',
+                          'seconds': r['sec']} for r in conn.execute(
+        "SELECT i.catalog_exercise_id cid,"
+        " COALESCE(c.name, MAX(i.catalog_name), '') name,"
+        " COALESCE(SUM(i.elapsed_seconds),0) sec"
+        " FROM routine_session_items i"
+        " JOIN routine_sessions r ON r.id = i.session_id"
+        " LEFT JOIN catalog_exercises c ON c.id = i.catalog_exercise_id"
+        " WHERE r.started_at >= ? AND i.catalog_exercise_id IS NOT NULL"
+        " GROUP BY i.catalog_exercise_id ORDER BY sec DESC LIMIT 5",
+        (since,)).fetchall()]
+    top_skipped_exercise = [{'catalog_exercise_id': r['cid'], 'name': r['name'] or '',
+                             'skipped': r['s'], 'total': r['n']}
+                            for r in conn.execute(
+        "SELECT i.catalog_exercise_id cid,"
+        " COALESCE(c.name, MAX(i.catalog_name), '') name,"
+        " SUM(i.state='skipped') s, COUNT(*) n"
+        " FROM routine_session_items i"
+        " JOIN routine_sessions r ON r.id = i.session_id"
+        " LEFT JOIN catalog_exercises c ON c.id = i.catalog_exercise_id"
+        " WHERE r.started_at >= ? AND i.catalog_exercise_id IS NOT NULL"
+        " GROUP BY i.catalog_exercise_id HAVING n >= 2"
+        " ORDER BY (SUM(i.state='skipped') * 1.0 / COUNT(*)) DESC, s DESC LIMIT 5",
+        (since,)).fetchall()]
     finished = t['fin']
     # ---- Derived pivot: same window, split by area / exercise / slot --------
     # Only items with real clock time count, so a skipped slot adds neither
@@ -1995,6 +2038,8 @@ def session_stats(conn, days=30, area_id=None, routine_id=None):
         'heatmap': heatmap,
         'top_skipped': top_skipped,
         'top_time': top_time,
+        'top_skipped_exercise': top_skipped_exercise,
+        'top_time_exercise': top_time_exercise,
         'by_area': by_area,
         'by_exercise': by_exercise,
         'by_slot': by_slot,
