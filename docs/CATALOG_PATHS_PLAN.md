@@ -223,16 +223,30 @@ Se hizo backup verificado
 (`practice-backup-20261116-pre-drop-slot-description.db`) y se exportaron las
 17 descripciones a `practice-backup-20261116-slot-descriptions.txt`.
 
-**Estado**: el código ya no lee ni escribe la columna (§8.2–8.5 hechos), pero
-**la columna sigue en la BD** a la espera de decidir qué hacer con esos 6
-textos. Cuando se decida, el único paso pendiente es:
+**Resuelto (2026-11-16)**: se migraron los 6 textos al catálogo y después se
+eliminó la columna.
 
-```python
-conn.execute('ALTER TABLE exercises DROP COLUMN description')
-```
+| Slot | Ejercicio del catálogo | Descripción |
+|---|---|---|
+| Warmup | Warmup | Play some scales and barre chords to warmup |
+| Guitar Aerobics | Guitar Aerobics | The main exercise of the day |
+| Rhythm Guitar 365 | Rhythm Guitar 365 | Complementary exercise |
+| Live Song #1 | Besos | — |
+| Live Song #2 | Clavado en un Bar | — |
+| Live Song #3 | Europa | — |
 
-desde `_migrate()` (guardado por `PRAGMA table_info`) o con un script de una
-sola vez.
+Regla aplicada: un nombre de slot con `#` (marcador de posición) toma el texto
+como nombre del ejercicio — es lo que la canción *es*; un nombre real se
+conserva y el texto pasa a ser la descripción del ejercicio.
+
+Backups de esa operación:
+`practice-backup-20261116-pre-migrate-descriptions.db` (antes de escribir) y
+`practice-backup-20261116-pre-drop-slot-description.db` (antes de tocar nada),
+más el export `practice-backup-20261116-slot-descriptions.txt`.
+
+El `DROP COLUMN` se hizo con un script de una sola vez (no en `_migrate()`), así
+que una copia antigua de la BD conserva la columna sin que nadie la borre por
+sorpresa.
 
 Comprobar además que `ALTER TABLE ... DROP COLUMN` está disponible:
 
