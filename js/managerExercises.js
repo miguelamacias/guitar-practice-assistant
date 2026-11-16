@@ -27,6 +27,47 @@
         return Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
     }
 
+    // Names are compared without accents, case or punctuation: "Arp Maj7" and
+    // "arp-maj7!" are the same exercise as far as the user is concerned.
+    function normName(text) {
+        return String(text || '')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '');
+    }
+
+    // Up to three exercises whose name looks the same, ignoring `skipId`.
+    function similarExercises(name, skipId) {
+        const key = normName(name);
+        if (!key) return [];
+        return items.filter(function (it) {
+            if (it.id === skipId) return false;
+            const other = normName(it.name);
+            if (!other) return false;
+            return other === key ||
+                (other.length >= 5 && (other.indexOf(key) >= 0 || key.indexOf(other) >= 0));
+        }).slice(0, 3);
+    }
+
+    // Confirmation before saving a name that already exists (or is contained in
+    // another one). Creating a duplicate stays possible: it just should be a
+    // conscious decision.
+    function confirmDuplicate(name, skipId, action) {
+        const dupes = similarExercises(name, skipId);
+        if (!dupes.length) return true;
+        const list = dupes.map(function (d) { return '"' + d.name + '"'; }).join(', ');
+        return confirm('There is already ' + (dupes.length === 1 ? 'an exercise' : 'exercises') +
+            ' with a similar name: ' + list + '.\n\n' + action + ' anyway?');
+    }
+
+    // "New exercise", then "New exercise 2", "New exercise 3"...
+    function uniqueDefaultName(base) {
+        const taken = items.map(function (it) { return normName(it.name); });
+        if (taken.indexOf(normName(base)) < 0) return base;
+        let n = 2;
+        while (taken.indexOf(normName(base + ' ' + n)) >= 0) n += 1;
+        return base + ' ' + n;
+    }
+
     function sorted() {
         const q = ($('catSearch') ? $('catSearch').value : '').trim().toLowerCase();
         const mode = $('catSort') ? $('catSort').value : 'name';
@@ -170,7 +211,7 @@
     async function newExercise() {
         try {
             const created = await api('POST', '/api/catalog',
-                { name: 'New exercise', description: '' });
+                { name: uniqueDefaultName('New exercise'), description: '' });
             selectedId = created.id;
             await GPH.mgr.loadMeta(true);
             document.dispatchEvent(new CustomEvent('slot-meta:changed'));
@@ -184,6 +225,7 @@
         if (!current) return;
         const name = ($('catName').value || '').trim();
         if (!name) { toast('The name cannot be empty', true); return; }
+        if (!confirmDuplicate(name, current.id, 'Save it')) return;
         try {
             await api('PUT', '/api/catalog/' + current.id,
                 { name: name, description: $('catDesc').value || '' });
