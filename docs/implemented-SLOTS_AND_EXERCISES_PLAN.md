@@ -1,6 +1,6 @@
 # Slots y catálogo de ejercicios — Documento de diseño definitivo
 
-> **Estado:** diseño cerrado para implementación.
+> **Estado:** implementado (1.4.2). Se conserva como referencia de diseño.
 > **Fecha:** 2026-11-15
 > **Ámbito:** evolución de la práctica sobre la app actual: áreas, catálogo global de ejercicios y estadísticas derivadas.
 > **Documento independiente:** no requiere leer planes anteriores.

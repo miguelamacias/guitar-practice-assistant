@@ -1,12 +1,12 @@
 # Songbook — Documento de diseño definitivo
 
-> **Estado:** diseño cerrado para implementación.  
+> **Estado:** pendiente de implementar (diseño cerrado).
 > **Fecha:** 2026-11-14  
 > **Ámbito:** nueva funcionalidad Songbook de Guitar Practice Hub.  
 > **Documento independiente:** no requiere leer los planes anteriores para implementarlo.
 >
-> **No hay implementación de la app en este momento.** Solo existe el mockup aislado
-> [`docs/songbook-mockup.html`](songbook-mockup.html).
+> **No hay implementación de la app en este momento.** (El mockup estático que
+> acompañaba a este plan se retiró en la 1.5.0.)
 
 ---
 
@@ -1316,7 +1316,6 @@ Nov 10 · 145 BPM · ★★★☆☆
 | Fichero | Cambio |
 |---|---|
 | `docs/SONGBOOK_PLAN.md` | Este documento. |
-| `docs/songbook-mockup.html` | Mockup estático. |
 
 ---
 
@@ -1596,11 +1595,9 @@ Manager → Songbook → Hide
 
 ## 21. Mockup
 
-El mockup estático está en:
-
-```text
-docs/songbook-mockup.html
-```
+El mockup estático que acompañaba a este plan (`docs/songbook-mockup.html`) se
+retiró en la 1.5.0: la funcionalidad aún no está implementada, y este documento
+ya describe el diseño completo.
 
 Incluye:
 

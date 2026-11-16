@@ -1,6 +1,6 @@
 # Learning paths en el catálogo
 
-Plan de implementación. Estado: **aprobado, pendiente de ejecutar**.
+Plan de implementación. Estado: **implementado** (1.4.2; cerrado del todo en 1.5.0).
 Fecha: 2026-11-16. Versión de partida: 1.4.0 (`main` en `5234cc2`).
 
 ## 1. Objetivo
