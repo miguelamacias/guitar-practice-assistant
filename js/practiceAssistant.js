@@ -424,6 +424,9 @@
         const ex = rActiva().ejercicios[currentExerciseIndex];
         const live = attemptLive(currentExerciseIndex);
         btn.disabled = live;
+        // The name is the same trigger, so it stops promising a click too.
+        const main = document.getElementById('exMain');
+        if (main) main.classList.toggle('is-locked', live);
         btn.title = live
             ? 'The attempt is live: change it when the timer ends or press Reset'
             : (slotExercise(ex) ? 'Change exercise' : 'Pick an exercise from the catalog');

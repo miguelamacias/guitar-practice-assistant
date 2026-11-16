@@ -939,6 +939,7 @@
 .ex-main {
     max-width: 60vw; color: #b8b8b8;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer;                 /* the name opens the picker as well */
 }
 .ex-main.is-exercise { color: #fff; font-weight: 600; }
 /* Slot with a path but no exercise yet: show which pool to pick from. */
@@ -954,8 +955,11 @@
 /* Area groups inside the catalog pool: quieter than the path header. */
 .ex-catalog-group { color: #9a9a9a; margin-top: 4px; }
 /* The description on hover is a bonus, not a help affordance: no `?` cursor
-   (same as the routine name on the welcome screen). */
-.ex-main.has-tip { cursor: default; }
+   (same as the routine name on the welcome screen), but the name is still the
+   picker trigger, so it keeps the pointer. */
+.ex-main.has-tip { cursor: pointer; }
+/* Live attempt: the picker is locked, so the name must not promise a click. */
+.ex-main.is-locked { cursor: default; }
 /* Small caret right next to the exercise name. */
 .ex-change-btn {
     flex: 0 0 auto; padding: 0 2px; border: 0; background: transparent;
