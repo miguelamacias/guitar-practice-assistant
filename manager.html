@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Routine Manager - Guitar Practice Hub</title>
-    <link rel="stylesheet" href="css/manager.css?v=61">
+    <link rel="stylesheet" href="css/manager.css?v=62">
 </head>
 <body>
 <div class="mgr">
@@ -243,6 +243,10 @@
                     <option value="all">Show: all</option>
                     <option value="archived">Show: archived</option>
                 </select>
+                <select id="catGroup" aria-label="Group list">
+                    <option value="area">Group: area</option>
+                    <option value="none">Group: none</option>
+                </select>
             </div>
             <div id="catalogList"></div>
             <button id="newCatalogBtn" class="btn primary block" type="button">+ New exercise</button>
@@ -258,6 +262,10 @@
                 <div class="field">
                     <label>Description</label>
                     <textarea id="catDesc" rows="3"></textarea>
+                </div>
+                <div class="field">
+                    <label>Area <span class="sub">(classification, not statistics)</span></label>
+                    <select id="catArea" aria-label="Area"></select>
                 </div>
                 <div class="editor-actions">
                     <button id="saveCatalogBtn" class="btn primary" type="button">Save exercise</button>
@@ -507,8 +515,8 @@
 <script src="js/managerCommon.js?v=8"></script>
 <!-- the drum preset catalog comes from the widget itself (single source of truth) -->
 <script src="js/drumMachine.js?v=14"></script>
-<script src="js/manager.js?v=35"></script>
-<script src="js/managerExercises.js?v=4"></script>
+<script src="js/manager.js?v=36"></script>
+<script src="js/managerExercises.js?v=5"></script>
 <script src="js/managerPaths.js?v=3"></script>
 <script src="js/managerSections.js?v=24"></script>
 <script src="js/managerHistory.js?v=31"></script>

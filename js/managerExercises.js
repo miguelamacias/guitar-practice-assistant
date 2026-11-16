@@ -125,18 +125,47 @@
             wrap.appendChild(empty);
             return;
         }
-        list.forEach(function (it) {
-            const row = document.createElement('div');
-            row.className = 'cat-item' + (it.id === selectedId ? ' selected' : '') +
-                (it.archived ? ' is-archived' : '');
-            row.appendChild(span('cat-name', it.name || ''));
-            if (it.archived) row.appendChild(span('cat-tag', 'archived'));
-            const bits = [(it.practices || 0) + '\u00d7', fmtDur(it.seconds)];
-            if (it.last_practiced_on) bits.push(it.last_practiced_on);
-            row.appendChild(span('cat-meta', bits.join(' \u00b7 ')));
-            row.addEventListener('click', function () { select(it.id); });
-            wrap.appendChild(row);
+        const grouped = $('catGroup') ? $('catGroup').value !== 'none' : true;
+        if (!grouped) {
+            list.forEach(function (it) { wrap.appendChild(catalogRow(it)); });
+            return;
+        }
+        // Grouped view: area order comes from the areas panel, then the chosen
+        // sort applies inside each group. Unclassified goes last.
+        const order = GPH.mgr.areas().map(function (a) { return a.id; });
+        const rank = function (it) {
+            const at = order.indexOf(it.area_id);
+            return it.area_id ? (at < 0 ? 900 : at) : 901;
+        };
+        const byArea = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
+        let last = null;
+        byArea.forEach(function (it) {
+            const label = it.area || 'No area';
+            if (label !== last) {
+                const head = document.createElement('div');
+                head.className = 'cat-group';
+                const n = byArea.filter(function (o) {
+                    return (o.area || 'No area') === label;
+                }).length;
+                head.textContent = label + ' (' + n + ')';
+                wrap.appendChild(head);
+                last = label;
+            }
+            wrap.appendChild(catalogRow(it));
         });
+    }
+
+    function catalogRow(it) {
+        const row = document.createElement('div');
+        row.className = 'cat-item' + (it.id === selectedId ? ' selected' : '') +
+            (it.archived ? ' is-archived' : '');
+        row.appendChild(span('cat-name', it.name || ''));
+        if (it.archived) row.appendChild(span('cat-tag', 'archived'));
+        const bits = [(it.practices || 0) + '\u00d7', fmtDur(it.seconds)];
+        if (it.last_practiced_on) bits.push(it.last_practiced_on);
+        row.appendChild(span('cat-meta', bits.join(' \u00b7 ')));
+        row.addEventListener('click', function () { select(it.id); });
+        return row;
     }
 
     function clearEditor() {
@@ -144,6 +173,25 @@
         if ($('catEmpty')) $('catEmpty').hidden = false;
         if ($('catEditor')) $('catEditor').hidden = true;
         setDirty(false);
+    }
+
+    // Area select of the catalog editor (the areas panel is the source).
+    function renderAreaSelect() {
+        const sel = $('catArea');
+        if (!sel) return;
+        const keep = current ? (current.area_id || '') : '';
+        sel.innerHTML = '';
+        const none = document.createElement('option');
+        none.value = '';
+        none.textContent = '\u2014 No area \u2014';
+        sel.appendChild(none);
+        GPH.mgr.areas().forEach(function (a) {
+            const o = document.createElement('option');
+            o.value = a.id;
+            o.textContent = a.label;
+            sel.appendChild(o);
+        });
+        sel.value = keep;
     }
 
     async function load() {
@@ -216,6 +264,7 @@
         if ($('catEditor')) $('catEditor').hidden = false;
         if ($('catName')) $('catName').value = current.name || '';
         if ($('catDesc')) $('catDesc').value = current.description || '';
+        renderAreaSelect();
         const archBtn = $('archiveCatalogBtn');
         if (archBtn) {
             archBtn.textContent = current.archived ? 'Unarchive' : 'Archive';
@@ -248,7 +297,8 @@
         if (!confirmDuplicate(name, current.id, 'Save it')) return;
         try {
             await api('PUT', '/api/catalog/' + current.id,
-                { name: name, description: $('catDesc').value || '' });
+                { name: name, description: $('catDesc').value || '',
+                  area_id: $('catArea') ? $('catArea').value : '' });
             setDirty(false);
             await GPH.mgr.loadMeta(true);
             document.dispatchEvent(new CustomEvent('slot-meta:changed'));
@@ -395,6 +445,7 @@
             if (!Array.isArray(areaList)) areaList = [];
         } catch (e) { areaList = []; }
         renderAreas();
+        renderAreaSelect();      // the catalog editor uses the same vocabulary
     }
 
     async function addArea() {
@@ -450,6 +501,8 @@
         bind('catSearch', renderList, 'input');
         bind('catSort', renderList, 'change');
         bind('catFilter', renderList, 'change');
+        bind('catGroup', renderList, 'change');
+        bind('catArea', function () { setDirty(true); }, 'change');
         bind('archiveCatalogBtn', archiveExercise);
         bind('catName', function () { setDirty(true); }, 'input');
         bind('catDesc', function () { setDirty(true); }, 'input');

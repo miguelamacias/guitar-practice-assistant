@@ -1271,6 +1271,7 @@ def _catalog_dict(row):
     return {'id': row['id'], 'name': row['name'] or '',
             'description': row['description'] or '',
             'archived': bool(row['archived']) if 'archived' in keys else False,
+            'area_id': (row['area_id'] or '') if 'area_id' in keys else '',
             'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
 
@@ -1289,7 +1290,7 @@ def _catalog_map(conn, ids):
 
 def get_catalog_exercise(conn, cid):
     row = conn.execute(
-        'SELECT id, name, description, archived, created_at, updated_at'
+        'SELECT id, name, description, archived, area_id, created_at, updated_at'
         ' FROM catalog_exercises WHERE id=?', (cid,)).fetchone()
     return _catalog_dict(row) if row else None
 
@@ -1304,7 +1305,8 @@ def list_catalog(conn, q=''):
     query = (q or '').strip()
     like = '%' + query + '%'
     rows = conn.execute(
-        'SELECT c.id, c.name, c.description, c.archived, c.created_at, c.updated_at,'
+        'SELECT c.id, c.name, c.description, c.archived, c.area_id, c.created_at,'
+        ' c.updated_at,'
         ' (SELECT COUNT(*) FROM routine_session_items i'
         '   WHERE i.catalog_exercise_id = c.id AND i.elapsed_seconds > 0) AS practices,'
         ' (SELECT COALESCE(SUM(i.elapsed_seconds), 0) FROM routine_session_items i'
@@ -1330,6 +1332,8 @@ def list_catalog(conn, q=''):
         ' ORDER BY area_id').fetchall():
         used.setdefault(r['cid'], []).append(r['area_id'])
     out = []
+    labels = area_map(conn)
+    order = {a['id']: a.get('position', 0) for a in areas(conn)}
     for r in rows:
         item = _catalog_dict(r)
         item.update({
@@ -1338,8 +1342,14 @@ def list_catalog(conn, q=''):
             'last_practiced_on': r['last_practiced_on'] or '',
             'slots': slots.get(r['id'], []),
             'areas': used.get(r['id'], []),
+            # Classification for browsing: never used for statistics.
+            'area': labels.get(item['area_id'], ''),
         })
         out.append(item)
+    # Area first (in the user's order), then name: the lists and the assistant
+    # picker can group without sorting again. Unclassified exercises go last.
+    out.sort(key=lambda i: (order.get(i['area_id'], 999) if i['area_id'] else 1000,
+                            (i['name'] or '').lower()))
     return out
 
 
@@ -1375,10 +1385,11 @@ def catalog_detail(conn, cid):
     return item
 
 
-def _catalog_fields(data):
+def _catalog_fields(conn, data):
     """Validated fields of a catalog exercise -> (fields, error).
 
-    `archived` is optional: a create without it leaves the column at 0.
+    `archived` and `area_id` are optional: the keys only appear when the caller
+    sends them, so saving a name never touches either flag.
     """
     name = str(data.get('name') or '').strip()
     if not name or len(name) > 200:
@@ -1389,17 +1400,22 @@ def _catalog_fields(data):
     out = {'name': name, 'description': desc}
     if 'archived' in data:
         out['archived'] = 1 if data.get('archived') else 0
+    if 'area_id' in data:
+        aid = str(data.get('area_id') or '').strip()
+        if aid and aid not in area_map(conn):
+            return None, 'unknown_area'
+        out['area_id'] = aid
     return out, None
 
 
 def create_catalog_exercise(conn, data):
-    fields, err = _catalog_fields(data)
+    fields, err = _catalog_fields(conn, data)
     if err:
         return {'error': err}
-    cur = conn.execute('INSERT INTO catalog_exercises(name, description, archived)'
-                       ' VALUES(?, ?, ?)',
+    cur = conn.execute('INSERT INTO catalog_exercises(name, description, archived,'
+                       ' area_id) VALUES(?, ?, ?, ?)',
                        (fields['name'], fields['description'],
-                        fields.get('archived', 0)))
+                        fields.get('archived', 0), fields.get('area_id', '')))
     conn.commit()
     return get_catalog_exercise(conn, cur.lastrowid)
 
@@ -1407,19 +1423,19 @@ def create_catalog_exercise(conn, data):
 def update_catalog_exercise(conn, cid, data):
     if not catalog_exists(conn, cid):
         return None
-    fields, err = _catalog_fields(data)
+    fields, err = _catalog_fields(conn, data)
     if err:
         return {'error': err}
+    sets = ['name=?', 'description=?', "updated_at=datetime('now')"]
+    args = [fields['name'], fields['description']]
     if 'archived' in fields:
-        conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
-                     " archived=?, updated_at=datetime('now') WHERE id=?",
-                     (fields['name'], fields['description'],
-                      fields['archived'], cid))
-    else:
-        # Not sent: keep whatever it was (saving a name must not unarchive).
-        conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
-                     " updated_at=datetime('now') WHERE id=?",
-                     (fields['name'], fields['description'], cid))
+        sets.insert(2, 'archived=?')
+        args.append(fields['archived'])
+    if 'area_id' in fields:
+        sets.insert(2, 'area_id=?')
+        args.append(fields['area_id'])
+    args.append(cid)
+    conn.execute('UPDATE catalog_exercises SET ' + ', '.join(sets) + ' WHERE id=?', args)
     conn.commit()
     return get_catalog_exercise(conn, cid)
 

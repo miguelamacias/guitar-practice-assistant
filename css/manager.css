@@ -678,6 +678,14 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 }
 .cat-item:hover { background: rgba(255, 255, 255, 0.05); }
 .cat-item.selected { background: rgba(255, 255, 255, 0.1); }
+/* Section headers of the catalog list (grouped by area). */
+.cat-group {
+    margin: 10px 0 2px; padding: 0 2px 3px;
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.6px;
+    color: var(--muted); border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cat-group:first-child { margin-top: 0; }
+
 /* Archived: out of the active list, still readable when shown. */
 .cat-item.is-archived { opacity: 0.55; }
 .cat-item.is-archived .cat-name { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); }

@@ -1,8 +1,9 @@
 # Escalar el catálogo de ejercicios
 
-Plan de implementación. Estado: **aprobado, pendiente de ejecutar**.
-Fecha: 2026-11-16. Versión: sin cambios (refinando la 1.4.x; el bump se decide
-en el merge).
+Plan de implementación. Estado: **implementado en `feature/catalog-paths`**
+(commits `Warn about duplicate…`, `Add a search box…`, `Archive…`,
+`Classify…`). Fecha: 2026-11-16. Versión: sin cambios (refinando la 1.4.x; el
+bump se decide en el merge).
 
 ## 1. El problema, con números
 
@@ -135,7 +136,7 @@ tiene la lista completa en memoria y crear duplicados sigue siendo legal.
 | Slot sin área + ejercicio con área | El slot adopta el área (solo si estaba vacío) |
 | Slot con área + ejercicio con otra área | **No** se toca: manda el slot, y el Manager no avisa (decisión 3) |
 | Área del catálogo borrada del vocabulario | El ejercicio queda con un área desconocida → se muestra como `No area` y se limpia al guardarlo |
-| Path con pasos archivados | El paso se sigue mostrando en el path; el picker lo ofrece sólo si es el actual |
+| Path con pasos archivados | Los pasos del path se muestran **siempre**: el path está curado a mano. El catálogo es lo que excluye los archivados |
 | Buscador del picker sin resultados | Fila `No matches` y Enter no hace nada |
 | Pool ≤ 6 elementos | Sin buscador (ruido innecesario) |
 

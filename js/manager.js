@@ -883,9 +883,23 @@
             if (old && old.parentNode) old.parentNode.replaceChild(catPicker.root, old);
             else if (metaRow) metaRow.appendChild(catPicker.root);
             catSel.addEventListener('change', function () {
+                suggestSlotArea();
                 syncPathChip();
                 setDirty(true);
             });
+        }
+
+        // The area of a catalog exercise is a suggestion: it only fills a slot
+        // that has no area yet (a slot with its own area is never overwritten).
+        function suggestSlotArea() {
+            if (!areaSel || areaSel.value) return;
+            const cid = currentCatId();
+            if (cid == null) return;
+            const cat = GPH.mgr.catalogById(cid);
+            if (!cat || !cat.area_id) return;
+            areaSel.value = cat.area_id;
+            syncNoAreaChip();
+            updateAreaBanner();
         }
 
         // Id of the exercise currently selected in the (possibly filtered) picker.

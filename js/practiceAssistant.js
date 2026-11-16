@@ -501,6 +501,7 @@
     let menuIndex = -1;
     let menuSearch = null;      // the filter input, when the pool is long enough
     let menuCurrentId = null;   // exercise id currently on the slot
+    let menuGrouped = false;    // catalog pool: group by area
     const SEARCH_FROM = 6;      // below this, a filter is just noise
 
     // Same idea as the Manager: ignore case, accents and punctuation.
@@ -575,11 +576,17 @@
                     const known = list.filter(function (c) {
                         return c.id === s.catalog_exercise_id;
                     })[0];
-                    return { id: s.catalog_exercise_id, name: s.name || (known ? known.name : '') };
+                    return { id: s.catalog_exercise_id, name: s.name || (known ? known.name : ''), special: false };
                 })
                 : list.filter(function (c) { return !c.archived; })
-                    .map(function (c) { return { id: c.id, name: c.name }; });
-            menuItems = [{ id: null, name: '\u2014 No exercise \u2014' }].concat(pool);
+                    .map(function (c) {
+                        return { id: c.id, name: c.name, area: c.area || '', special: false };
+                    });
+            // Without a path the catalog is grouped by area: this is the hint that
+            // makes a long list readable.
+            menuGrouped = !hasPool;
+            menuItems = [{ id: null, name: '\u2014 No exercise \u2014', special: true }]
+                .concat(pool);
             if (currentId != null &&
                 !menuItems.some(function (it) { return it.id === currentId; })) {
                 // Keep the exercise on the slot visible: it may be archived or,
@@ -589,7 +596,9 @@
                     : (hasPool ? ' (not in path)' : '');
                 menuItems.splice(1, 0, {
                     id: currentId,
-                    name: (known ? known.name : 'exercise ' + currentId) + suffix
+                    name: (known ? known.name : 'exercise ' + currentId) + suffix,
+                    area: (known && known.area) || '',
+                    special: true
                 });
             }
             menu.innerHTML = '';
@@ -635,13 +644,26 @@
         const menu = menuEl();
         if (!menu) return;
         Array.prototype.forEach.call(
-            menu.querySelectorAll('.ex-catalog-option, .ex-catalog-empty'),
+            menu.querySelectorAll('.ex-catalog-option, .ex-catalog-empty, .ex-catalog-group'),
             function (el) { el.parentNode.removeChild(el); });
         const q = menuNorm(menuSearch ? menuSearch.value : '');
         visibleItems = menuItems.filter(function (item) {
             return !q || menuNorm(item.name).indexOf(q) >= 0;
         });
+        let lastArea = null;
         visibleItems.forEach(function (item, i) {
+            // Group headers, only in the catalog pool (a path has its own order
+            // and its own header above the list).
+            if (menuGrouped && !item.special) {
+                const area = item.area || '';
+                if (area !== lastArea) {
+                    const head = document.createElement('div');
+                    head.className = 'ex-catalog-group';
+                    head.textContent = area || 'No area';
+                    menu.appendChild(head);
+                    lastArea = area;
+                }
+            }
             const opt = document.createElement('button');
             opt.type = 'button';
             opt.className = 'ex-catalog-option' + (item.id === menuCurrentId ? ' is-current' : '');
@@ -695,10 +717,17 @@
         const ex = rActiva().ejercicios[currentExerciseIndex];
         if (!ex) return;
         const cid = value ? Number(value) : null;
+        const body = { catalog_exercise_id: cid };
+        // The catalog area is a suggestion: it only fills a slot with no area.
+        let picked = null;
+        if (cid) {
+            picked = (catalogCache || []).filter(function (c) { return c.id === cid; })[0] || null;
+            if (picked && picked.area_id && !ex.area_id) body.area_id = picked.area_id;
+        }
         fetch('/api/exercises/' + ex.id, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ catalog_exercise_id: cid })
+            body: JSON.stringify(body)
         }).then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
@@ -713,6 +742,10 @@
                     ex.catalog_exercise = { id: found.id, name: found.name,
                                             description: found.description || '' };
                 }
+            }
+            if (body.area_id) {
+                ex.area_id = body.area_id;
+                ex.area = (picked && picked.area) || '';
             }
             renderSlotHeader();
         }).catch(function (e) {

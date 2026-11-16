@@ -944,12 +944,15 @@
 /* Slot with a path but no exercise yet: show which pool to pick from. */
 .ex-main.is-path-hint { color: #8f8f8f; font-style: italic; }
 /* Header of the picker menu when the slot has a learning path. */
-.ex-catalog-head {
+.ex-catalog-head,
+.ex-catalog-group {
     padding: 2px 8px 6px; margin-bottom: 2px;
     font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px;
     color: var(--accent); border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+/* Area groups inside the catalog pool: quieter than the path header. */
+.ex-catalog-group { color: #9a9a9a; margin-top: 4px; }
 /* The description on hover is a bonus, not a help affordance: no `?` cursor
    (same as the routine name on the welcome screen). */
 .ex-main.has-tip { cursor: default; }
