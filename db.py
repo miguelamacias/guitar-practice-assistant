@@ -62,6 +62,25 @@ CREATE TABLE IF NOT EXISTS catalog_exercises (
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT DEFAULT (datetime('now'))
 );
+-- Learning paths: an ordered subset of the catalog. A slot may point at one
+-- path and then only picks exercises from it.
+CREATE TABLE IF NOT EXISTS catalog_paths (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    position    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS catalog_path_steps (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    path_id             INTEGER NOT NULL REFERENCES catalog_paths(id) ON DELETE CASCADE,
+    catalog_exercise_id INTEGER NOT NULL REFERENCES catalog_exercises(id) ON DELETE CASCADE,
+    position            INTEGER NOT NULL DEFAULT 0,
+    note                TEXT NOT NULL DEFAULT '',
+    UNIQUE(path_id, catalog_exercise_id)
+);
+CREATE INDEX IF NOT EXISTS idx_path_steps_path ON catalog_path_steps(path_id);
 CREATE TABLE IF NOT EXISTS exercises (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     routine_id INTEGER NOT NULL REFERENCES routines(id) ON DELETE CASCADE,
@@ -75,7 +94,8 @@ CREATE TABLE IF NOT EXISTS exercises (
     resource_label TEXT DEFAULT '',
     resources_json TEXT DEFAULT '',
     area_id TEXT NOT NULL DEFAULT '',
-    catalog_exercise_id INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL
+    catalog_exercise_id INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL,
+    catalog_path_id INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL
 );
 CREATE TABLE IF NOT EXISTS sections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -379,11 +399,13 @@ def _migrate(conn):
                                   ('n_partial', 'INTEGER NOT NULL DEFAULT 0')])
     # Slots get an area and a pointer into the global exercise catalog; session
     # items keep a snapshot of both so the history survives renames/deletions.
-    # Both columns are nullable-with-NULL-default, the only shape SQLite accepts
+    # Those columns are nullable-with-NULL-default, the only shape SQLite accepts
     # for ADD COLUMN ... REFERENCES.
     add_cols('exercises', [('area_id', "TEXT NOT NULL DEFAULT ''"),
                            ('catalog_exercise_id',
-                            'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL')])
+                            'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL'),
+                           ('catalog_path_id',
+                            'INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL')])
     add_cols('routine_session_items', [
         ('area_id', "TEXT NOT NULL DEFAULT ''"),
         ('catalog_exercise_id',
@@ -391,6 +413,7 @@ def _migrate(conn):
         ('catalog_name', "TEXT NOT NULL DEFAULT ''"),
     ])
     for stmt in ('CREATE INDEX IF NOT EXISTS idx_exercises_area ON exercises(area_id)',
+                 'CREATE INDEX IF NOT EXISTS idx_exercises_path ON exercises(catalog_path_id)',
                  'CREATE INDEX IF NOT EXISTS idx_session_items_area'
                  ' ON routine_session_items(area_id)',
                  'CREATE INDEX IF NOT EXISTS idx_session_items_catalog'
@@ -555,15 +578,17 @@ def _with_labels(resources, labels):
     return out
 
 
-def _exercise_payload(e, labels, catalog=None, areas_map=None):
+def _exercise_payload(e, labels, catalog=None, areas_map=None, paths=None):
     """Exercise dict for the app: `recursos` plus the legacy single-resource keys.
 
-    `catalog` is a {id: {id, name, description}} map and `areas_map` an
-    {area_id: label} map, both resolved once per call by the caller.
+    `catalog` is a {id: {id, name, description}} map, `areas_map` an
+    {area_id: label} map and `paths` an {id: name} map of the learning paths,
+    all resolved once per call by the caller.
     """
     res = _with_labels(_exercise_resources(e), labels)
     first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
     cid = e['catalog_exercise_id'] if 'catalog_exercise_id' in e.keys() else None
+    pid = e['catalog_path_id'] if 'catalog_path_id' in e.keys() else None
     aid = (e['area_id'] if 'area_id' in e.keys() else '') or ''
     return {
         'id': e['id'], 'nombre': e['name'], 'descripcion': e['description'],
@@ -575,6 +600,9 @@ def _exercise_payload(e, labels, catalog=None, areas_map=None):
         'area': (areas_map or {}).get(aid, ''),
         'catalog_exercise_id': cid,
         'catalog_exercise': (catalog or {}).get(cid) if cid is not None else None,
+        'catalog_path_id': pid,
+        'catalog_path': ({'id': pid, 'name': (paths or {}).get(pid, '')}
+                         if pid is not None else None),
     }
 
 
@@ -595,12 +623,14 @@ def api_state(conn):
         labels = _resource_labels(conn)
         exs = conn.execute(
             'SELECT id, name, description, duration_seconds, resource_kind, resource_url, '
-            'resource_bpm, resource_label, resources_json, area_id, catalog_exercise_id '
+            'resource_bpm, resource_label, resources_json, area_id, catalog_exercise_id, '
+            'catalog_path_id '
             'FROM exercises WHERE routine_id=? ORDER BY position, id',
             (rid,),
         ).fetchall()
         catalog = _catalog_map(conn, [e['catalog_exercise_id'] for e in exs])
         areas_map = area_map(conn)
+        paths = path_names(conn)
         active = {
             'id': rid,
             'nombre': name,
@@ -609,7 +639,8 @@ def api_state(conn):
             'finish_url': row['finish_url'] or '',
             'finish_label': _label_for(labels, row['finish_url'], row['finish_label']),
             'finish_bpm': row['finish_bpm'] or 0,
-            'ejercicios': [_exercise_payload(e, labels, catalog, areas_map) for e in exs],
+            'ejercicios': [_exercise_payload(e, labels, catalog, areas_map, paths)
+                           for e in exs],
         }
 
     sources = {}
@@ -654,16 +685,18 @@ def _routine_full(conn, rid):
     exs = conn.execute(
         'SELECT id, name, description, duration_seconds, position, '
         'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
-        'area_id, catalog_exercise_id FROM exercises '
+        'area_id, catalog_exercise_id, catalog_path_id FROM exercises '
         'WHERE routine_id=? ORDER BY position, id',
         (rid,),
     ).fetchall()
     catalog = _catalog_map(conn, [e['catalog_exercise_id'] for e in exs])
+    paths = path_names(conn)
     out_exs = []
     for e in exs:
         res = _with_labels(_exercise_resources(e), labels)
         first = res[0] if res else {'kind': '', 'url': '', 'bpm': 0, 'label': ''}
         cid = e['catalog_exercise_id']
+        pid = e['catalog_path_id']
         out_exs.append({
             'id': e['id'], 'name': e['name'], 'description': e['description'],
             'duration_seconds': e['duration_seconds'], 'position': e['position'],
@@ -673,6 +706,9 @@ def _routine_full(conn, rid):
             'area_id': e['area_id'] or '',
             'catalog_exercise_id': cid,
             'catalog_exercise': catalog.get(cid) if cid is not None else None,
+            'catalog_path_id': pid,
+            'catalog_path': ({'id': pid, 'name': paths.get(pid, '')}
+                             if pid is not None else None),
         })
     return {
         'id': r['id'], 'name': r['name'], 'description': r['description'],
@@ -855,11 +891,12 @@ def create_exercise(conn, rid, data):
     conn.execute(
         'INSERT INTO exercises(routine_id, name, description, duration_seconds, position, '
         'resource_kind, resource_url, resource_bpm, resource_label, resources_json, '
-        'area_id, catalog_exercise_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+        'area_id, catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
         (rid, name, desc, dur, pos,
          first['kind'], first['url'], first['bpm'], first['label'],
          json.dumps(resources, ensure_ascii=False),
-         meta.get('area_id', ''), meta.get('catalog_exercise_id')),
+         meta.get('area_id', ''), meta.get('catalog_exercise_id'),
+         meta.get('catalog_path_id')),
     )
     conn.commit()
     return _routine_full(conn, rid)
@@ -876,6 +913,9 @@ def update_exercise(conn, eid, data):
     if 'catalog_exercise_id' in meta:
         conn.execute('UPDATE exercises SET catalog_exercise_id=? WHERE id=?',
                      (meta['catalog_exercise_id'], eid))
+    if 'catalog_path_id' in meta:
+        conn.execute('UPDATE exercises SET catalog_path_id=? WHERE id=?',
+                     (meta['catalog_path_id'], eid))
     if data.get('name') is not None:
         conn.execute('UPDATE exercises SET name=? WHERE id=?', (data['name'], eid))
     if data.get('description') is not None:
@@ -1380,10 +1420,167 @@ def delete_catalog_exercise(conn, cid):
     return {'deleted': cid, 'slots_cleared': slots}
 
 
-def _slot_meta(conn, data):
-    """Validates the area / catalog pointer of a slot payload.
+# ------------------------- Learning paths (catalog) ------------------------
 
-    Returns ({only the keys present in `data`}, error).
+def _path_dict(row):
+    return {'id': row['id'], 'name': row['name'] or '',
+            'description': row['description'] or '',
+            'position': row['position'] or 0,
+            'created_at': row['created_at'], 'updated_at': row['updated_at']}
+
+
+def path_exists(conn, pid):
+    return conn.execute('SELECT 1 FROM catalog_paths WHERE id=?',
+                        (pid,)).fetchone() is not None
+
+
+def path_names(conn):
+    """{id: name} for the slot payloads (one query per call, like the catalog)."""
+    return {r['id']: r['name'] or '' for r in
+            conn.execute('SELECT id, name FROM catalog_paths').fetchall()}
+
+
+def _path_steps_map(conn, ids=None):
+    """{path_id: [step, ...]} in one query; `ids` limits the paths to load."""
+    sql = ('SELECT s.path_id, s.catalog_exercise_id, s.position, s.note,'
+           " COALESCE(c.name, '') AS name"
+           ' FROM catalog_path_steps s'
+           ' LEFT JOIN catalog_exercises c ON c.id = s.catalog_exercise_id')
+    args = []
+    if ids is not None:
+        ids = [int(i) for i in ids]
+        if not ids:
+            return {}
+        sql += ' WHERE s.path_id IN (' + ','.join('?' * len(ids)) + ')'
+        args = ids
+    sql += ' ORDER BY s.path_id, s.position, s.id'
+    out = {}
+    for r in conn.execute(sql, args).fetchall():
+        out.setdefault(r['path_id'], []).append({
+            'catalog_exercise_id': r['catalog_exercise_id'],
+            'name': r['name'],
+            'position': r['position'],
+            'note': r['note'] or '',
+        })
+    return out
+
+
+def get_path(conn, pid):
+    row = conn.execute('SELECT * FROM catalog_paths WHERE id=?', (pid,)).fetchone()
+    if row is None:
+        return None
+    item = _path_dict(row)
+    item['steps'] = _path_steps_map(conn, [pid]).get(pid, [])
+    item['slots'] = conn.execute('SELECT COUNT(*) n FROM exercises'
+                                 ' WHERE catalog_path_id=?', (pid,)).fetchone()['n']
+    return item
+
+
+def list_paths(conn):
+    """Every path with its ordered steps and how many slots use it."""
+    rows = conn.execute('SELECT * FROM catalog_paths ORDER BY position, id').fetchall()
+    steps = _path_steps_map(conn)
+    used = {r['catalog_path_id']: r['n'] for r in conn.execute(
+        'SELECT catalog_path_id, COUNT(*) n FROM exercises'
+        ' WHERE catalog_path_id IS NOT NULL GROUP BY catalog_path_id').fetchall()}
+    out = []
+    for row in rows:
+        item = _path_dict(row)
+        item['steps'] = steps.get(row['id'], [])
+        item['slots'] = used.get(row['id'], 0)
+        out.append(item)
+    return out
+
+
+def _path_fields(data):
+    """Validated name/description of a path -> (fields, error)."""
+    name = str(data.get('name') or '').strip()
+    if not name or len(name) > 120:
+        return None, 'invalid_name'
+    desc = str(data.get('description') or '').strip()
+    if len(desc) > 2000:
+        return None, 'invalid_description'
+    return {'name': name, 'description': desc}, None
+
+
+def create_path(conn, data):
+    fields, err = _path_fields(data)
+    if err:
+        return {'error': err}
+    pos = conn.execute('SELECT COALESCE(MAX(position), -1) + 1'
+                       ' FROM catalog_paths').fetchone()[0]
+    cur = conn.execute('INSERT INTO catalog_paths(name, description, position)'
+                       ' VALUES(?,?,?)',
+                       (fields['name'], fields['description'], pos))
+    conn.commit()
+    return get_path(conn, cur.lastrowid)
+
+
+def update_path(conn, pid, data):
+    if not path_exists(conn, pid):
+        return None
+    fields, err = _path_fields(data)
+    if err:
+        return {'error': err}
+    conn.execute("UPDATE catalog_paths SET name=?, description=?,"
+                 " updated_at=datetime('now') WHERE id=?",
+                 (fields['name'], fields['description'], pid))
+    conn.commit()
+    return get_path(conn, pid)
+
+
+def delete_path(conn, pid):
+    if not path_exists(conn, pid):
+        return None
+    slots = conn.execute('SELECT COUNT(*) n FROM exercises WHERE catalog_path_id=?',
+                         (pid,)).fetchone()['n']
+    # ON DELETE CASCADE removes its steps and ON DELETE SET NULL clears the slots,
+    # which fall back to the whole catalog.
+    conn.execute('DELETE FROM catalog_paths WHERE id=?', (pid,))
+    conn.commit()
+    return {'deleted': pid, 'slots_cleared': slots}
+
+
+def set_path_steps(conn, pid, steps):
+    """Replaces the whole step list (the position is the order of the list)."""
+    if not path_exists(conn, pid):
+        return None
+    if not isinstance(steps, list):
+        return {'error': 'invalid_steps'}
+    clean = []
+    seen = set()
+    for raw in steps:
+        if not isinstance(raw, dict):
+            return {'error': 'invalid_steps'}
+        try:
+            cid = int(raw.get('catalog_exercise_id'))
+        except (TypeError, ValueError):
+            return {'error': 'unknown_exercise'}
+        if not catalog_exists(conn, cid):
+            return {'error': 'unknown_exercise'}
+        if cid in seen:
+            return {'error': 'duplicate_step'}
+        seen.add(cid)
+        note = str(raw.get('note') or '').strip()
+        if len(note) > 200:
+            return {'error': 'invalid_note'}
+        clean.append((cid, note))
+    conn.execute('DELETE FROM catalog_path_steps WHERE path_id=?', (pid,))
+    for pos, (cid, note) in enumerate(clean):
+        conn.execute('INSERT INTO catalog_path_steps(path_id, catalog_exercise_id,'
+                     ' position, note) VALUES(?,?,?,?)', (pid, cid, pos, note))
+    conn.execute("UPDATE catalog_paths SET updated_at=datetime('now') WHERE id=?",
+                 (pid,))
+    conn.commit()
+    return get_path(conn, pid)
+
+
+def _slot_meta(conn, data):
+    """Validates the area / catalog / path pointers of a slot payload.
+
+    Returns ({only the keys present in `data`}, error). A catalog exercise that
+    is not part of the chosen path is allowed on purpose: the Manager warns about
+    it instead of blocking the save.
     """
     out = {}
     if 'area_id' in data:
@@ -1403,6 +1600,18 @@ def _slot_meta(conn, data):
             if not catalog_exists(conn, cid):
                 return None, 'unknown_exercise'
             out['catalog_exercise_id'] = cid
+    if 'catalog_path_id' in data:
+        raw = data.get('catalog_path_id')
+        if raw in (None, '', 0, '0'):
+            out['catalog_path_id'] = None
+        else:
+            try:
+                pid = int(raw)
+            except (TypeError, ValueError):
+                return None, 'unknown_path'
+            if not path_exists(conn, pid):
+                return None, 'unknown_path'
+            out['catalog_path_id'] = pid
     return out, None
 
 

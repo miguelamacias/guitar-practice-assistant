@@ -30,6 +30,7 @@ from db import (
     AREAS_KEY, areas, clean_areas, areas_in_use,
     list_catalog, catalog_detail,
     create_catalog_exercise, update_catalog_exercise, delete_catalog_exercise,
+    list_paths, get_path, create_path, update_path, delete_path, set_path_steps,
 )
 import db as dbmod
 import lastfm
@@ -443,6 +444,41 @@ class Handler(SimpleHTTPRequestHandler):
                     r = delete_catalog_exercise(conn, cid)
                     return self._send_json(r if r else {'error': 'not_found'},
                                            200 if r else 404)
+            # ---- Learning paths: an ordered subset of the catalog ----------
+            if path == '/api/paths':
+                if method == 'GET':
+                    return self._send_json({'paths': list_paths(conn)})
+                if method == 'POST':
+                    r = create_path(conn, data)
+                    if 'error' in r:
+                        return self._send_json(r, 422)
+                    return self._send_json(r, 201)
+            m = re.fullmatch(r'/api/paths/(\d+)', path)
+            if m:
+                pid = int(m.group(1))
+                if method == 'GET':
+                    r = get_path(conn, pid)
+                    return self._send_json(r if r else {'error': 'not_found'},
+                                           200 if r else 404)
+                if method == 'PUT':
+                    r = update_path(conn, pid, data)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    if 'error' in r:
+                        return self._send_json(r, 422)
+                    return self._send_json(r)
+                if method == 'DELETE':
+                    r = delete_path(conn, pid)
+                    return self._send_json(r if r else {'error': 'not_found'},
+                                           200 if r else 404)
+            m = re.fullmatch(r'/api/paths/(\d+)/steps', path)
+            if m and method == 'PUT':
+                r = set_path_steps(conn, int(m.group(1)), (data or {}).get('steps'))
+                if r is None:
+                    return self._send_json({'error': 'not_found'}, 404)
+                if 'error' in r:
+                    return self._send_json(r, 422)
+                return self._send_json(r)
             if path == '/api/sessions/active' and method == 'GET':
                 r = active_session(conn)
                 return self._send_json(r if r else {'session': None})
