@@ -58,6 +58,9 @@ body {
 .btn.small { padding: 4px 8px; font-size: 0.78rem; }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn.block { width: 100%; margin-top: 12px; }
+/* Create buttons moved to the top of their panel: they need air below them,
+   not above (the ones still at the bottom, like + Add area, keep margin-top). */
+.panel > .btn.block { margin-top: 0; margin-bottom: 12px; }
 /* Unsaved changes: the Save button gets a soft highlight (no size change) */
 .btn.is-dirty {
     border-color: rgba(255, 179, 0, 0.75);
@@ -726,8 +729,8 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 
 /* --------------------- History: filters + breakdown -------------------- */
 .hist-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* Small select: History filters and the catalog sort share the same control */
-.hist-select, #catSort {
+/* Small select: History filters and the catalog controls share the same look */
+.hist-select, #catSort, #catFilter, #catGroup {
     padding: 5px 8px; border-radius: 6px; font-family: inherit; font-size: 0.78rem;
     background: #1b1b1b; color: #eee; border: 1px solid rgba(255, 255, 255, 0.14);
 }
