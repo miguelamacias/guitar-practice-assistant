@@ -577,14 +577,19 @@
                     })[0];
                     return { id: s.catalog_exercise_id, name: s.name || (known ? known.name : '') };
                 })
-                : list.map(function (c) { return { id: c.id, name: c.name }; });
+                : list.filter(function (c) { return !c.archived; })
+                    .map(function (c) { return { id: c.id, name: c.name }; });
             menuItems = [{ id: null, name: '\u2014 No exercise \u2014' }].concat(pool);
-            if (hasPool && currentId != null &&
+            if (currentId != null &&
                 !menuItems.some(function (it) { return it.id === currentId; })) {
+                // Keep the exercise on the slot visible: it may be archived or,
+                // with a path, outside the pool. Hiding it would look like a loss.
                 const known = list.filter(function (c) { return c.id === currentId; })[0];
+                const suffix = known && known.archived ? ' (archived)'
+                    : (hasPool ? ' (not in path)' : '');
                 menuItems.splice(1, 0, {
                     id: currentId,
-                    name: (known ? known.name : 'exercise ' + currentId) + ' (not in path)'
+                    name: (known ? known.name : 'exercise ' + currentId) + suffix
                 });
             }
             menu.innerHTML = '';

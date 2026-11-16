@@ -405,6 +405,10 @@ def _migrate(conn):
                             'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL'),
                            ('catalog_path_id',
                             'INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL')])
+    # Catalog hygiene: archiving instead of deleting, and a classification hint
+    # (the area that counts in the statistics is still the slot's).
+    add_cols('catalog_exercises', [('archived', 'INTEGER NOT NULL DEFAULT 0'),
+                                   ('area_id', "TEXT NOT NULL DEFAULT ''")])
     add_cols('routine_session_items', [
         ('area_id', "TEXT NOT NULL DEFAULT ''"),
         ('catalog_exercise_id',
@@ -1263,8 +1267,10 @@ def areas_in_use(conn):
 
 
 def _catalog_dict(row):
+    keys = row.keys()
     return {'id': row['id'], 'name': row['name'] or '',
             'description': row['description'] or '',
+            'archived': bool(row['archived']) if 'archived' in keys else False,
             'created_at': row['created_at'], 'updated_at': row['updated_at']}
 
 
@@ -1283,7 +1289,7 @@ def _catalog_map(conn, ids):
 
 def get_catalog_exercise(conn, cid):
     row = conn.execute(
-        'SELECT id, name, description, created_at, updated_at'
+        'SELECT id, name, description, archived, created_at, updated_at'
         ' FROM catalog_exercises WHERE id=?', (cid,)).fetchone()
     return _catalog_dict(row) if row else None
 
@@ -1298,7 +1304,7 @@ def list_catalog(conn, q=''):
     query = (q or '').strip()
     like = '%' + query + '%'
     rows = conn.execute(
-        'SELECT c.id, c.name, c.description, c.created_at, c.updated_at,'
+        'SELECT c.id, c.name, c.description, c.archived, c.created_at, c.updated_at,'
         ' (SELECT COUNT(*) FROM routine_session_items i'
         '   WHERE i.catalog_exercise_id = c.id AND i.elapsed_seconds > 0) AS practices,'
         ' (SELECT COALESCE(SUM(i.elapsed_seconds), 0) FROM routine_session_items i'
@@ -1370,22 +1376,30 @@ def catalog_detail(conn, cid):
 
 
 def _catalog_fields(data):
-    """Validated name/description of a catalog exercise -> (fields, error)."""
+    """Validated fields of a catalog exercise -> (fields, error).
+
+    `archived` is optional: a create without it leaves the column at 0.
+    """
     name = str(data.get('name') or '').strip()
     if not name or len(name) > 200:
         return None, 'invalid_name'
     desc = str(data.get('description') or '').strip()
     if len(desc) > 2000:
         return None, 'invalid_description'
-    return {'name': name, 'description': desc}, None
+    out = {'name': name, 'description': desc}
+    if 'archived' in data:
+        out['archived'] = 1 if data.get('archived') else 0
+    return out, None
 
 
 def create_catalog_exercise(conn, data):
     fields, err = _catalog_fields(data)
     if err:
         return {'error': err}
-    cur = conn.execute('INSERT INTO catalog_exercises(name, description) VALUES(?, ?)',
-                       (fields['name'], fields['description']))
+    cur = conn.execute('INSERT INTO catalog_exercises(name, description, archived)'
+                       ' VALUES(?, ?, ?)',
+                       (fields['name'], fields['description'],
+                        fields.get('archived', 0)))
     conn.commit()
     return get_catalog_exercise(conn, cur.lastrowid)
 
@@ -1396,9 +1410,16 @@ def update_catalog_exercise(conn, cid, data):
     fields, err = _catalog_fields(data)
     if err:
         return {'error': err}
-    conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
-                 " updated_at=datetime('now') WHERE id=?",
-                 (fields['name'], fields['description'], cid))
+    if 'archived' in fields:
+        conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
+                     " archived=?, updated_at=datetime('now') WHERE id=?",
+                     (fields['name'], fields['description'],
+                      fields['archived'], cid))
+    else:
+        # Not sent: keep whatever it was (saving a name must not unarchive).
+        conn.execute("UPDATE catalog_exercises SET name=?, description=?,"
+                     " updated_at=datetime('now') WHERE id=?",
+                     (fields['name'], fields['description'], cid))
     conn.commit()
     return get_catalog_exercise(conn, cid)
 

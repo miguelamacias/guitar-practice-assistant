@@ -678,6 +678,15 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 }
 .cat-item:hover { background: rgba(255, 255, 255, 0.05); }
 .cat-item.selected { background: rgba(255, 255, 255, 0.1); }
+/* Archived: out of the active list, still readable when shown. */
+.cat-item.is-archived { opacity: 0.55; }
+.cat-item.is-archived .cat-name { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); }
+.cat-tag {
+    align-self: flex-start; margin-top: 1px;
+    font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #9a9a9a; border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px; padding: 0 5px;
+}
 .cat-name { font-size: 0.86rem; }
 .cat-meta { font-size: 0.72rem; color: var(--muted); }
 .cat-usage { font-size: 0.74rem; color: var(--muted); margin-left: auto; }

@@ -71,7 +71,10 @@
     function sorted() {
         const q = ($('catSearch') ? $('catSearch').value : '').trim().toLowerCase();
         const mode = $('catSort') ? $('catSort').value : 'name';
+        const show = $('catFilter') ? $('catFilter').value : 'active';
         const list = items.filter(function (it) {
+            if (show === 'active' && it.archived) return false;
+            if (show === 'archived' && !it.archived) return false;
             return !q || String(it.name || '').toLowerCase().indexOf(q) >= 0;
         });
         if (mode === 'recent') {
@@ -106,18 +109,28 @@
         if (!wrap) return;
         wrap.innerHTML = '';
         const list = sorted();
-        if ($('catCount')) $('catCount').textContent = '(' + items.length + ')';
+        if ($('catCount')) {
+            const live = items.filter(function (it) { return !it.archived; }).length;
+            const gone = items.length - live;
+            $('catCount').textContent = '(' + live + ' active' +
+                (gone ? ', ' + gone + ' archived' : '') + ')';
+        }
         if (!list.length) {
             const empty = document.createElement('div');
             empty.className = 'empty';
-            empty.textContent = items.length ? 'Nothing matches the search.' : 'No exercises yet.';
+            const show = $('catFilter') ? $('catFilter').value : 'active';
+            empty.textContent = items.length
+                ? (show === 'archived' ? 'Nothing archived.' : 'Nothing matches the search.')
+                : 'No exercises yet.';
             wrap.appendChild(empty);
             return;
         }
         list.forEach(function (it) {
             const row = document.createElement('div');
-            row.className = 'cat-item' + (it.id === selectedId ? ' selected' : '');
+            row.className = 'cat-item' + (it.id === selectedId ? ' selected' : '') +
+                (it.archived ? ' is-archived' : '');
             row.appendChild(span('cat-name', it.name || ''));
+            if (it.archived) row.appendChild(span('cat-tag', 'archived'));
             const bits = [(it.practices || 0) + '\u00d7', fmtDur(it.seconds)];
             if (it.last_practiced_on) bits.push(it.last_practiced_on);
             row.appendChild(span('cat-meta', bits.join(' \u00b7 ')));
@@ -203,6 +216,13 @@
         if ($('catEditor')) $('catEditor').hidden = false;
         if ($('catName')) $('catName').value = current.name || '';
         if ($('catDesc')) $('catDesc').value = current.description || '';
+        const archBtn = $('archiveCatalogBtn');
+        if (archBtn) {
+            archBtn.textContent = current.archived ? 'Unarchive' : 'Archive';
+            archBtn.title = current.archived
+                ? 'Bring it back to the active list and the picker'
+                : 'Hide it from the list and the assistant picker (the history is kept)';
+        }
         setDirty(false);
         renderUsage();
         renderList();
@@ -234,6 +254,25 @@
             document.dispatchEvent(new CustomEvent('slot-meta:changed'));
             await load();
             toast('Exercise saved');
+        } catch (e) { toast('Error: ' + e.message, true); }
+    }
+
+    // Archive / unarchive: the exercise leaves the list and the assistant picker
+    // but keeps its history and stays on whatever slots already point at it.
+    async function archiveExercise() {
+        if (!current) return;
+        const to = current.archived ? 0 : 1;
+        if (to && !confirm('Archive "' + current.name + '"?\n\nIt leaves the active list and ' +
+                           'the assistant picker. The slots that already use it keep it, ' +
+                           'and the practice history is untouched.')) return;
+        try {
+            await api('PUT', '/api/catalog/' + current.id,
+                { name: current.name, description: current.description || '',
+                  archived: to });
+            await GPH.mgr.loadMeta(true);
+            document.dispatchEvent(new CustomEvent('slot-meta:changed'));
+            await load();
+            toast(to ? 'Exercise archived' : 'Exercise back in the list');
         } catch (e) { toast('Error: ' + e.message, true); }
     }
 
@@ -410,6 +449,8 @@
         bind('delCatalogBtn', deleteExercise);
         bind('catSearch', renderList, 'input');
         bind('catSort', renderList, 'change');
+        bind('catFilter', renderList, 'change');
+        bind('archiveCatalogBtn', archiveExercise);
         bind('catName', function () { setDirty(true); }, 'input');
         bind('catDesc', function () { setDirty(true); }, 'input');
         bind('addAreaBtn', addArea);
