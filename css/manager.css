@@ -158,7 +158,8 @@ textarea { resize: vertical; min-height: 44px; }
 }
 .section-item .lane-badge.is-rail { color: var(--accent); border-color: rgba(233, 30, 99, 0.45); }
 .section-head-row .section-lane-field { flex: 0 0 auto; }
-#resetLayoutBtn { margin-top: 8px; }
+/* Reset layout still closes the list: space above it, none below (as before). */
+#resetLayoutBtn { margin-top: 8px; margin-bottom: 0; }
 /* Section editor header: title + color + actions on a single line */
 .section-head-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
 .section-head-row .field { margin-bottom: 0; }
