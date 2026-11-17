@@ -411,7 +411,7 @@
                 const d = new Date(end);
                 d.setDate(d.getDate() - i);
                 const key = dayKey(d);
-                buckets.push({ label: fmtDay(d.toISOString()), minutes: Math.round((byDay[key] || 0) / 60) });
+                buckets.push({ label: fmtDay(d.toISOString()), seconds: byDay[key] || 0 });
             }
         } else {
             const weeks = Math.ceil(days / 7);
@@ -424,18 +424,18 @@
                 }
                 const from = new Date(end);
                 from.setDate(from.getDate() - (w * 7 + 6));
-                buckets.push({ label: 'from ' + fmtDay(from.toISOString()), minutes: Math.round(secs / 60) });
+                buckets.push({ label: 'from ' + fmtDay(from.toISOString()), seconds: secs });
             }
         }
-        const max = Math.max.apply(null, buckets.map(function (b) { return b.minutes; }).concat([1]));
+        const max = Math.max.apply(null, buckets.map(function (b) { return b.seconds; }).concat([1]));
         const cols = buckets.map(function (b) {
-            const h = b.minutes ? Math.max(4, Math.round(b.minutes / max * 100)) : 0;
-            return '<span class="hist-bar-col" title="' + esc(b.label) + ': ' + b.minutes + ' min">' +
+            const h = b.seconds ? Math.max(4, Math.round(b.seconds / max * 100)) : 0;
+            return '<span class="hist-bar-col" title="' + esc(b.label) + ': ' + esc(fmtDur(b.seconds)) + '">' +
                 '<span class="hist-bar" style="height:' + h + '%"></span></span>';
         }).join('');
         return '<div class="hist-bars">' + cols + '</div>' +
             '<div class="hist-axis"><span>' + esc(buckets.length ? buckets[0].label : '') + '</span>' +
-            '<span>' + (days <= 60 ? 'Minutes per day' : 'Minutes per week') + '</span>' +
+            '<span>' + (days <= 60 ? 'Time per day' : 'Time per week') + '</span>' +
             '<span>' + esc(buckets.length ? buckets[buckets.length - 1].label : '') + '</span></div>';
     }
     function donutChart(states) {
@@ -890,7 +890,9 @@
             '<div class="hist-chart hist-chart-wide"><h3>Activity</h3>' +
             activityChart(stats.activity || stats.daily, stats.totals) + '</div>' +
             '<div class="hist-chart hist-chart-wide"><h3>Practice per ' + (days <= 60 ? 'day' : 'week') + '</h3>' +
-            dailyChart(stats.daily) + '</div>' +
+            // Real clock, like Welcome: `daily` counts practiced_seconds (the
+            // timer), which is usually the same planned routine time every day.
+            dailyChart(stats.activity || stats.daily) + '</div>' +
             '<div class="hist-chart hist-chart-wide"><h3>How exercises are closed</h3>' +
             donutChart(stats.states) + '</div>' +
             '<div class="hist-chart hist-chart-wide"><h3>When you practise</h3>' +

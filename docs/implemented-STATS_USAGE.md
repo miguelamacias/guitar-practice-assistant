@@ -135,6 +135,10 @@ popup oscuro de la app, un grupo por línea.
   sesiones. Esto es lógica preexistente, no una columna nueva.
 - 30 días: tira de días. 90 días: 3 filas de 30 cuadrados. 1 año: rejilla
   semanal tipo GitHub.
+- **Practice per day/week** (`hist-bars`) usa `real_seconds`, el mismo reloj que
+  las barras de Welcome. No usa `practiced_seconds`: el tiempo del temporizador
+  coincide con el planificado y no refleja el tiempo real de la sesión. El
+  tooltip muestra el tiempo en `h/min` cuando supera la hora.
 
 ### Welcome
 
