@@ -112,9 +112,9 @@ popup oscuro de la app, un grupo por línea.
 
 ### Fretboard Trainer → Statistics
 
-- KPIs: Detailed runs, Accuracy, Best streak, Avg response.
-- **By mode**: Runs, Acc, Avg, Streak.
-- **Recent runs**: When, Mode, Score, Acc, Streak, Avg; 10 por página.
+- KPIs: Detailed runs, Accuracy, Best streak, Avg score, Avg response.
+- **By mode**: Runs, Acc, Score/min, Avg (response), Streak.
+- **Recent runs**: When, Mode, Score, Score/min, Acc, Streak, Avg; 10 por página.
 - Heatmap y tablas Note group / By note / By string / By fret, desde
   `fretboard_cell_stats`.
 

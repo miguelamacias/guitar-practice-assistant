@@ -1991,7 +1991,7 @@ def get_fretboard_stats(conn):
     for r in conn.execute(
             "SELECT mode, COUNT(*) runs, COALESCE(SUM(hits),0) hits,"
             " COALESCE(SUM(misses),0) misses, COALESCE(MAX(best_streak),0) best,"
-            " COALESCE(AVG(avg_ms),0) avg_ms"
+            " COALESCE(AVG(avg_ms),0) avg_ms, COALESCE(AVG(normalized),0) avg_norm"
             " FROM fretboard_stats WHERE hits + misses > 0"
             " GROUP BY mode ORDER BY runs DESC, mode").fetchall():
         n = (r['hits'] or 0) + (r['misses'] or 0)
@@ -2003,6 +2003,7 @@ def get_fretboard_stats(conn):
             'accuracy': round((r['hits'] or 0) / n, 3) if n else None,
             'best_streak': r['best'] or 0,
             'avg_ms': int(round(r['avg_ms'] or 0)),
+            'avg_norm': round(r['avg_norm'] or 0, 3),
         })
     out['by_mode'] = modes
     return out

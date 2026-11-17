@@ -11,7 +11,9 @@
     let isExerciseFinished = false;
     let resourceApplied = false;
     // The audio bar is only closed on an exercise change when the track came
-    // from that exercise's resource (and the setting allows it).
+    // from that exercise's resource (and the setting allows it). The floating
+    // YouTube modal follows the same switch, whether it came from a resource or
+    // from a section link.
     let resourceAudioActive = false;
     let audioCloseOnChange = true;
     let lastShownIndex = null;
@@ -1721,10 +1723,25 @@
         // same track survives a pause and resume.
         const indexChanged = lastShownIndex !== currentExerciseIndex;
         lastShownIndex = currentExerciseIndex;
-        if (indexChanged && audioCloseOnChange && resourceAudioActive &&
-            GPH.players && GPH.players.closeAudio) {
-            GPH.players.closeAudio();
-            resourceAudioActive = false;
+        if (indexChanged && audioCloseOnChange) {
+            if (resourceAudioActive && GPH.players && GPH.players.closeAudio) {
+                GPH.players.closeAudio();
+                resourceAudioActive = false;
+            }
+            // closeYouTube is a no-op when no modal is open; keeping the video
+            // in sync with the same setting avoids a floating iframe following
+            // the user into the next exercise.
+            if (GPH.players && GPH.players.closeYouTube) {
+                GPH.players.closeYouTube();
+            }
+            // The metronome and drum machine belong to the exercise too: stop
+            // them so the next resource starts from its own preset.
+            if (GPH.metronome && GPH.metronome.stopMetronome) {
+                GPH.metronome.stopMetronome();
+            }
+            if (GPH.drumMachine && GPH.drumMachine.stopDrumMachine) {
+                GPH.drumMachine.stopDrumMachine();
+            }
         }
         const ejercicio = rActiva().ejercicios[currentExerciseIndex];
 

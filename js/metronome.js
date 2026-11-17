@@ -263,11 +263,17 @@
         else if (cfg.accent === true) setAccent(true);
     }
 
+    function stopMetronome() {
+        if (!isMetroRunning) return;
+        toggleMetronome();
+    }
+
     GPH.metronome = {
         init,
         updateBpm,
         adjustBpm,
         toggleMetronome,
+        stopMetronome,
         handleMetroKeyboard,
         tap,
         getBpm,

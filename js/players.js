@@ -422,7 +422,9 @@
         if (media && media.kind === 'youtube') finalizeMedia('close');
         const modal = document.getElementById('youtubeModal');
         const iframe = document.getElementById('ytIframe');
-        if (iframe) iframe.src = '';
+        // An empty `src` resolves to the current page and can reload the app
+        // inside the iframe; removing it unloads the video for real.
+        if (iframe) iframe.removeAttribute('src');
         if (modal) modal.classList.remove('is-open');
     }
 

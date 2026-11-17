@@ -137,10 +137,12 @@ Three surfaces are live; the rest of the tables remain ready for future reports.
 
 ### Fretboard Trainer → Statistics
 
-- KPI cards: detailed runs, accuracy, best streak and average response time.
-- **By mode** table: runs, accuracy, average time and best streak.
+- KPI cards: detailed runs, accuracy, best streak, average score (points/min,
+  the same `normalized` value as the assistant) and average response time.
+- **By mode** table: runs, accuracy, score/min, average response and best streak.
 - **Recent runs** table: the last 30 detailed runs with local date/time, mode,
-  score, accuracy, best streak and average time, 10 per page with Prev/Next.
+  score, score/min, accuracy, best streak and average response, 10 per page with
+  Prev/Next.
 - The statistics panel scrolls inside the trainer subfolder, so it no longer
   spills over the next Theory subfolders.
 - The existing heatmap and the note/string/fret tables keep using the

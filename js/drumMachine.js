@@ -845,6 +845,11 @@
         }
     }
 
+    function stopDrumMachine() {
+        if (!isDrumRunning) return;
+        toggleDrumMachine();
+    }
+
     GPH.drumMachine = {
         init: initDrumMachineGrid,
         initDrumMachineGrid,
@@ -852,6 +857,7 @@
         updateDrumBpm,
         adjustDrumBpm,
         toggleDrumMachine,
+        stopDrumMachine,
         toggleTimeSignature,
         toggleSwing,
         getConfig,

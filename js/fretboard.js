@@ -425,6 +425,23 @@
         function msText(ms) {
             return (ms && ms > 0) ? (Math.round(ms / 100) / 10).toFixed(1) + 's' : '\u2014';
         }
+        // Same normalized metric the assistant shows: points (hits minus misses)
+        // divided by the minutes of the run.
+        function perMinText(value) {
+            var n = Number(value);
+            return (value == null || isNaN(n)) ? '\u2014' : (Math.round(n * 10) / 10).toFixed(1) + '/min';
+        }
+        // Older server responses do not carry by-mode avg_norm yet; fall back to
+        // the detailed runs already in the payload instead of showing a dash.
+        function modePerMin(m, runs) {
+            if (m && m.avg_norm != null) return m.avg_norm;
+            var vals = (runs || []).filter(function (r) {
+                return r.mode === (m && m.mode) && r.normalized != null;
+            }).map(function (r) { return Number(r.normalized); });
+            return vals.length
+                ? vals.reduce(function (a, b) { return a + b; }, 0) / vals.length
+                : null;
+        }
         function whenText(iso) {
             if (!iso) return '\u2014';
             var d = new Date(iso);
@@ -440,6 +457,7 @@
                 '<div class="fb-stat-kpi"><b>' + (s.runs || 0) + '</b><span>Detailed runs</span></div>' +
                 '<div class="fb-stat-kpi"><b>' + pctText(s.hits, s.misses) + '</b><span>Accuracy</span></div>' +
                 '<div class="fb-stat-kpi"><b>' + (s.best_streak || 0) + '</b><span>Best streak</span></div>' +
+                '<div class="fb-stat-kpi"><b>' + perMinText(data.avg) + '</b><span>Avg score</span></div>' +
                 '<div class="fb-stat-kpi"><b>' + msText(s.avg_ms) + '</b><span>Avg response</span></div>';
         }
         function renderRunsBlock() {
@@ -453,10 +471,11 @@
             var html = '';
             if (modes.length) {
                 html += '<div class="fb-stat-block"><h4>By mode</h4><table class="fb-stat-table">' +
-                    '<thead><tr><th>Mode</th><th>Runs</th><th>Acc</th><th>Avg</th><th>Streak</th></tr></thead><tbody>';
+                    '<thead><tr><th>Mode</th><th>Runs</th><th>Acc</th><th>Score/min</th><th>Avg</th><th>Streak</th></tr></thead><tbody>';
                 modes.forEach(function (m) {
                     html += '<tr><td>' + escHtml(MODE_LABEL[m.mode] || m.mode || 'Legacy') + '</td>' +
                         '<td>' + (m.runs || 0) + '</td><td>' + pctText(m.hits, m.misses) + '</td>' +
+                        '<td>' + perMinText(modePerMin(m, runs)) + '</td>' +
                         '<td>' + msText(m.avg_ms) + '</td><td>' + (m.best_streak || 0) + '</td></tr>';
                 });
                 html += '</tbody></table></div>';
@@ -466,11 +485,12 @@
                 var pageRuns = runs.slice(start, start + RUNS_PAGE_SIZE);
                 html += '<div class="fb-stat-block"><h4>Recent runs</h4><div class="fb-runs-scroll">' +
                     '<table class="fb-stat-table"><thead><tr><th>When</th><th>Mode</th><th>Score</th>' +
-                    '<th>Acc</th><th>Streak</th><th>Avg</th></tr></thead><tbody>';
+                    '<th>Score/min</th><th>Acc</th><th>Streak</th><th>Avg</th></tr></thead><tbody>';
                 pageRuns.forEach(function (r) {
                     html += '<tr><td class="fb-run-when">' + escHtml(whenText(r.played_at)) + '</td>' +
                         '<td>' + escHtml(MODE_LABEL[r.mode] || r.mode || 'Legacy') + '</td>' +
-                        '<td>' + (r.score || 0) + '</td><td>' + pctText(r.hits, r.misses) + '</td>' +
+                        '<td>' + (r.score || 0) + '</td><td>' + perMinText(r.normalized) + '</td>' +
+                        '<td>' + pctText(r.hits, r.misses) + '</td>' +
                         '<td>' + (r.best_streak || 0) + '</td><td>' + msText(r.avg_ms) + '</td></tr>';
                 });
                 html += '</tbody></table></div>' +

@@ -8,8 +8,8 @@
     const DEFAULTS = {
         accent_color: '#ff8040',
         assistant_enabled: '1',
-        // Close the audio bar when the routine moves on (the track came from the
-        // previous exercise's resource, so it does not follow you).
+        // Close players and stop tools when the routine moves on (the track,
+        // video or preset came from the previous exercise, so it does not follow you).
         audio_close_on_change: '1',
         fretboard_enabled: '1',
         fretboard_trainer_enabled: '1',
