@@ -27,6 +27,23 @@
     let clockSet = {};
     let clockStartedSet = {};
     let clockRunSince = null;
+    // Transparent telemetry (see docs/implemented-STATS_INSTRUMENTATION.md):
+    // per-item counters and tool snapshots, plus how many times the browser
+    // recovered this session after a reload.
+    let playCountSet = {};
+    let pauseCountSet = {};
+    let resetCountSet = {};
+    let repeatCountSet = {};
+    let completedBySet = {};
+    let usedToolsSet = {};
+    let metroBpmStartSet = {};
+    let metroBpmEndSet = {};
+    let drumsBpmStartSet = {};
+    let drumsBpmEndSet = {};
+    let bpmTargetSet = {};
+    let toolCfgSet = {};
+    let areaLabelSet = {};
+    let sessionResumeCount = 0;
     const DONE_STATES = { timed: 1, untimed: 1 };
     // An exercise only counts as "timed" when at least half of its time was played.
     const TIMED_MIN_RATIO = 0.5;
@@ -263,21 +280,41 @@
         if (!el || el._tipWired) return;
         el._tipWired = true;
         if (!opts || opts.focusable !== false) el.tabIndex = 0;
-        const openNow = function () { cancelTipTimer(); showTip(el, build()); };
+        // A builder may return the panel directly or a promise with the panel.
+        // The token discards a response that arrives after the pointer left.
+        let tipToken = 0;
+        const openNow = function () {
+            cancelTipTimer();
+            hideTip();
+            const token = ++tipToken;
+            const built = build();
+            if (built && typeof built.then === 'function') {
+                built.then(function (node) {
+                    if (token !== tipToken || !el.isConnected) return;
+                    showTip(el, node);
+                }).catch(function () {});
+                return;
+            }
+            showTip(el, built);
+        };
+        const closeNow = function () {
+            tipToken++;
+            hideTip();
+        };
         el.addEventListener('mouseenter', function () {
             cancelTipTimer();
             tipTimer = setTimeout(openNow, TIP_DELAY_MS);
         });
         // hideTip() also drops a pending timer, so leaving or scrolling cancels it.
-        el.addEventListener('mouseleave', hideTip);
+        el.addEventListener('mouseleave', closeNow);
         // Keyboard: focusing is already deliberate, so there is nothing to wait for.
         // A control that opens a menu on click opts out (`focus: false`): its focus
         // is part of the click, not a request for the hint.
         if (!opts || opts.focus !== false) {
             el.addEventListener('focus', openNow);
-            el.addEventListener('blur', hideTip);
+            el.addEventListener('blur', closeNow);
         }
-        window.addEventListener('scroll', hideTip, { passive: true });
+        window.addEventListener('scroll', closeNow, { passive: true });
     }
 
     // ---- Free practice ----------------------------------------------------
@@ -560,6 +597,7 @@
             clockSet = {};
             clockStartedSet = {};
             clockRunSince = null;
+            resetTelemetry();
             localStorage.setItem('routineSessionActive', 'true');
             localStorage.removeItem('routineSessionPaused');
             localStorage.setItem('practiceStartTimeVal', hhmm(now));
@@ -776,6 +814,124 @@
         return tip;
     }
 
+    // ---- Playback stats on hover (songs / backing tracks) -----------------
+    // `media_plays` keeps one row per playback. The row only needs a media URL:
+    // local songs come from `/api/media?path=...`; the player stores the inner
+    // path as `ref`, so the same value is sent to the read-only stats endpoint.
+    function mediaTargetOf(url) {
+        if (!url) return null;
+        const yt = (GPH.players && GPH.players.getYouTubeId &&
+            /(?:youtube\.com|youtu\.be)/i.test(url))
+            ? GPH.players.getYouTubeId(url) : null;
+        if (yt) return { kind: 'youtube', ref: yt };
+        try {
+            const u = new URL(url, window.location.href);
+            if (u.pathname === '/api/media' || u.pathname.endsWith('/api/media')) {
+                const path = u.searchParams.get('path') || '';
+                return path ? { kind: 'audio', ref: path } : null;
+            }
+        } catch (e) { /* not a URL: fall through to the raw value */ }
+        return { kind: 'audio', ref: url };
+    }
+
+    function fmtMediaSeconds(seconds) {
+        const s = Math.max(0, Math.round(Number(seconds) || 0));
+        if (s < 60) return s + 's';
+        const mins = Math.round(s / 60);
+        if (mins < 60) return mins + ' min';
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h + ' h' + (m ? ' ' + m + ' min' : '');
+    }
+
+    function fmtMediaClock(seconds) {
+        const s = Math.max(0, Math.round(Number(seconds) || 0));
+        return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    }
+
+    function mediaDate(value) {
+        if (!value) return null;
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+    }
+
+    function buildMediaPlayTip(url, label, sectionColor) {
+        const target = mediaTargetOf(url);
+        if (!target) return null;
+        return fetch('/api/media/stats?kind=' + encodeURIComponent(target.kind) +
+                    '&ref=' + encodeURIComponent(target.ref), { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+                if (!d || d.error) return null;
+                const tip = tipPanel();
+                tip.classList.add('ex-tip--media');
+                // The panel lives on body, so the card's --sec-color does not
+                // reach it: copy it here to keep the left edge tied to its section.
+                const accent = String(sectionColor || '').trim();
+                if (accent) tip.style.borderLeftColor = accent;
+                const name = document.createElement('div');
+                name.className = 'ex-tip-name';
+                name.textContent = String(label || 'Track').trim() || 'Track';
+                tip.appendChild(name);
+
+                const body = document.createElement('div');
+                body.className = 'ex-tip-text';
+                const lines = [];
+                if (!d.plays) {
+                    lines.push('No media plays recorded yet.');
+                } else {
+                    let heard = fmtMediaSeconds(d.listened_seconds) + ' listened';
+                    if (d.estimated_seconds > 0) {
+                        if (!d.measured_seconds) {
+                            heard = '~' + fmtMediaSeconds(d.listened_seconds) + ' listened (approx.)';
+                        } else {
+                            heard += ' (~' + fmtMediaSeconds(d.estimated_seconds) + ' approx.)';
+                        }
+                    }
+                    lines.push((d.plays === 1 ? '1 play' : d.plays + ' plays') + ' \u00b7 ' + heard);
+
+                    const last = mediaDate(d.last_played_at);
+                    if (last) {
+                        const day = relativeDay(last);
+                        lines.push('Last played: ' + day +
+                            (/^on /.test(day) ? ' ' : ', ') + hhmm(last));
+                    }
+                    // A-B and completion are audio-only facts: the YouTube
+                    // iframe cannot report them, so they are not shown there.
+                    if (d.kind === 'audio') {
+                        if (d.last_ab_end > d.last_ab_start) {
+                            lines.push('Last A-B: ' + fmtMediaClock(d.last_ab_start) +
+                                '\u2013' + fmtMediaClock(d.last_ab_end) +
+                                (d.loops ? ' \u00b7 ' + d.loops +
+                                    (d.loops === 1 ? ' loop' : ' loops') : ''));
+                        } else if (d.loops) {
+                            lines.push(d.loops + (d.loops === 1 ? ' loop' : ' loops'));
+                        }
+                        if (d.completed) {
+                            lines.push('Completed ' + d.completed + '\u00d7');
+                        }
+                    }
+                }
+                body.textContent = lines.join('\n');
+                tip.appendChild(body);
+                return tip;
+            })
+            .catch(function () { return null; });
+    }
+
+    // Wires one section row; `wireTip` keeps the built-in hover delay and stops
+    // the panel if the pointer leaves before the stats arrive.
+    function wireMediaRow(el) {
+        if (!el) return;
+        wireTip(el, function () {
+            const card = el.closest('.section-card');
+            const color = card
+                ? getComputedStyle(card).getPropertyValue('--sec-color').trim()
+                : '';
+            return buildMediaPlayTip(el.dataset.url, el.dataset.title, color);
+        }, { focusable: false, focus: false });
+    }
+
     function buildWelcomeTip() {
         const exs = rActiva().ejercicios || [];
         if (!exs.length) return null;
@@ -933,6 +1089,8 @@
         resourceAudioActive = false;
         // Close the DB session with the final states, before they are wiped.
         if (wasRunning) sessionFinish();
+        resetTelemetry();
+        if (GPH.players && GPH.players.setContext) GPH.players.setContext(null);
         localStorage.setItem('routineSessionActive', 'false');
         localStorage.removeItem('routineSessionPaused');
         wallClear();
@@ -1013,6 +1171,7 @@
         clockSet = {};
         clockStartedSet = {};
         clockRunSince = null;
+        resetTelemetry();
         saveStates();
         sessionStart();
         localStorage.setItem('currentExerciseIndex', currentExerciseIndex);
@@ -1529,6 +1688,8 @@
     function clockStart() {
         if (clockRunSince !== null) return;
         clockRunSince = Date.now();
+        playCountSet[currentExerciseIndex] = (playCountSet[currentExerciseIndex] || 0) + 1;
+        statsEvent('item_play', currentExerciseIndex, {});
         if (!clockStartedSet[currentExerciseIndex]) {
             clockStartedSet[currentExerciseIndex] = new Date().toISOString();
         }
@@ -1566,6 +1727,15 @@
             resourceAudioActive = false;
         }
         const ejercicio = rActiva().ejercicios[currentExerciseIndex];
+
+        // Playback started from this card is attributed to this session item.
+        if (GPH.players && GPH.players.setContext) {
+            GPH.players.setContext({
+                session_id: sessionId,
+                item_position: currentExerciseIndex,
+                catalog_exercise_id: ejercicio && ejercicio.catalog_exercise_id
+            });
+        }
 
         setIndexLabel();
         renderSlotHeader();
@@ -2097,14 +2267,18 @@
                     resourceAudioActive = true;
                     GPH.players.playAudio(url, res.label_short || res.label ||
                         ex.nombre || 'Backing track');
+                    markToolUsed('audio');
                 }
             } else if (kind === 'youtube') {
                 if (audioUsed || !url) return;
                 audioUsed = true;
                 if (GPH.players && GPH.players.getYouTubeId) {
                     const id = GPH.players.getYouTubeId(url);
-                    if (id) GPH.players.openYouTube(id, res.label_short || res.label ||
-                        ex.nombre || 'Video', url);
+                    if (id) {
+                        GPH.players.openYouTube(id, res.label_short || res.label ||
+                            ex.nombre || 'Video', url);
+                        markToolUsed('youtube');
+                    }
                 }
             } else if (kind === 'metronome') {
                 if (document.getElementById('metronomeBox') && GPH.metronome) {
@@ -2114,6 +2288,7 @@
                     if (GPH.metronome.applyConfig) GPH.metronome.applyConfig(res.cfg);
                     const btn = document.getElementById('metroPlayBtn');
                     if (btn && btn.textContent.indexOf('Stop') === -1) GPH.metronome.toggleMetronome();
+                    markToolUsed('metronome');
                 }
             } else if (kind === 'drums') {
                 if (document.getElementById('drumMachineBox') && GPH.drumMachine) {
@@ -2123,8 +2298,10 @@
                     if (GPH.drumMachine.applyConfig) GPH.drumMachine.applyConfig(res.cfg);
                     const btn = document.getElementById('drumPlayBtn');
                     if (btn && btn.textContent.indexOf('Stop') === -1) GPH.drumMachine.toggleDrumMachine();
+                    markToolUsed('drums');
                 }
             } else if (kind === 'fretboard') {
+                markToolUsed('fretboard');
                 if (GPH.fretboard && GPH.fretboard.startAuto) GPH.fretboard.startAuto();
             } else if (kind === 'theory') {
                 applyTheoryResource(url);
@@ -2225,13 +2402,28 @@
         const ex = rActiva().ejercicios[currentExerciseIndex];
         const hasTrainer = resourcesOf(ex).some(function (r) { return r.kind === 'fretboard'; });
         if (!(ex && hasTrainer && GPH.fretboard && GPH.fretboard.showResults)) return;
+        markToolUsed('fretboard');
+        const idx = currentExerciseIndex;
         function finish(avgPerMin) {
             const res = GPH.fretboard.showResults(exerciseTimeTotal, avgPerMin);
             if (res && res.attempts > 0) {
                 fetch('/api/fretboard/stats', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ duration_seconds: res.duration, normalized: res.normalized })
+                    body: JSON.stringify({
+                        duration_seconds: res.duration,
+                        normalized: res.normalized,
+                        mode: res.mode,
+                        hits: res.hits,
+                        misses: res.misses,
+                        score: res.score,
+                        best_streak: res.best_streak,
+                        avg_ms: res.avg_ms,
+                        run_uid: res.run_uid,
+                        session_id: sessionId,
+                        item_position: idx,
+                        catalog_exercise_id: ex.catalog_exercise_id
+                    })
                 }).then(function () {
                     const cur = rActiva().ejercicios[currentExerciseIndex];
                     if (cur && resourcesOf(cur).some(function (r) { return r.kind === 'fretboard'; })) updateResourceTag(cur);
@@ -2286,7 +2478,7 @@
         isSeeking = false;
         document.removeEventListener('pointermove', onSeekMove);
         document.removeEventListener('pointerup', onSeekUp);
-        if (exerciseTimeLeft <= 0) { markCurrentCompleted(); GPH.audio.playAlarm(); flashExerciseCard(); notifyFretboardEnd(); }
+        if (exerciseTimeLeft <= 0) { markCurrentCompleted('manual'); GPH.audio.playAlarm(); flashExerciseCard(); notifyFretboardEnd(); }
     }
     function startSeek(event) {
         event.preventDefault();
@@ -2312,6 +2504,8 @@
 
     function toggleExerciseTimer() {
         if (isExerciseRunning) {
+            pauseCountSet[currentExerciseIndex] = (pauseCountSet[currentExerciseIndex] || 0) + 1;
+            statsEvent('item_pause', currentExerciseIndex, {});
             clockStop();            // pausing for a coffee also stops the exercise clock
             pauseExerciseTimer();
         } else {
@@ -2323,12 +2517,15 @@
         if (!freeMode && exerciseTimeLeft <= 0) return;
         isExerciseRunning = true;
         clockStart();
+        if (!resourceApplied) {
+            applyExerciseResource(rActiva().ejercicios[currentExerciseIndex]);
+            resourceApplied = true;
+        }
+        captureBpmStart(currentExerciseIndex);
         // Play is the moment the server records this attempt: the area and the
         // exercise are captured then, before the picker is unlocked at the end
         // of the timer (plan 6.1 / 9.4).
         sessionSyncItem(currentExerciseIndex);
-
-        if (!resourceApplied) { applyExerciseResource(rActiva().ejercicios[currentExerciseIndex]); resourceApplied = true; }
 
         const btn = document.getElementById('exPlayBtn');
         btn.innerHTML = GPH.icons.get('pause') + ' Pause';
@@ -2359,7 +2556,7 @@
 
             if (exerciseTimeLeft === 0) {
                 isExerciseFinished = true;
-                markCurrentCompleted();
+                markCurrentCompleted('timer');
                 pauseExerciseTimer();
                 updateProgressBar();
                 updateNextButtonState();
@@ -2400,6 +2597,14 @@
         exerciseTimeTotal = ejercicio.tiempo;
         isExerciseFinished = false;
         resourceApplied = false;
+        const wasDone = !!exerciseStates[currentExerciseIndex];
+        if (wasDone) {
+            repeatCountSet[currentExerciseIndex] = (repeatCountSet[currentExerciseIndex] || 0) + 1;
+        } else {
+            resetCountSet[currentExerciseIndex] = (resetCountSet[currentExerciseIndex] || 0) + 1;
+        }
+        completedBySet[currentExerciseIndex] = '';
+        statsEvent(wasDone ? 'item_repeat' : 'item_reset', currentExerciseIndex, {});
         delete exerciseStates[currentExerciseIndex];
         delete playedSet[currentExerciseIndex];
         delete clockSet[currentExerciseIndex];
@@ -2502,12 +2707,157 @@
         try { sessionId = parseInt(localStorage.getItem(SESSION_ID_KEY) || '', 10) || null; } catch (e) {}
     }
 
+    // ---- Transparent practice telemetry -----------------------------------
+    // Nothing here asks the user for input or paints UI. The session row is the
+    // authoritative store; the event log is best-effort (js/stats.js).
+    function resetTelemetry() {
+        playCountSet = {};
+        pauseCountSet = {};
+        resetCountSet = {};
+        repeatCountSet = {};
+        completedBySet = {};
+        usedToolsSet = {};
+        metroBpmStartSet = {};
+        metroBpmEndSet = {};
+        drumsBpmStartSet = {};
+        drumsBpmEndSet = {};
+        bpmTargetSet = {};
+        toolCfgSet = {};
+        areaLabelSet = {};
+        sessionResumeCount = 0;
+    }
+
+    // Values already stored on the server, loaded when this page picks up an
+    // open session: a reload must not zero the counters written before it.
+    function hydrateTelemetry(full) {
+        (full && full.items || []).forEach(function (it) {
+            const i = it.position;
+            playCountSet[i] = it.play_count || 0;
+            pauseCountSet[i] = it.pause_count || 0;
+            resetCountSet[i] = it.reset_count || 0;
+            repeatCountSet[i] = it.repeat_count || 0;
+            completedBySet[i] = it.completed_by || '';
+            usedToolsSet[i] = {
+                metronome: !!it.used_metronome,
+                drums: !!it.used_drums,
+                audio: !!it.used_audio,
+                youtube: !!it.used_youtube,
+                fretboard: !!it.used_fretboard
+            };
+            metroBpmStartSet[i] = it.metro_bpm_start || 0;
+            metroBpmEndSet[i] = it.metro_bpm_end || 0;
+            drumsBpmStartSet[i] = it.drums_bpm_start || 0;
+            drumsBpmEndSet[i] = it.drums_bpm_end || 0;
+            bpmTargetSet[i] = it.bpm_target || 0;
+            toolCfgSet[i] = it.tool_cfg || {};
+            areaLabelSet[i] = it.area_label || '';
+        });
+        if (full && full.resume_count != null) sessionResumeCount = full.resume_count;
+    }
+
+    function bpmTargetFor(ex) {
+        const list = resourcesOf(ex);
+        for (let i = 0; i < list.length; i++) {
+            if (list[i].kind === 'metronome' || list[i].kind === 'drums') {
+                return list[i].bpm || 0;
+            }
+        }
+        return 0;
+    }
+
+    function markToolUsed(kind) {
+        const idx = currentExerciseIndex;
+        const tools = usedToolsSet[idx] || (usedToolsSet[idx] = {});
+        tools[kind] = true;
+        if ((kind === 'metronome' || kind === 'drums') && !bpmTargetSet[idx]) {
+            bpmTargetSet[idx] = bpmTargetFor(rActiva().ejercicios[idx]);
+        }
+    }
+
+    function captureBpmStart(idx) {
+        const tools = usedToolsSet[idx] || {};
+        if (tools.metronome && GPH.metronome && GPH.metronome.getBpm) {
+            metroBpmStartSet[idx] = GPH.metronome.getBpm() || 0;
+        }
+        if (tools.drums && GPH.drumMachine && GPH.drumMachine.getBpm) {
+            drumsBpmStartSet[idx] = GPH.drumMachine.getBpm() || 0;
+        }
+    }
+
+    // Flat JSON: db._clean_cfg keeps strings, numbers and booleans only.
+    function toolCfgFor(idx) {
+        const tools = usedToolsSet[idx] || {};
+        const cfg = {};
+        if (tools.metronome && GPH.metronome && GPH.metronome.getConfig) {
+            const m = GPH.metronome.getConfig() || {};
+            cfg.metro_sig = m.sig || '';
+            cfg.metro_pattern = m.pattern || '';
+            cfg.metro_accent = !!m.accent;
+        }
+        if (tools.drums && GPH.drumMachine && GPH.drumMachine.getConfig) {
+            const d = GPH.drumMachine.getConfig() || {};
+            cfg.drums_sig = d.sig || '';
+            cfg.drums_style = d.style || '';
+            cfg.drums_res = d.res || '';
+            cfg.drums_swing = !!d.swing;
+        }
+        return cfg;
+    }
+
+    function telemetryFor(idx, ex) {
+        const tools = usedToolsSet[idx] || {};
+        const isCurrent = idx === currentExerciseIndex;
+        let metroEnd = metroBpmEndSet[idx] || 0;
+        let drumsEnd = drumsBpmEndSet[idx] || 0;
+        if (isCurrent && tools.metronome && GPH.metronome && GPH.metronome.getBpm) {
+            metroEnd = GPH.metronome.getBpm() || 0;
+            metroBpmEndSet[idx] = metroEnd;
+        }
+        if (isCurrent && tools.drums && GPH.drumMachine && GPH.drumMachine.getBpm) {
+            drumsEnd = GPH.drumMachine.getBpm() || 0;
+            drumsBpmEndSet[idx] = drumsEnd;
+        }
+        let cfg = toolCfgSet[idx] || {};
+        if (isCurrent) {
+            cfg = toolCfgFor(idx);
+            toolCfgSet[idx] = cfg;
+        }
+        return {
+            play_count: playCountSet[idx] || 0,
+            pause_count: pauseCountSet[idx] || 0,
+            reset_count: resetCountSet[idx] || 0,
+            repeat_count: repeatCountSet[idx] || 0,
+            completed_by: completedBySet[idx] || '',
+            used_metronome: tools.metronome ? 1 : 0,
+            used_drums: tools.drums ? 1 : 0,
+            used_audio: tools.audio ? 1 : 0,
+            used_youtube: tools.youtube ? 1 : 0,
+            used_fretboard: tools.fretboard ? 1 : 0,
+            metro_bpm_start: metroBpmStartSet[idx] || 0,
+            metro_bpm_end: metroEnd,
+            drums_bpm_start: drumsBpmStartSet[idx] || 0,
+            drums_bpm_end: drumsEnd,
+            bpm_target: bpmTargetSet[idx] || bpmTargetFor(ex),
+            tool_cfg: cfg,
+            catalog_path_id: (ex && ex.catalog_path_id != null) ? ex.catalog_path_id : null,
+            area_label: areaLabelSet[idx] || (ex && ex.area) || ''
+        };
+    }
+
+    function statsEvent(type, idx, extra) {
+        if (!GPH.stats || !sessionId) return;
+        GPH.stats.event(type, { session_id: sessionId, item_position: idx }, extra || {});
+    }
+
     function sessionStart() {
         if (sessionId) return;                       // resumed from a previous page load
         const r = rActiva();
-        const items = (r.ejercicios || []).map(function (ex) {
+        const items = (r.ejercicios || []).map(function (ex, i) {
             // The catalog link and the area travel with the item: a free material
             // has no slot to read them from later.
+            areaLabelSet[i] = ex.area || '';
+            const target = bpmTargetFor(ex);
+            bpmTargetSet[i] = target;
             return {
                 exercise_id: ex.id,
                 name: ex.nombre,
@@ -2515,6 +2865,9 @@
                 catalog_exercise_id: ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id,
                 catalog_name: (ex.catalog_exercise && ex.catalog_exercise.name) || '',
                 area_id: ex.area_id || '',
+                area_label: ex.area || '',
+                catalog_path_id: ex.catalog_path_id == null ? null : ex.catalog_path_id,
+                bpm_target: target,
             };
         });
         sessionPost('POST', '/api/sessions/start', {
@@ -2523,11 +2876,29 @@
             kind: freeMode ? 'free' : 'routine',
             note: freeMode ? freeNote : '',
             started_at: new Date().toISOString(),
+            tz_offset_min: -new Date().getTimezoneOffset(),
+            resume_count: sessionResumeCount,
             items: items
         }, function (res) {
             if (res && res.id) {
                 sessionId = res.id;
                 try { localStorage.setItem(SESSION_ID_KEY, String(res.id)); } catch (e) {}
+                const ex = rActiva().ejercicios[currentExerciseIndex];
+                if (GPH.players && GPH.players.setContext) {
+                    GPH.players.setContext({
+                        session_id: sessionId,
+                        item_position: currentExerciseIndex,
+                        catalog_exercise_id: ex && ex.catalog_exercise_id
+                    });
+                }
+                if (GPH.stats) {
+                    GPH.stats.event('session_start', {
+                        session_id: sessionId, item_position: currentExerciseIndex
+                    }, {
+                        value_text: r.nombre || '',
+                        payload: { kind: freeMode ? 'free' : 'routine' }
+                    });
+                }
             }
         });
     }
@@ -2537,14 +2908,16 @@
         const ex = rActiva().ejercicios[idx];
         if (!ex) return;
         const state = exerciseStates[idx] || 'pending';
-        sessionPost('PUT', '/api/sessions/' + sessionId + '/item', {
+        const body = {
             position: idx,
             state: state,
             played_seconds: playedFor(idx, ex),
             elapsed_seconds: elapsedFor(idx, ex),
             started_at: clockStartedSet[idx] || null,
             finished_at: state === 'pending' ? null : new Date().toISOString()
-        });
+        };
+        Object.assign(body, telemetryFor(idx, ex));
+        sessionPost('PUT', '/api/sessions/' + sessionId + '/item', body);
     }
 
     function sessionFinish() {
@@ -2552,7 +2925,7 @@
         const sid = sessionId;
         const items = (rActiva().ejercicios || []).map(function (ex, i) {
             const state = exerciseStates[i] || 'pending';
-            return {
+            const item = {
                 position: i,
                 state: state,
                 played_seconds: playedFor(i, ex),
@@ -2564,10 +2937,20 @@
                 catalog_exercise_id: ex.catalog_exercise_id == null ? null : ex.catalog_exercise_id,
                 catalog_name: (ex.catalog_exercise && ex.catalog_exercise.name) || '',
                 area_id: ex.area_id || '',
+                area_label: ex.area || '',
+                catalog_path_id: ex.catalog_path_id == null ? null : ex.catalog_path_id,
             };
+            Object.assign(item, telemetryFor(i, ex));
+            return item;
         });
+        if (GPH.stats) {
+            GPH.stats.event('session_finish', {
+                session_id: sid, item_position: currentExerciseIndex
+            }, { value_num: wallTracked() ? Math.round(wallElapsedMs() / 1000) : 0 });
+        }
         sessionId = null;
         try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) {}
+        if (GPH.players && GPH.players.setContext) GPH.players.setContext(null);
         // The real wall time of the routine: pauses on the welcome screen do not
         // count. Without tracking (a session recovered from the server) the field
         // stays null and the server falls back to started_at -> finished_at.
@@ -2575,6 +2958,7 @@
         sessionPost('POST', '/api/sessions/' + sid + '/finish',
                     { finished_at: new Date().toISOString(), items: items,
                       wall_seconds: wall,
+                      resume_count: sessionResumeCount,
                       note: freeMode ? freeNote : '' },
                     // The week summary on the welcome screen is now stale.
                     function () { loadWelcomeStats(); });
@@ -2595,6 +2979,13 @@
 
         sessionId = full.id;
         try { localStorage.setItem(SESSION_ID_KEY, String(full.id)); } catch (e) {}
+        resetTelemetry();
+        hydrateTelemetry(full);
+        sessionResumeCount = (full.resume_count || 0) + 1;
+        if (GPH.stats) {
+            GPH.stats.event('session_resume', { session_id: sessionId, item_position: 0 },
+                { value_num: sessionResumeCount });
+        }
 
         exerciseStates = {};
         playedSet = {};
@@ -2667,6 +3058,8 @@
                     if (d && d.status && d.status !== 'open') {
                         sessionId = null;
                         try { localStorage.removeItem(SESSION_ID_KEY); } catch (e) {}
+                    } else if (d && d.status === 'open') {
+                        hydrateTelemetry(d);
                     }
                 })
                 .catch(function () {});
@@ -2722,7 +3115,18 @@
             .then(function (d) {
                 if (d && d.gone) dropStaleSession();
                 else if (d && d.status && d.status !== 'open') dropStaleSession();
-                else restore();
+                else {
+                    if (d) {
+                        hydrateTelemetry(d);
+                        sessionResumeCount = (d.resume_count || 0) + 1;
+                        if (GPH.stats) {
+                            GPH.stats.event('session_resume', {
+                                session_id: sessionId, item_position: 0
+                            }, { value_num: sessionResumeCount });
+                        }
+                    }
+                    restore();
+                }
             })
             .catch(function () { restore(); });      // offline: trust the browser
     }
@@ -2767,10 +3171,16 @@
     }
 
     // Marks the current exercise as done (50 % rule decides timed vs untimed).
-    function markCurrentCompleted() {
+    function markCurrentCompleted(cause) {
         persistCurrentPlayed();
         const ex = rActiva().ejercicios[currentExerciseIndex];
+        if (!completedBySet[currentExerciseIndex]) {
+            completedBySet[currentExerciseIndex] = cause === 'timer' ? 'timer' : 'manual';
+        }
         setExerciseState(currentExerciseIndex, classifyDone(currentExerciseIndex, ex));
+        statsEvent('item_done', currentExerciseIndex, {
+            value_text: completedBySet[currentExerciseIndex]
+        });
         setIndexLabel();
         updateChangeLock();   // timer finished: the next session can use another one
     }
@@ -2800,7 +3210,7 @@
         const exs = rActiva().ejercicios || [];
         if (!exs.length) { showWelcomeScreen(); return; }
 
-        if (!DONE_STATES[exerciseStates[currentExerciseIndex]]) markCurrentCompleted();
+        if (!DONE_STATES[exerciseStates[currentExerciseIndex]]) markCurrentCompleted('manual');
 
         if (nextPendingIndex(currentExerciseIndex) < 0) { finishRoutine(); return; }
         nextExercise();
@@ -2812,6 +3222,8 @@
         const exs = rActiva().ejercicios || [];
         if (!exs.length) { showWelcomeScreen(); return; }
         if (clockRunSince !== null) clockStop();      // keep the partial time
+        completedBySet[currentExerciseIndex] = 'skip';
+        statsEvent('item_skip', currentExerciseIndex, {});
         setExerciseState(currentExerciseIndex, 'skipped');
         setIndexLabel();
 
@@ -2875,6 +3287,14 @@
             initSimpleAssistant();
         }
     }
+
+    // Shared hover panel: sections.js wires its song rows with the same dark
+    // tooltip used by the assistant (no second tooltip implementation).
+    GPH.tip = {
+        wire: wireTip,
+        wireMedia: wireMediaRow,
+        hide: hideTip
+    };
 
     GPH.practiceAssistant = {
         init: initSimpleAssistant,

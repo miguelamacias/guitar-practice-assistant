@@ -15,6 +15,7 @@ import functools
 import re
 import sys
 import time
+import uuid
 import mimetypes
 import subprocess
 import threading
@@ -109,7 +110,8 @@ CREATE TABLE IF NOT EXISTS exercises (
     position INTEGER DEFAULT 0,
     area_id TEXT NOT NULL DEFAULT '',
     catalog_exercise_id INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL,
-    catalog_path_id INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL
+    catalog_path_id INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL,
+    created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS sections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,7 +173,19 @@ CREATE TABLE IF NOT EXISTS fretboard_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     duration_seconds INTEGER NOT NULL,
     normalized REAL NOT NULL,
-    played_at TEXT DEFAULT (datetime('now'))
+    played_at TEXT DEFAULT (datetime('now')),
+    -- Per-run detail. The trainer already knows all of this at the end of a
+    -- run; storing it now makes the evolution by mode/accuracy possible later.
+    mode TEXT DEFAULT '',
+    hits INTEGER DEFAULT 0,
+    misses INTEGER DEFAULT 0,
+    score INTEGER DEFAULT 0,
+    best_streak INTEGER DEFAULT 0,
+    avg_ms INTEGER DEFAULT 0,
+    run_uid TEXT DEFAULT '',
+    session_id INTEGER,
+    item_position INTEGER,
+    catalog_exercise_id INTEGER
 );
 CREATE TABLE IF NOT EXISTS fretboard_cell_stats (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,6 +197,63 @@ CREATE TABLE IF NOT EXISTS fretboard_cell_stats (
     time_sum_ms INTEGER DEFAULT 0,
     UNIQUE(string_no, fret, mode)
 );
+-- Raw trainer attempts. The aggregate table above stays for fast reads; this
+-- one keeps the time dimension so a cell can be followed day by day later.
+CREATE TABLE IF NOT EXISTS fretboard_cell_attempts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_uid     TEXT NOT NULL DEFAULT '',
+    at          TEXT NOT NULL DEFAULT (datetime('now')),
+    string_no   INTEGER NOT NULL,
+    fret        INTEGER NOT NULL,
+    mode        TEXT NOT NULL DEFAULT '',
+    kind        TEXT NOT NULL DEFAULT '',        -- hit | miss
+    time_ms     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_fb_attempts_run
+    ON fretboard_cell_attempts(run_uid);
+CREATE INDEX IF NOT EXISTS idx_fb_attempts_at
+    ON fretboard_cell_attempts(at);
+-- Every playback (local audio or YouTube), not only Last.fm-eligible
+-- scrobbles: practice loops are usually shorter than the scrobble minimum.
+CREATE TABLE IF NOT EXISTS media_plays (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    play_uid         TEXT NOT NULL UNIQUE,
+    session_id       INTEGER,
+    item_position    INTEGER,
+    kind             TEXT NOT NULL DEFAULT '',   -- audio | youtube
+    ref              TEXT NOT NULL DEFAULT '',   -- media path or video id
+    label            TEXT NOT NULL DEFAULT '',
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    played_seconds   INTEGER NOT NULL DEFAULT 0,
+    loops            INTEGER NOT NULL DEFAULT 0,
+    ab_start         REAL NOT NULL DEFAULT 0,
+    ab_end           REAL NOT NULL DEFAULT 0,
+    completed        INTEGER NOT NULL DEFAULT 0,
+    measured         INTEGER NOT NULL DEFAULT 1,
+    started_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    ended_at         TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_media_plays_session
+    ON media_plays(session_id);
+CREATE INDEX IF NOT EXISTS idx_media_plays_started
+    ON media_plays(started_at);
+-- Append-only interaction timeline. The session/item counters are the
+-- authoritative aggregates; these rows keep the raw order for future reports.
+CREATE TABLE IF NOT EXISTS practice_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_uid     TEXT NOT NULL UNIQUE,
+    session_id    INTEGER,
+    item_position INTEGER,
+    at            TEXT NOT NULL DEFAULT (datetime('now')),
+    type          TEXT NOT NULL DEFAULT '',
+    value_num     REAL NOT NULL DEFAULT 0,
+    value_text    TEXT NOT NULL DEFAULT '',
+    payload       TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_practice_events_session
+    ON practice_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_practice_events_type
+    ON practice_events(type, at);
 CREATE TABLE IF NOT EXISTS song_info_cache (
     cache_key   TEXT PRIMARY KEY,
     query       TEXT NOT NULL,
@@ -197,6 +268,9 @@ CREATE TABLE IF NOT EXISTS routine_sessions (
     routine_name      TEXT NOT NULL DEFAULT '',
     kind              TEXT NOT NULL DEFAULT 'routine',  -- routine | free
     note              TEXT NOT NULL DEFAULT '',         -- free practice intent
+    tz_offset_min     INTEGER NOT NULL DEFAULT 0,      -- browser offset when it started
+    resume_count      INTEGER NOT NULL DEFAULT 0,      -- recovered after a reload
+    abandon_reason    TEXT NOT NULL DEFAULT '',        -- new_session | sweep | ''
     status            TEXT NOT NULL DEFAULT 'open',   -- open | finished | abandoned
     started_at        TEXT NOT NULL,                  -- UTC 'YYYY-MM-DD HH:MM:SS'
     finished_at       TEXT,
@@ -224,9 +298,30 @@ CREATE TABLE IF NOT EXISTS routine_session_items (
     started_at      TEXT,                             -- when Play was pressed
     finished_at     TEXT,
     area_id         TEXT NOT NULL DEFAULT '',         -- snapshot of the slot area
+    area_label      TEXT NOT NULL DEFAULT '',         -- label at practice time
     catalog_exercise_id INTEGER
                     REFERENCES catalog_exercises(id) ON DELETE SET NULL,
     catalog_name    TEXT NOT NULL DEFAULT '',         -- snapshot of the exercise name
+    catalog_path_id INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL,
+    -- Tempo and tools used in this item (transparent capture; see
+    -- docs/implemented-STATS_INSTRUMENTATION.md).
+    metro_bpm_start INTEGER NOT NULL DEFAULT 0,
+    metro_bpm_end   INTEGER NOT NULL DEFAULT 0,
+    drums_bpm_start INTEGER NOT NULL DEFAULT 0,
+    drums_bpm_end   INTEGER NOT NULL DEFAULT 0,
+    bpm_target      INTEGER NOT NULL DEFAULT 0,
+    tool_cfg        TEXT NOT NULL DEFAULT '',         -- small JSON snapshot
+    used_metronome  INTEGER NOT NULL DEFAULT 0,
+    used_drums      INTEGER NOT NULL DEFAULT 0,
+    used_audio      INTEGER NOT NULL DEFAULT 0,
+    used_youtube    INTEGER NOT NULL DEFAULT 0,
+    used_fretboard  INTEGER NOT NULL DEFAULT 0,
+    -- Attempt shape: how the item was worked on, not only its final state.
+    play_count      INTEGER NOT NULL DEFAULT 0,
+    pause_count     INTEGER NOT NULL DEFAULT 0,
+    reset_count     INTEGER NOT NULL DEFAULT 0,
+    repeat_count    INTEGER NOT NULL DEFAULT 0,
+    completed_by    TEXT NOT NULL DEFAULT '',         -- timer | manual | skip
     UNIQUE(session_id, position)
 );
 CREATE INDEX IF NOT EXISTS idx_routine_sessions_started ON routine_sessions(started_at);
@@ -256,7 +351,8 @@ def set_db_path(path):
 
 # Tables of the session log (created in a later phase; these helpers already
 # tolerate their absence so the debug endpoints work with any database).
-SESSION_TABLES = ('routine_sessions', 'routine_session_items')
+SESSION_TABLES = ('routine_sessions', 'routine_session_items',
+                  'media_plays', 'practice_events', 'fretboard_cell_attempts')
 
 # Daily copies live in their own folder. Only the daily ones rotate: the
 # hand-made "-pre-*" snapshots taken before a migration are never deleted.
@@ -315,28 +411,47 @@ def export_csv(conn, what='sessions'):
     out = csv.writer(buf, delimiter=';', lineterminator='\n')
     if what == 'items':
         out.writerow(['session_id', 'started_at', 'routine', 'position', 'exercise', 'state',
-                      'planned_seconds', 'played_seconds', 'area_id', 'catalog_exercise_id',
-                      'catalog_name'])
+                      'planned_seconds', 'played_seconds', 'area_id', 'area_label',
+                      'catalog_exercise_id', 'catalog_name', 'catalog_path_id',
+                      'metro_bpm_start', 'metro_bpm_end', 'drums_bpm_start',
+                      'drums_bpm_end', 'bpm_target', 'tool_cfg', 'used_metronome',
+                      'used_drums', 'used_audio', 'used_youtube', 'used_fretboard',
+                      'play_count', 'pause_count', 'reset_count', 'repeat_count',
+                      'completed_by'])
         rows = conn.execute(
             'SELECT i.session_id, s.started_at, s.routine_name, i.position, i.name, i.state,'
-            ' i.planned_seconds, i.played_seconds, i.area_id, i.catalog_exercise_id,'
-            ' i.catalog_name'
+            ' i.planned_seconds, i.played_seconds, i.area_id, i.area_label,'
+            ' i.catalog_exercise_id, i.catalog_name, i.catalog_path_id, i.metro_bpm_start,'
+            ' i.metro_bpm_end, i.drums_bpm_start, i.drums_bpm_end, i.bpm_target,'
+            ' i.tool_cfg, i.used_metronome, i.used_drums, i.used_audio, i.used_youtube,'
+            ' i.used_fretboard, i.play_count, i.pause_count, i.reset_count,'
+            ' i.repeat_count, i.completed_by'
             ' FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
             ' ORDER BY s.started_at, i.position').fetchall()
         for r in rows:
             out.writerow([r['session_id'], _csv_local(r['started_at']), r['routine_name'],
                           r['position'], r['name'], r['state'],
                           r['planned_seconds'], r['played_seconds'],
-                          r['area_id'] or '', r['catalog_exercise_id'],
-                          r['catalog_name'] or ''])
+                          r['area_id'] or '', r['area_label'] or '',
+                          r['catalog_exercise_id'], r['catalog_name'] or '',
+                          r['catalog_path_id'], r['metro_bpm_start'], r['metro_bpm_end'],
+                          r['drums_bpm_start'], r['drums_bpm_end'], r['bpm_target'],
+                          r['tool_cfg'] or '', r['used_metronome'], r['used_drums'],
+                          r['used_audio'], r['used_youtube'], r['used_fretboard'],
+                          r['play_count'], r['pause_count'], r['reset_count'],
+                          r['repeat_count'], r['completed_by'] or ''])
     else:
-        out.writerow(['id', 'routine', 'status', 'started_at', 'finished_at', 'planned_seconds',
-                      'practiced_seconds', 'n_total', 'n_timed', 'n_untimed', 'n_skipped'])
+        out.writerow(['id', 'routine', 'kind', 'status', 'started_at', 'finished_at',
+                      'planned_seconds', 'practiced_seconds', 'real_seconds', 'wall_seconds',
+                      'n_total', 'n_timed', 'n_untimed', 'n_skipped', 'tz_offset_min',
+                      'resume_count', 'abandon_reason'])
         for r in conn.execute('SELECT * FROM routine_sessions ORDER BY started_at, id').fetchall():
-            out.writerow([r['id'], r['routine_name'], r['status'], _csv_local(r['started_at']),
-                          _csv_local(r['finished_at']), r['planned_seconds'],
-                          r['practiced_seconds'], r['n_total'], r['n_timed'],
-                          r['n_untimed'], r['n_skipped']])
+            out.writerow([r['id'], r['routine_name'], r['kind'], r['status'],
+                          _csv_local(r['started_at']), _csv_local(r['finished_at']),
+                          r['planned_seconds'], r['practiced_seconds'], r['real_seconds'],
+                          r['wall_seconds'], r['n_total'], r['n_timed'], r['n_untimed'],
+                          r['n_skipped'], r['tz_offset_min'], r['resume_count'],
+                          r['abandon_reason'] or ''])
     return buf.getvalue()
 
 
@@ -365,13 +480,18 @@ def clear_tables(conn, tables=SESSION_TABLES):
 
 
 def init_db():
+    # The daily copy must be taken BEFORE the schema migration: a backup
+    # written afterwards would already contain the new columns and would not
+    # be usable to roll back a bad migration. A brand-new database has nothing
+    # to back up, so it is skipped.
+    if os.path.exists(DB_PATH):
+        backup_db()
     conn = sqlite3.connect(DB_PATH)
     conn.execute('PRAGMA journal_mode=WAL')
     conn.executescript(SCHEMA)
     _migrate(conn)
     conn.commit()
     conn.close()
-    backup_db()
 
 
 def _migrate(conn):
@@ -430,13 +550,56 @@ def _migrate(conn):
         ('catalog_exercise_id',
          'INTEGER REFERENCES catalog_exercises(id) ON DELETE SET NULL'),
         ('catalog_name', "TEXT NOT NULL DEFAULT ''"),
+        ('area_label', "TEXT NOT NULL DEFAULT ''"),
+        ('catalog_path_id',
+         'INTEGER REFERENCES catalog_paths(id) ON DELETE SET NULL'),
+        ('metro_bpm_start', 'INTEGER NOT NULL DEFAULT 0'),
+        ('metro_bpm_end', 'INTEGER NOT NULL DEFAULT 0'),
+        ('drums_bpm_start', 'INTEGER NOT NULL DEFAULT 0'),
+        ('drums_bpm_end', 'INTEGER NOT NULL DEFAULT 0'),
+        ('bpm_target', 'INTEGER NOT NULL DEFAULT 0'),
+        ('tool_cfg', "TEXT NOT NULL DEFAULT ''"),
+        ('used_metronome', 'INTEGER NOT NULL DEFAULT 0'),
+        ('used_drums', 'INTEGER NOT NULL DEFAULT 0'),
+        ('used_audio', 'INTEGER NOT NULL DEFAULT 0'),
+        ('used_youtube', 'INTEGER NOT NULL DEFAULT 0'),
+        ('used_fretboard', 'INTEGER NOT NULL DEFAULT 0'),
+        ('play_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('pause_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('reset_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('repeat_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('completed_by', "TEXT NOT NULL DEFAULT ''"),
+    ])
+    add_cols('routine_sessions', [
+        ('tz_offset_min', 'INTEGER NOT NULL DEFAULT 0'),
+        ('resume_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('abandon_reason', "TEXT NOT NULL DEFAULT ''"),
+    ])
+    # Material age: old slots stay NULL (unknown), new ones are stamped by
+    # create_exercise/duplicate_routine. ADD COLUMN cannot use datetime('now').
+    add_cols('exercises', [('created_at', 'TEXT')])
+    add_cols('fretboard_stats', [
+        ('mode', "TEXT DEFAULT ''"),
+        ('hits', 'INTEGER DEFAULT 0'),
+        ('misses', 'INTEGER DEFAULT 0'),
+        ('score', 'INTEGER DEFAULT 0'),
+        ('best_streak', 'INTEGER DEFAULT 0'),
+        ('avg_ms', 'INTEGER DEFAULT 0'),
+        ('run_uid', "TEXT DEFAULT ''"),
+        ('session_id', 'INTEGER'),
+        ('item_position', 'INTEGER'),
+        ('catalog_exercise_id', 'INTEGER'),
     ])
     for stmt in ('CREATE INDEX IF NOT EXISTS idx_exercises_area ON exercises(area_id)',
                  'CREATE INDEX IF NOT EXISTS idx_exercises_path ON exercises(catalog_path_id)',
                  'CREATE INDEX IF NOT EXISTS idx_session_items_area'
                  ' ON routine_session_items(area_id)',
+                 'CREATE INDEX IF NOT EXISTS idx_session_items_path'
+                 ' ON routine_session_items(catalog_path_id)',
                  'CREATE INDEX IF NOT EXISTS idx_session_items_catalog'
-                 ' ON routine_session_items(catalog_exercise_id)'):
+                 ' ON routine_session_items(catalog_exercise_id)',
+                 'CREATE UNIQUE INDEX IF NOT EXISTS idx_fb_stats_run_uid'
+                 " ON fretboard_stats(run_uid) WHERE run_uid <> ''"):
         try:
             conn.execute(stmt)
         except sqlite3.Error:
@@ -763,9 +926,9 @@ def duplicate_routine(conn, rid):
         # resources: that is what makes a duplicated routine usable as is.
         conn.execute(
             'INSERT INTO exercises(routine_id, name, duration_seconds, position, area_id,'
-            ' catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?)',
+            ' catalog_exercise_id, catalog_path_id, created_at) VALUES(?,?,?,?,?,?,?,?)',
             (nid, e['name'], e['duration_seconds'], e['position'], e['area_id'] or '',
-             e['catalog_exercise_id'], e['catalog_path_id']),
+             e['catalog_exercise_id'], e['catalog_path_id'], _utc_now()),
         )
     conn.commit()
     return _routine_full(conn, nid)
@@ -835,10 +998,10 @@ def create_exercise(conn, rid, data):
     ).fetchone()[0]
     conn.execute(
         'INSERT INTO exercises(routine_id, name, duration_seconds, position, '
-        'area_id, catalog_exercise_id, catalog_path_id) VALUES(?,?,?,?,?,?,?)',
+        'area_id, catalog_exercise_id, catalog_path_id, created_at) VALUES(?,?,?,?,?,?,?,?)',
         (rid, name, dur, pos,
          meta.get('area_id', ''), meta.get('catalog_exercise_id'),
-         meta.get('catalog_path_id')),
+         meta.get('catalog_path_id'), _utc_now()),
     )
     conn.commit()
     return _routine_full(conn, rid)
@@ -1752,35 +1915,100 @@ def set_song_cache(conn, cache_key, query, status, payload, retry_after=None):
     return {'ok': True}
 
 
-def add_fretboard_stat(conn, duration_seconds, normalized):
+def add_fretboard_stat(conn, duration_seconds, normalized, mode='', hits=0,
+                       misses=0, score=0, best_streak=0, avg_ms=0, run_uid='',
+                       session_id=None, item_position=None,
+                       catalog_exercise_id=None):
+    """One trainer run. `run_uid` makes a retried POST idempotent."""
     try:
-        dur = int(duration_seconds or 0)
+        dur = max(0, int(duration_seconds or 0))
         val = float(normalized or 0)
     except (TypeError, ValueError):
         return {'error': 'bad_data'}
+    md = (mode or '').strip().lower()
+    if md not in ('identify', 'locate', 'zone'):
+        md = ''
+    run_uid = str(run_uid or '').strip()[:64]
     conn.execute(
-        'INSERT INTO fretboard_stats(duration_seconds, normalized, played_at) VALUES(?,?,?)',
-        (dur, val, datetime.now().isoformat(timespec='seconds')),
+        'INSERT OR IGNORE INTO fretboard_stats(duration_seconds, normalized, played_at,'
+        ' mode, hits, misses, score, best_streak, avg_ms, run_uid, session_id,'
+        ' item_position, catalog_exercise_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        (dur, val,
+         datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds') + 'Z', md,
+         _as_int(hits, 0, 0), _as_int(misses, 0, 0),
+         _as_int(score, 0, -100000, 100000), _as_int(best_streak, 0, 0),
+         _as_int(avg_ms, 0, 0), run_uid, _as_id(session_id),
+         _as_int(item_position, 0, 0), _as_id(catalog_exercise_id)),
     )
     conn.commit()
-    return {'ok': True}
+    return {'ok': True, 'run_uid': run_uid}
 
 
 def get_fretboard_stats(conn):
+    """Overall average plus the detail of the runs recorded since 2026-11-17.
+
+    `last`/`avg`/`count` keep their old meaning (every run, including the
+    legacy rows that only had duration + normalized). `summary`, `runs` and
+    `by_mode` describe the runs that carry accuracy/streak/response time.
+    """
     rows = conn.execute(
         'SELECT normalized FROM fretboard_stats ORDER BY id DESC'
     ).fetchall()
-    if not rows:
-        return {'last': None, 'avg': None, 'count': 0}
     vals = [r['normalized'] for r in rows]
-    return {
-        'last': round(vals[0], 3),
-        'avg': round(sum(vals) / len(vals), 3),
+    out = {
+        'last': round(vals[0], 3) if vals else None,
+        'avg': round(sum(vals) / len(vals), 3) if vals else None,
         'count': len(vals),
+        'summary': {'runs': 0, 'hits': 0, 'misses': 0, 'accuracy': None,
+                    'best_streak': 0, 'avg_ms': 0, 'last_played_at': None},
+        'runs': [],
+        'by_mode': [],
     }
+    try:
+        s = conn.execute(
+            "SELECT COUNT(*) runs, COALESCE(SUM(hits),0) hits,"
+            " COALESCE(SUM(misses),0) misses, COALESCE(MAX(best_streak),0) best,"
+            " COALESCE(AVG(avg_ms),0) avg_ms, MAX(played_at) last_at"
+            " FROM fretboard_stats WHERE hits + misses > 0").fetchone()
+    except sqlite3.Error:
+        return out
+    total = (s['hits'] or 0) + (s['misses'] or 0)
+    out['summary'] = {
+        'runs': s['runs'] or 0,
+        'hits': s['hits'] or 0,
+        'misses': s['misses'] or 0,
+        'accuracy': round((s['hits'] or 0) / total, 3) if total else None,
+        'best_streak': s['best'] or 0,
+        'avg_ms': int(round(s['avg_ms'] or 0)),
+        'last_played_at': s['last_at'],
+    }
+    out['runs'] = [dict(r) for r in conn.execute(
+        'SELECT played_at, mode, hits, misses, score, best_streak, avg_ms,'
+        ' duration_seconds, normalized, session_id, item_position'
+        ' FROM fretboard_stats WHERE hits + misses > 0'
+        ' ORDER BY id DESC LIMIT 30').fetchall()]
+    modes = []
+    for r in conn.execute(
+            "SELECT mode, COUNT(*) runs, COALESCE(SUM(hits),0) hits,"
+            " COALESCE(SUM(misses),0) misses, COALESCE(MAX(best_streak),0) best,"
+            " COALESCE(AVG(avg_ms),0) avg_ms"
+            " FROM fretboard_stats WHERE hits + misses > 0"
+            " GROUP BY mode ORDER BY runs DESC, mode").fetchall():
+        n = (r['hits'] or 0) + (r['misses'] or 0)
+        modes.append({
+            'mode': r['mode'] or '',
+            'runs': r['runs'] or 0,
+            'hits': r['hits'] or 0,
+            'misses': r['misses'] or 0,
+            'accuracy': round((r['hits'] or 0) / n, 3) if n else None,
+            'best_streak': r['best'] or 0,
+            'avg_ms': int(round(r['avg_ms'] or 0)),
+        })
+    out['by_mode'] = modes
+    return out
 
 
-def add_cell_attempt(conn, string_no, fret, kind, time_ms, mode=''):
+def add_cell_attempt(conn, string_no, fret, kind, time_ms, mode='', run_uid=''):
     try:
         s = int(string_no)
         fr = int(fret)
@@ -1792,6 +2020,14 @@ def add_cell_attempt(conn, string_no, fret, kind, time_ms, mode=''):
     md = (mode or '').strip().lower()
     if md not in ('identify', 'locate', 'zone'):
         md = ''
+    kind = 'hit' if kind == 'hit' else 'miss'
+    run_uid = str(run_uid or '').strip()[:64]
+    # Raw attempt: keeps the time dimension the aggregate table cannot hold.
+    conn.execute(
+        'INSERT INTO fretboard_cell_attempts(run_uid, at, string_no, fret, mode, kind,'
+        ' time_ms) VALUES(?,?,?,?,?,?,?)',
+        (run_uid, _utc_now(), s, fr, md, kind, tm),
+    )
     row = conn.execute(
         'SELECT id FROM fretboard_cell_stats WHERE string_no=? AND fret=? AND mode=?', (s, fr, md)
     ).fetchone()
@@ -1825,6 +2061,136 @@ def get_cell_stats(conn):
          'hits': r['hits'], 'misses': r['misses'], 'time_sum_ms': r['time_sum_ms']}
         for r in rows
     ]
+
+
+def _media_ref_variants(kind, ref):
+    """Accept the player's canonical ref and the URL form used by old seeds."""
+    refs = [ref]
+    parsed = urlparse(ref)
+    if parsed.path == '/api/media' or parsed.path.endswith('/api/media'):
+        path = (parse_qs(parsed.query).get('path') or [''])[0]
+        if path and path not in refs:
+            refs.append(path)
+    elif kind == 'audio' and not ref.startswith('/api/media') and not ref.lower().startswith(
+            ('http://', 'https://')):
+        full = '/api/media?path=' + quote(ref, safe="!'()*")
+        if full not in refs:
+            refs.append(full)
+    if kind == 'youtube':
+        match = re.search(r'(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})', ref)
+        if match and match.group(1) not in refs:
+            refs.append(match.group(1))
+        elif re.fullmatch(r'[A-Za-z0-9_-]{11}', ref):
+            for url in ('https://www.youtube.com/watch?v=' + ref,
+                        'https://youtu.be/' + ref):
+                if url not in refs:
+                    refs.append(url)
+    return refs
+
+
+def get_media_stats(conn, kind, ref):
+    """Read-only aggregate for one track (audio path or YouTube video id)."""
+    kind = str(kind or '').strip().lower()
+    if kind not in ('audio', 'youtube'):
+        return {'error': 'bad_kind'}
+    ref = str(ref or '').strip()[:1000]
+    if not ref:
+        return {'error': 'missing_ref'}
+
+    refs = _media_ref_variants(kind, ref)
+    marks = ','.join('?' for _ in refs)
+    args = [kind] + refs
+    agg = conn.execute(
+        'SELECT COUNT(*) AS plays, '
+        'COALESCE(SUM(played_seconds), 0) AS listened, '
+        'COALESCE(SUM(CASE WHEN measured = 1 THEN played_seconds ELSE 0 END), 0) AS measured, '
+        'COALESCE(SUM(loops), 0) AS loops, '
+        'COALESCE(SUM(completed), 0) AS completed, '
+        'MAX(started_at) AS last '
+        'FROM media_plays WHERE kind = ? AND ref IN (' + marks + ')',
+        args
+    ).fetchone()
+    last_ab = conn.execute(
+        'SELECT ab_start, ab_end FROM media_plays '
+        'WHERE kind = ? AND ref IN (' + marks + ') AND ab_end > ab_start '
+        'ORDER BY started_at DESC, id DESC LIMIT 1',
+        args
+    ).fetchone()
+
+    listened = int(agg['listened'] or 0)
+    measured = int(agg['measured'] or 0)
+    last = agg['last']
+    if last and not re.search(r'(?:[zZ]|[+-]\d{2}:?\d{2})$', last):
+        last = last.replace(' ', 'T') + 'Z'
+    return {
+        'ok': True,
+        'kind': kind,
+        'ref': ref,
+        'plays': int(agg['plays'] or 0),
+        'listened_seconds': listened,
+        'measured_seconds': measured,
+        'estimated_seconds': listened - measured,
+        'last_played_at': last,
+        'loops': int(agg['loops'] or 0),
+        'completed': int(agg['completed'] or 0),
+        'last_ab_start': round(float(last_ab['ab_start']), 2) if last_ab else None,
+        'last_ab_end': round(float(last_ab['ab_end']), 2) if last_ab else None,
+    }
+
+
+def add_media_play(conn, data):
+    """One playback of a local track or a YouTube video (idempotent by play_uid)."""
+    kind = str(data.get('kind') or '').strip().lower()
+    if kind not in ('audio', 'youtube'):
+        return {'error': 'bad_data'}
+    play_uid = str(data.get('play_uid') or '').strip()[:64] or uuid.uuid4().hex
+    pos = data.get('item_position')
+    pos = None if pos in (None, '') else _as_int(pos, 0, 0)
+    conn.execute(
+        'INSERT OR IGNORE INTO media_plays(play_uid, session_id, item_position, kind,'
+        ' ref, label, duration_seconds, played_seconds, loops, ab_start, ab_end,'
+        ' completed, measured, started_at, ended_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        (play_uid, _as_id(data.get('session_id')), pos, kind,
+         str(data.get('ref') or '')[:1000], str(data.get('label') or '')[:300],
+         _as_int(data.get('duration_seconds'), 0, 0),
+         _as_int(data.get('played_seconds'), 0, 0),
+         _as_int(data.get('loops'), 0, 0),
+         _as_float(data.get('ab_start'), 0.0, 0.0),
+         _as_float(data.get('ab_end'), 0.0, 0.0),
+         1 if data.get('completed') else 0,
+         1 if data.get('measured', 1) else 0,
+         _iso_to_db(data.get('started_at')) or _utc_now(),
+         _iso_to_db(data.get('ended_at')) or _utc_now()),
+    )
+    conn.commit()
+    return {'ok': True, 'play_uid': play_uid}
+
+
+def add_practice_event(conn, data):
+    """Append-only interaction event (idempotent by event_uid)."""
+    etype = str(data.get('type') or '').strip().lower()
+    if not re.fullmatch(r'[a-z0-9_]{1,40}', etype or ''):
+        etype = 'unknown'
+    event_uid = str(data.get('event_uid') or '').strip()[:64] or uuid.uuid4().hex
+    pos = data.get('item_position')
+    pos = None if pos in (None, '') else _as_int(pos, 0, 0)
+    payload = data.get('payload')
+    if isinstance(payload, (dict, list)):
+        try:
+            payload = json.dumps(payload, ensure_ascii=False)
+        except (TypeError, ValueError):
+            payload = ''
+    else:
+        payload = str(payload or '')
+    conn.execute(
+        'INSERT OR IGNORE INTO practice_events(event_uid, session_id, item_position, at,'
+        ' type, value_num, value_text, payload) VALUES(?,?,?,?,?,?,?,?)',
+        (event_uid, _as_id(data.get('session_id')), pos,
+         _iso_to_db(data.get('at')) or _utc_now(), etype,
+         _as_float(data.get('value_num'), 0.0),
+         str(data.get('value_text') or '')[:200], payload[:2000]))
+    conn.commit()
+    return {'ok': True, 'event_uid': event_uid}
 
 
 
@@ -1887,6 +2253,126 @@ def set_session_item_area(conn, sid, position, area_id):
     return {'ok': True, 'session_id': sid, 'position': position, 'area_id': area}
 
 
+def _as_int(value, default=0, lo=None, hi=None):
+    try:
+        n = int(float(value))
+    except (TypeError, ValueError):
+        n = default
+    if lo is not None and n < lo:
+        n = lo
+    if hi is not None and n > hi:
+        n = hi
+    return n
+
+
+def _as_float(value, default=0.0, lo=None):
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        n = default
+    if lo is not None and n < lo:
+        n = lo
+    return n
+
+
+def _as_id(value):
+    if value in (None, '', 0, '0'):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _clean_path_id(conn, value):
+    pid = _as_id(value)
+    return pid if pid is not None and path_exists(conn, pid) else None
+
+
+def _json_or_empty(text):
+    try:
+        obj = json.loads(text or '')
+    except (TypeError, ValueError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _clean_tool_cfg(value):
+    """Small JSON snapshot of the metronome/drum-machine settings."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return ''
+    if not isinstance(value, dict):
+        return ''
+    clean = _clean_cfg(value)
+    return json.dumps(clean, ensure_ascii=False, sort_keys=True) if clean else ''
+
+
+# Columns written for every item, in one place so start, append and the
+# offline-recovery insert cannot drift apart.
+ITEM_COLUMNS = (
+    'exercise_id', 'name', 'state', 'planned_seconds', 'played_seconds',
+    'elapsed_seconds', 'started_at', 'finished_at', 'area_id', 'area_label',
+    'catalog_exercise_id', 'catalog_name', 'catalog_path_id',
+    'metro_bpm_start', 'metro_bpm_end', 'drums_bpm_start', 'drums_bpm_end',
+    'bpm_target', 'tool_cfg', 'used_metronome', 'used_drums', 'used_audio',
+    'used_youtube', 'used_fretboard', 'play_count', 'pause_count',
+    'reset_count', 'repeat_count', 'completed_by',
+)
+
+
+def _clean_item_payload(conn, it):
+    """Normalized values for every column of one session item."""
+    state = it.get('state') or 'pending'
+    if state not in SESSION_STATES:
+        state = 'pending'
+    completed = str(it.get('completed_by') or '').strip().lower()
+    if completed not in ('timer', 'manual', 'skip'):
+        completed = ''
+    return {
+        'exercise_id': _as_id(it.get('exercise_id')),
+        'name': str(it.get('name') or '').strip()[:300],
+        'state': state,
+        'planned_seconds': _as_int(it.get('planned_seconds'), 0, 0),
+        'played_seconds': _as_int(it.get('played_seconds'), 0, 0),
+        'elapsed_seconds': _as_int(it.get('elapsed_seconds'), 0, 0),
+        'started_at': _iso_to_db(it.get('started_at')),
+        'finished_at': _iso_to_db(it.get('finished_at')),
+        'area_id': str(it.get('area_id') or '').strip()[:80],
+        'area_label': str(it.get('area_label') or '').strip()[:80],
+        'catalog_exercise_id': _as_id(it.get('catalog_exercise_id')),
+        'catalog_name': str(it.get('catalog_name') or '').strip()[:300],
+        'catalog_path_id': _clean_path_id(conn, it.get('catalog_path_id')),
+        'metro_bpm_start': _as_int(it.get('metro_bpm_start'), 0, 0, 400),
+        'metro_bpm_end': _as_int(it.get('metro_bpm_end'), 0, 0, 400),
+        'drums_bpm_start': _as_int(it.get('drums_bpm_start'), 0, 0, 400),
+        'drums_bpm_end': _as_int(it.get('drums_bpm_end'), 0, 0, 400),
+        'bpm_target': _as_int(it.get('bpm_target'), 0, 0, 400),
+        'tool_cfg': _clean_tool_cfg(it.get('tool_cfg')),
+        'used_metronome': 1 if it.get('used_metronome') else 0,
+        'used_drums': 1 if it.get('used_drums') else 0,
+        'used_audio': 1 if it.get('used_audio') else 0,
+        'used_youtube': 1 if it.get('used_youtube') else 0,
+        'used_fretboard': 1 if it.get('used_fretboard') else 0,
+        'play_count': _as_int(it.get('play_count'), 0, 0, 100000),
+        'pause_count': _as_int(it.get('pause_count'), 0, 0, 100000),
+        'reset_count': _as_int(it.get('reset_count'), 0, 0, 100000),
+        'repeat_count': _as_int(it.get('repeat_count'), 0, 0, 100000),
+        'completed_by': completed,
+    }
+
+
+def _insert_session_item(conn, sid, position, it):
+    values = _clean_item_payload(conn, it)
+    placeholders = ', '.join('?' for _ in ITEM_COLUMNS)
+    conn.execute(
+        'INSERT INTO routine_session_items(session_id, position, '
+        + ', '.join(ITEM_COLUMNS) + ') VALUES(?, ?, ' + placeholders + ')',
+        [sid, position] + [values[c] for c in ITEM_COLUMNS])
+
+
 def _session_row(row):
     return {
         'id': row['id'],
@@ -1907,14 +2393,20 @@ def _session_row(row):
         'n_skipped': row['n_skipped'],
         'n_done': row['n_done'] if 'n_done' in row.keys() else (row['n_timed'] + row['n_untimed']),
         'n_partial': row['n_partial'] if 'n_partial' in row.keys() else 0,
+        'tz_offset_min': row['tz_offset_min'] if 'tz_offset_min' in row.keys() else 0,
+        'resume_count': row['resume_count'] if 'resume_count' in row.keys() else 0,
+        'abandon_reason': row['abandon_reason'] if 'abandon_reason' in row.keys() else '',
     }
 
 
 def _session_items(conn, sid):
     rows = conn.execute(
         'SELECT position, exercise_id, name, state, planned_seconds, played_seconds,'
-        ' elapsed_seconds, started_at, finished_at, area_id, catalog_exercise_id,'
-        ' catalog_name'
+        ' elapsed_seconds, started_at, finished_at, area_id, area_label,'
+        ' catalog_exercise_id, catalog_name, catalog_path_id, metro_bpm_start,'
+        ' metro_bpm_end, drums_bpm_start, drums_bpm_end, bpm_target, tool_cfg,'
+        ' used_metronome, used_drums, used_audio, used_youtube, used_fretboard,'
+        ' play_count, pause_count, reset_count, repeat_count, completed_by'
         ' FROM routine_session_items WHERE session_id=? ORDER BY position', (sid,)).fetchall()
     return [{
         'position': r['position'],
@@ -1927,9 +2419,28 @@ def _session_items(conn, sid):
         'started_at': _db_to_iso(r['started_at']),
         'finished_at': _db_to_iso(r['finished_at']),
         'area_id': (r['area_id'] if 'area_id' in r.keys() else '') or '',
+        'area_label': (r['area_label'] if 'area_label' in r.keys() else '') or '',
         'catalog_exercise_id': r['catalog_exercise_id']
                               if 'catalog_exercise_id' in r.keys() else None,
         'catalog_name': (r['catalog_name'] if 'catalog_name' in r.keys() else '') or '',
+        'catalog_path_id': r['catalog_path_id']
+                          if 'catalog_path_id' in r.keys() else None,
+        'metro_bpm_start': r['metro_bpm_start'] if 'metro_bpm_start' in r.keys() else 0,
+        'metro_bpm_end': r['metro_bpm_end'] if 'metro_bpm_end' in r.keys() else 0,
+        'drums_bpm_start': r['drums_bpm_start'] if 'drums_bpm_start' in r.keys() else 0,
+        'drums_bpm_end': r['drums_bpm_end'] if 'drums_bpm_end' in r.keys() else 0,
+        'bpm_target': r['bpm_target'] if 'bpm_target' in r.keys() else 0,
+        'tool_cfg': _json_or_empty(r['tool_cfg'] if 'tool_cfg' in r.keys() else ''),
+        'used_metronome': r['used_metronome'] if 'used_metronome' in r.keys() else 0,
+        'used_drums': r['used_drums'] if 'used_drums' in r.keys() else 0,
+        'used_audio': r['used_audio'] if 'used_audio' in r.keys() else 0,
+        'used_youtube': r['used_youtube'] if 'used_youtube' in r.keys() else 0,
+        'used_fretboard': r['used_fretboard'] if 'used_fretboard' in r.keys() else 0,
+        'play_count': r['play_count'] if 'play_count' in r.keys() else 0,
+        'pause_count': r['pause_count'] if 'pause_count' in r.keys() else 0,
+        'reset_count': r['reset_count'] if 'reset_count' in r.keys() else 0,
+        'repeat_count': r['repeat_count'] if 'repeat_count' in r.keys() else 0,
+        'completed_by': (r['completed_by'] if 'completed_by' in r.keys() else '') or '',
     } for r in rows]
 
 
@@ -1954,6 +2465,10 @@ def _apply_item(conn, sid, item):
 
     A free-practice material has no slot: its area and catalog link are what the
     user picked, so resetting discards the attempt but keeps them.
+
+    The telemetry columns (tempo, tool flags, attempt counters) are written only
+    when they arrive in the payload: an old client keeps working and never
+    zeroes data written by a newer one.
     """
     state = item.get('state') or 'pending'
     if state not in SESSION_STATES:
@@ -1963,37 +2478,63 @@ def _apply_item(conn, sid, item):
     elapsed = max(0, int(item.get('elapsed_seconds') or 0))
     started = _iso_to_db(item.get('started_at'))
     row = conn.execute(
-        'SELECT i.exercise_id, i.area_id, i.catalog_exercise_id, i.catalog_name,'
-        " COALESCE(s.kind, 'routine') AS kind"
-        ' FROM routine_session_items i JOIN routine_sessions s ON s.id = i.session_id'
+        'SELECT i.exercise_id, i.area_id, i.area_label, i.catalog_exercise_id,'
+        ' i.catalog_name, i.catalog_path_id,'
+        " COALESCE(s.kind, 'routine') AS kind, e.catalog_path_id AS slot_path_id"
+        ' FROM routine_session_items i'
+        ' JOIN routine_sessions s ON s.id = i.session_id'
+        ' LEFT JOIN exercises e ON e.id = i.exercise_id'
         ' WHERE i.session_id=? AND i.position=?', (sid, position)).fetchone()
     if row is None:
         return False
     free = (row['kind'] or 'routine') == 'free'
     area_id = row['area_id'] or ''
+    area_label = (row['area_label'] if 'area_label' in row.keys() else '') or ''
     cid = row['catalog_exercise_id']
     cname = row['catalog_name'] or ''
+    path_id = row['catalog_path_id'] if 'catalog_path_id' in row.keys() else None
     touched = started is not None or state != 'pending' or played > 0 or elapsed > 0
     if not touched and not free:
         # Reset: the attempt is discarded, so is its snapshot.
-        area_id, cid, cname = '', None, ''
+        area_id, area_label, cid, cname, path_id = '', '', None, '', None
     elif not area_id and cid is None and not cname and row['exercise_id']:
         slot = conn.execute(
-            'SELECT area_id, catalog_exercise_id FROM exercises WHERE id=?',
-            (row['exercise_id'],)).fetchone()
+            'SELECT area_id, catalog_exercise_id, catalog_path_id'
+            ' FROM exercises WHERE id=?', (row['exercise_id'],)).fetchone()
         if slot is not None:
             area_id = slot['area_id'] or ''
             cid = slot['catalog_exercise_id']
+            if path_id is None:
+                path_id = slot['catalog_path_id']
             if cid is not None:
                 cat = conn.execute('SELECT name FROM catalog_exercises WHERE id=?',
                                    (cid,)).fetchone()
                 cname = (cat['name'] if cat else '') or ''
+    if 'area_label' in item:
+        area_label = str(item.get('area_label') or '').strip()[:80]
+    if not area_label and area_id:
+        area_label = area_map(conn).get(area_id, '')
+    if 'catalog_path_id' in item:
+        path_id = _clean_path_id(conn, item.get('catalog_path_id'))
     cur = conn.execute(
         'UPDATE routine_session_items SET state=?, played_seconds=?, elapsed_seconds=?,'
-        ' started_at=?, finished_at=?, area_id=?, catalog_exercise_id=?, catalog_name=?'
-        ' WHERE session_id=? AND position=?',
+        ' started_at=?, finished_at=?, area_id=?, area_label=?, catalog_exercise_id=?,'
+        ' catalog_name=?, catalog_path_id=? WHERE session_id=? AND position=?',
         (state, played, elapsed, started, _iso_to_db(item.get('finished_at')),
-         area_id, cid, cname, sid, position))
+         area_id, area_label, cid, cname, path_id, sid, position))
+    optional_keys = (
+        'metro_bpm_start', 'metro_bpm_end', 'drums_bpm_start', 'drums_bpm_end',
+        'bpm_target', 'tool_cfg', 'used_metronome', 'used_drums', 'used_audio',
+        'used_youtube', 'used_fretboard', 'play_count', 'pause_count',
+        'reset_count', 'repeat_count', 'completed_by')
+    present = [k for k in optional_keys if k in item]
+    if present:
+        clean = _clean_item_payload(conn, item)
+        conn.execute(
+            'UPDATE routine_session_items SET '
+            + ', '.join(k + '=?' for k in present)
+            + ' WHERE session_id=? AND position=?',
+            [clean[k] for k in present] + [sid, position])
     return cur.rowcount > 0
 
 
@@ -2041,18 +2582,21 @@ def _last_activity(conn, sid, fallback):
     return best or _utc_now()
 
 
-def _abandon_session(conn, sid):
+def _abandon_session(conn, sid, reason=''):
     """Closes a session that was left open. The wall clock stops at the last exercise."""
     row = conn.execute('SELECT started_at FROM routine_sessions WHERE id=?', (sid,)).fetchone()
     if row is None:
         return False
+    if reason not in ('new_session', 'sweep'):
+        reason = ''
     end = _last_activity(conn, sid, row['started_at'])
     c, wall = _session_totals(conn, sid, end)
     conn.execute(
         "UPDATE routine_sessions SET status='abandoned', finished_at=?, n_timed=?, n_untimed=?,"
-        " n_skipped=?, n_done=?, n_partial=?, practiced_seconds=?, real_seconds=?, wall_seconds=?"
-        " WHERE id=?",
-        (end, c['t'], c['u'], c['s'], c['t'] + c['u'], c['part'], c['played'], c['real'], wall, sid))
+        " n_skipped=?, n_done=?, n_partial=?, practiced_seconds=?, real_seconds=?,"
+        " wall_seconds=?, abandon_reason=? WHERE id=?",
+        (end, c['t'], c['u'], c['s'], c['t'] + c['u'], c['part'], c['played'], c['real'],
+         wall, reason, sid))
     conn.commit()
     return True
 
@@ -2064,7 +2608,7 @@ def sweep_open_sessions(conn, hours=8):
     rows = conn.execute("SELECT id FROM routine_sessions WHERE status='open' AND started_at < ?",
                         (limit,)).fetchall()
     for r in rows:
-        _abandon_session(conn, r['id'])
+        _abandon_session(conn, r['id'], 'sweep')
     return len(rows)
 
 
@@ -2074,7 +2618,7 @@ def _close_session(conn, sid, finished_at, wall_seconds=None):
     conn.execute(
         "UPDATE routine_sessions SET status='finished', finished_at=?, n_total=?, n_timed=?,"
         " n_untimed=?, n_skipped=?, n_done=?, n_partial=?, practiced_seconds=?,"
-        " real_seconds=?, wall_seconds=? WHERE id=?",
+        " real_seconds=?, wall_seconds=?, abandon_reason='' WHERE id=?",
         (finished_at, c['n'], c['t'], c['u'], c['s'], c['t'] + c['u'], c['part'],
          c['played'], c['real'], wall, sid))
     conn.commit()
@@ -2094,29 +2638,24 @@ def start_session(conn, data):
     # A new routine means the previous one is over: any open row gets closed here,
     # and rows older than 8 h are swept too (a session left open never finishes).
     for row in conn.execute("SELECT id FROM routine_sessions WHERE status='open'").fetchall():
-        _abandon_session(conn, row['id'])
+        _abandon_session(conn, row['id'], 'new_session')
     planned = sum(max(0, int(i.get('planned_seconds') or 0)) for i in items)
     name = (data.get('routine_name') or '').strip()
     if kind == 'free' and not name:
         name = 'Free practice'
+    tz_offset = _as_int(data.get('tz_offset_min'), 0, -840, 840)
+    resume_count = _as_int(data.get('resume_count'), 0, 0)
     cur = conn.execute(
         "INSERT INTO routine_sessions (routine_id, routine_name, kind, note, status,"
-        " started_at, planned_seconds, n_total) VALUES (?,?,?,?, 'open', ?, ?, ?)",
+        " started_at, planned_seconds, n_total, tz_offset_min, resume_count,"
+        " abandon_reason) VALUES (?,?,?,?, 'open', ?, ?, ?, ?, ?, '')",
         (None if kind == 'free' else data.get('routine_id'), name, kind, note,
-         started, planned, len(items)))
+         started, planned, len(items), tz_offset, resume_count))
     sid = cur.lastrowid
     for pos, it in enumerate(items):
         # The area and the catalog exercise are snapshotted here: a free material
         # has no slot to read them from later.
-        conn.execute(
-            'INSERT INTO routine_session_items (session_id, position, exercise_id, name,'
-            ' planned_seconds, catalog_exercise_id, catalog_name, area_id)'
-            ' VALUES (?,?,?,?,?,?,?,?)',
-            (sid, pos, it.get('exercise_id'), (it.get('name') or '').strip(),
-             max(0, int(it.get('planned_seconds') or 0)),
-             it.get('catalog_exercise_id'),
-             (it.get('catalog_name') or '').strip(),
-             (it.get('area_id') or '').strip()))
+        _insert_session_item(conn, sid, pos, it)
     conn.commit()
     return _session_full(conn, sid)
 
@@ -2132,15 +2671,7 @@ def append_session_item(conn, sid, data):
     pos = conn.execute(
         'SELECT COALESCE(MAX(position), -1) + 1 FROM routine_session_items'
         ' WHERE session_id=?', (sid,)).fetchone()[0]
-    conn.execute(
-        'INSERT INTO routine_session_items (session_id, position, exercise_id, name,'
-        ' planned_seconds, catalog_exercise_id, catalog_name, area_id)'
-        ' VALUES (?,?,?,?,?,?,?,?)',
-        (sid, pos, data.get('exercise_id'), (data.get('name') or '').strip(),
-         max(0, int(data.get('planned_seconds') or 0)),
-         data.get('catalog_exercise_id'),
-         (data.get('catalog_name') or '').strip(),
-         (data.get('area_id') or '').strip()))
+    _insert_session_item(conn, sid, pos, data)
     conn.execute('UPDATE routine_sessions SET n_total=? WHERE id=?', (pos + 1, sid))
     conn.commit()
     return {'ok': True, 'session_id': sid, 'position': pos}
@@ -2178,15 +2709,7 @@ def _insert_missing_item(conn, sid, item):
         return False
     if position < 0:
         return False
-    conn.execute(
-        'INSERT INTO routine_session_items (session_id, position, exercise_id, name,'
-        ' planned_seconds, catalog_exercise_id, catalog_name, area_id)'
-        ' VALUES (?,?,?,?,?,?,?,?)',
-        (sid, position, item.get('exercise_id'), name,
-         max(0, int(item.get('planned_seconds') or 0)),
-         item.get('catalog_exercise_id'),
-         (item.get('catalog_name') or '').strip(),
-         (item.get('area_id') or '').strip()))
+    _insert_session_item(conn, sid, position, item)
     conn.execute('UPDATE routine_sessions SET n_total ='
                  ' (SELECT COUNT(*) FROM routine_session_items WHERE session_id=?)'
                  ' WHERE id=?', (sid, sid))
@@ -2207,6 +2730,10 @@ def finish_session(conn, sid, data):
     if 'note' in data:
         conn.execute('UPDATE routine_sessions SET note=? WHERE id=?',
                      (str(data.get('note') or '').strip()[:2000], sid))
+    # Times the browser recovered an open session after a reload.
+    if 'resume_count' in data:
+        conn.execute('UPDATE routine_sessions SET resume_count=? WHERE id=?',
+                     (_as_int(data.get('resume_count'), 0, 0), sid))
     # The client tracks the wall time of the routine (it can be parked on the
     # welcome screen), so its figure wins over the start -> finish span.
     wall = data.get('wall_seconds')

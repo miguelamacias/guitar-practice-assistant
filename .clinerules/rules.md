@@ -14,6 +14,11 @@
 - No traducir, normalizar ni modificar automáticamente datos de usuario en otro idioma.
 - No cambiar encoding/collation ni normalizar datos existentes sin permiso.
 
+## Plataforma
+- La interfaz se diseña y se verifica **sólo para PC con pantalla grande**.
+- No perder tiempo adaptando, corrigiendo ni probando la UI para móviles o tablets.
+- Las reglas `@media` móviles que ya existan se dejan como están: no se añaden nuevas ni se invierte tiempo en problemas que sólo aparezcan en pantallas pequeñas, salvo petición explícita del usuario.
+
 ## Act vs Plan
 - No se adivina si el usuario quiere Plan o Act. Ante duda razonable, por defecto: Plan/Analysis.
 - Señales de Plan: "analiza", "se podría", "es posible", "dime si", "cómo lo ves", "revisa", "evalúa".
@@ -63,7 +68,7 @@
 - **Cambio medio/alto**: base de datos o datos de usuario, endpoints, lógica compartida, más de 2–3 archivos, o algo que el usuario notaría roto.
   - Verificación completa: fixtures y BD temporal cuando aplique, casos límite, y un repaso de regresión de lo tocado.
 - **Cualquier cambio de interfaz** (HTML, CSS o JS que pinte UI), aunque sea "sencillo":
-  - La comprobación obligatoria es **visual**, no sólo de comportamiento: una captura de la zona afectada y **cero errores en consola** al abrir la página.
+  - La comprobación obligatoria es **visual**, no sólo de comportamiento: una captura de la zona afectada a resolución de PC (ver *Plataforma*) y **cero errores en consola** al abrir la página.
   - Un control sin estilo o un `ReferenceError` no rompen `node --check` ni las pruebas funcionales: pasan desapercibidos y los ve el usuario.
   - Si añades un `input`, `select` o `textarea`, comprueba que hereda el estilo del resto (no que tengas que añadirlo a mano a una lista de ids) y que un control vacío o deshabilitado también se ve bien.
   - Si el proyecto tiene script de auditoría visual o de errores JS, ejecutarlo; si no lo tiene, la captura es el mínimo.

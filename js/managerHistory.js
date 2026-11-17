@@ -345,6 +345,17 @@
             '<div class="hist-act-strip">' + chips + '</div></div>';
     }
 
+    // 90 days: three rows of square cells that fill the card width.
+    function activityWrap(list, max) {
+        const cols = Math.ceil(list.length / 3);
+        const cells = list.map(function (e) {
+            return '<i class="hist-act-cell hist-act-wrap-cell' +
+                (isToday(e.d) ? ' is-today' : '') + '"' +
+                ' title="' + esc(actTip(e)) + '"' + actStyle(e.day.seconds, max) + '></i>';
+        }).join('');
+        return '<div class="hist-act-wrap" style="--act-cols:' + cols + '">' + cells + '</div>';
+    }
+
     function activityChart(activity, totals) {
         const byDay = {};
         (activity || []).forEach(function (a) {
@@ -379,7 +390,9 @@
                 : '') + '></i>';
         }).join('');
         return '<div class="hist-act-scroll">' +
-            (days <= 90 ? activityStrip(list, max) : activityGrid(list, max)) + '</div>' +
+            (days <= 30 ? activityStrip(list, max)
+                : days <= 90 ? activityWrap(list, max)
+                : activityGrid(list, max)) + '</div>' +
             '<div class="hist-act-foot">' +
             '<span>' + esc(fmtDay(start.toISOString())) + ' → ' + esc(fmtDay(end.toISOString())) + ' ' +
             end.getFullYear() + ' · ' + practised + ' of ' + total + ' days</span>' +
@@ -534,28 +547,157 @@
         pending: 'not reached'
     };
 
+    function bpmText(start, end) {
+        const from = start || end || 0;
+        const to = end || start || 0;
+        if (!from && !to) return '';
+        return from === to ? from + ' BPM' : from + ' \u2192 ' + to + ' BPM';
+    }
+
+    // One tooltip line per group: counters, metronome, drums, other tools and
+    // settings. The detail row itself stays a single line.
+    function telemetryLines(it) {
+        const lines = [];
+        const counts = [];
+        if (it.play_count) counts.push(it.play_count + (it.play_count === 1 ? ' play' : ' plays'));
+        if (it.repeat_count) counts.push(it.repeat_count + (it.repeat_count === 1 ? ' repeat' : ' repeats'));
+        if (it.pause_count) counts.push(it.pause_count + (it.pause_count === 1 ? ' pause' : ' pauses'));
+        if (it.reset_count) counts.push(it.reset_count + (it.reset_count === 1 ? ' reset' : ' resets'));
+        if (counts.length) lines.push(counts.join(' \u00b7 '));
+        const metro = bpmText(it.metro_bpm_start, it.metro_bpm_end);
+        if (metro) lines.push('Metro ' + metro);
+        const drums = bpmText(it.drums_bpm_start, it.drums_bpm_end);
+        if (drums) lines.push('Drums ' + drums);
+        const tools = [];
+        if (it.used_audio) tools.push('backing track');
+        if (it.used_youtube) tools.push('YouTube');
+        if (it.used_fretboard) tools.push('trainer');
+        if (!metro && it.used_metronome) tools.push('metronome');
+        if (!drums && it.used_drums) tools.push('drums');
+        if (tools.length) lines.push(tools.join(' + '));
+        const cfg = it.tool_cfg || {};
+        const cfgBits = [];
+        if (cfg.metro_sig) cfgBits.push(cfg.metro_sig);
+        if (cfg.metro_pattern && cfg.metro_pattern !== 'none') cfgBits.push(cfg.metro_pattern);
+        if (cfg.drums_sig && cfg.drums_sig !== cfg.metro_sig) cfgBits.push('drums ' + cfg.drums_sig);
+        if (cfg.drums_style) cfgBits.push(cfg.drums_style);
+        if (cfg.drums_res) cfgBits.push(cfg.drums_res);
+        if (cfg.drums_swing) cfgBits.push('swing');
+        if (cfgBits.length) lines.push(cfgBits.join(' \u00b7 '));
+        return lines;
+    }
+
+    function tipAttr(it) {
+        const lines = telemetryLines(it);
+        if (!lines.length) return '';
+        return ' data-tip="' + lines.map(esc).join('&#10;') + '"';
+    }
+
+    // Same dark panel as the assistant's `.ex-tip`, copied for the Manager.
+    const TIP_DELAY_MS = 160;
+    let tipEl = null;
+    let tipTimer = null;
+
+    function cancelTipTimer() {
+        if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+    }
+
+    function hideTip() {
+        cancelTipTimer();
+        if (tipEl && tipEl.parentNode) tipEl.parentNode.removeChild(tipEl);
+        tipEl = null;
+    }
+
+    function showTip(anchor, lines) {
+        hideTip();
+        if (!anchor || !lines || !lines.length) return;
+        const tip = document.createElement('div');
+        tip.className = 'hist-tip';
+        tip.setAttribute('role', 'tooltip');
+        lines.forEach(function (line) {
+            const row = document.createElement('div');
+            row.className = 'hist-tip-line';
+            row.textContent = line;
+            tip.appendChild(row);
+        });
+        document.body.appendChild(tip);
+        tipEl = tip;
+
+        const r = anchor.getBoundingClientRect();
+        const t = tip.getBoundingClientRect();
+        const gap = 8;
+        let top = r.bottom + gap;
+        if (top + t.height > window.innerHeight - 8) {
+            top = Math.max(8, r.top - gap - t.height);
+        }
+        const left = Math.min(Math.max(8, r.left), window.innerWidth - t.width - 8);
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+    }
+
+    function bindTips(root) {
+        (root || document).querySelectorAll('.hist-detail-item[data-tip]').forEach(function (item) {
+            if (item._tipWired) return;
+            item._tipWired = true;
+            item.tabIndex = 0;
+            const read = function () {
+                return (item.getAttribute('data-tip') || '').split('\n');
+            };
+            item.addEventListener('mouseenter', function () {
+                cancelTipTimer();
+                tipTimer = setTimeout(function () { showTip(item, read()); }, TIP_DELAY_MS);
+            });
+            item.addEventListener('mouseleave', hideTip);
+            item.addEventListener('focus', function () { showTip(item, read()); });
+            item.addEventListener('blur', hideTip);
+        });
+    }
+
+    window.addEventListener('scroll', hideTip, { passive: true });
+
+    function sessionMetaHtml(full) {
+        const bits = [];
+        if (full.resume_count) bits.push('Resumed ' + full.resume_count + '\u00d7');
+        if (full.abandon_reason === 'sweep') bits.push('auto-closed after 8 h');
+        else if (full.abandon_reason === 'new_session') bits.push('closed by a new session');
+        if (!bits.length) return '';
+        return '<div class="hist-detail-meta">' + bits.map(function (b) {
+            return '<span class="hist-tech">' + esc(b) + '</span>';
+        }).join('') + '</div>';
+    }
+
     function detailRow(full) {
         const items = (full.items || []).map(function (it) {
             const real = it.elapsed_seconds || 0;
             const plan = it.planned_seconds || 0;
             const extra = (plan && real > plan) ? real - plan : 0;
+            const overText = extra
+                ? (extra < 60 ? '+' + Math.round(extra) + 's' : '+' + fmtDur(extra))
+                : '';
             const cat = (it.catalog_exercise_id != null && GPH.mgr && GPH.mgr.catalogById)
                 ? GPH.mgr.catalogById(it.catalog_exercise_id) : null;
             // The current catalog name wins (a rename fixes the history too);
             // the snapshot name covers a deleted exercise.
             const exName = cat ? cat.name : (it.catalog_name || '');
+            const liveArea = it.area_id ? areaLabel(it.area_id) : '';
+            // A deleted area falls back to the label stored with the session.
+            const areaTxt = (liveArea && liveArea !== it.area_id)
+                ? liveArea : (it.area_label || liveArea || 'Unassigned');
             const bits = [];
             if (exName) bits.push(exName);
-            bits.push(areaLabel(it.area_id));
+            bits.push(areaTxt);
             const extraText = (exName ? '\u2014 ' : '\u00b7 ') + bits.join(' \u00b7 ');
-            return '<li class="hist-detail-item is-' + esc(it.state) + '">' +
+            const tip = tipAttr(it);
+            return '<li class="hist-detail-item is-' + esc(it.state) + '"' + tip + '>' +
                 '<span class="hist-detail-state">' + esc(STATE_LABEL[it.state] || it.state) + '</span>' +
                 '<span class="hist-detail-name">' + esc(it.name) + '</span>' +
                 '<span class="hist-detail-extra">' + esc(extraText) + '</span>' +
                 '<span class="hist-detail-time">' + fmtDur(real) + ' / ' + fmtDur(plan) +
-                (extra ? ' <b class="hist-extra">+' + fmtDur(extra) + '</b>' : '') + '</span></li>';
+                (extra ? ' <b class="hist-extra">' + overText + '</b>' : '') + '</span>' +
+                '</li>';
         }).join('');
-        return '<tr class="hist-detail-row"><td colspan="7"><ul class="hist-detail-list">' +
+        return '<tr class="hist-detail-row"><td colspan="7">' + sessionMetaHtml(full) +
+            '<ul class="hist-detail-list">' +
             (items || '<li class="hist-empty-row">No exercises recorded.</li>') + '</ul></td></tr>';
     }
 
@@ -563,6 +705,7 @@
     function toggleDetail(row) {
         const next = row.nextElementSibling;
         if (next && next.classList.contains('hist-detail-row')) {
+            hideTip();
             next.parentNode.removeChild(next);
             row.classList.remove('is-open');
             return;
@@ -575,6 +718,7 @@
             const already = row.nextElementSibling;
             if (already && already.classList.contains('hist-detail-row')) return;
             row.insertAdjacentHTML('afterend', detailRow(full));
+            bindTips(row.nextElementSibling);
             row.classList.add('is-open');
         });
     }

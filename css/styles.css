@@ -772,6 +772,10 @@
 /* Free-text variant (routine / exercise description): wraps, keeps the breaks */
 .ex-tip--desc { min-width: 0; max-width: 380px; }
 .ex-tip-text { color: #cfcfcf; white-space: pre-line; overflow-wrap: anywhere; }
+/* Playback stats (song / backing-track rows): one label and a few dim lines */
+.ex-tip--media { min-width: 260px; max-width: 360px; }
+.ex-tip--media .ex-tip-name { font-weight: 600; margin-bottom: 2px; }
+.ex-tip--media .ex-tip-text { color: #b9b9b9; }
 
 .start-btn {
     background: var(--accent);
@@ -2059,6 +2063,12 @@ body.has-player .youtube-modal { bottom: 78px; }
 .theory-card { margin-top: 12px; --deg-0: var(--sec-color, var(--accent)); --deg-1: #c9c9c9; --deg-2: #9aa0a6; --deg-3: #7bd88f; --deg-4: #4fc3f7; --deg-5: #ffd54f; --deg-6: #8f8f8f; --deg-7: #64b5f6; --deg-8: #a0a0a0; --deg-9: #ba68c8; --deg-10: #ffb74d; --deg-11: #ff8a65; }
 .theory-card .link-list { margin: 0; }
 .theory-card .subfolder-content:not(.collapsed) { max-height: 640px; overflow: visible; }
+/* The trainer panel (game + statistics) can be taller than the theory board:
+   keep it inside its subfolder and scroll it instead of spilling over the next
+   subfolders. */
+#sub-fretboard-trainer .subfolder-content:not(.collapsed) {
+    max-height: 640px; overflow-y: auto; overflow-x: hidden;
+}
 /* The theory board spans the full width and starts where the controls and legend do */
 .theory-board .fb2 { max-width: none; margin: 8px 0 2px; }
 /* Slightly taller board so strings 1 and 6 do not touch the edge with 22 px dots */
@@ -2140,6 +2150,31 @@ body.has-player .youtube-modal { bottom: 78px; }
 /* ---- Fretboard: vista de estadisticas (heatmap + tablas) ---- */
 .fb-stats { padding: 6px 8px; }
 .fb-stats-title { font-weight: bold; font-size: 1.05rem; color: var(--text-color); }
+.fb-stat-kpis {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px; margin: 10px 0 4px;
+}
+.fb-stat-kpi {
+    background: rgba(0, 0, 0, 0.28); border: 1px solid #262626;
+    border-radius: 6px; padding: 8px 10px; text-align: center;
+}
+.fb-stat-kpi b { display: block; font-size: 1.15rem; color: var(--text-color); }
+.fb-stat-kpi span {
+    font-size: 0.64rem; color: #9a9a9a; text-transform: uppercase; letter-spacing: 0.4px;
+}
+.fb-runs { margin-top: 12px; }
+.fb-runs .fb-stat-block {
+    max-width: 760px; margin-left: auto; margin-right: auto;
+}
+.fb-runs .fb-stat-block + .fb-stat-block { margin-top: 14px; }
+.fb-runs-scroll { overflow-x: auto; }
+.fb-runs-pager {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-top: 8px; font-size: 0.72rem; color: #9a9a9a;
+}
+.fb-runs-pager .metro-btn:disabled { opacity: 0.4; cursor: default; }
+.fb-run-when { white-space: nowrap; color: #9a9a9a; }
+.fb-empty { color: #9a9a9a; font-size: 0.78rem; padding: 6px 0; }
 .fb-heatmap { overflow-x: auto; margin: 10px 0; text-align: center; }
 .fb-heat { border-collapse: collapse; margin: 0 auto; table-layout: fixed; width: 100%; }
 .fb-heat th { font-size: 0.62rem; color: #9a9a9a; font-weight: normal; padding: 1px 0; overflow: hidden; }
@@ -2153,6 +2188,10 @@ body.has-player .youtube-modal { bottom: 78px; }
 .fb-stat-table th, .fb-stat-table td { padding: 2px 6px; text-align: right; border-bottom: 1px solid #262626; }
 .fb-stat-table th:first-child, .fb-stat-table td:first-child { text-align: left; }
 .fb-stat-table thead th { color: #9a9a9a; font-weight: normal; }
+@media (max-width: 720px) {
+    .fb-stat-tables { flex-wrap: wrap; }
+    .fb-stat-tables .fb-stat-block { flex: 1 1 100%; }
+}
 .fb-grade { font-weight: bold; }
 .fb-grade.ok { color: var(--accent-green); }
 .fb-grade.bad { color: var(--accent-red); }

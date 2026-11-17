@@ -18,6 +18,12 @@
         return it.tag || it.label || '';
     }
 
+    // The hover panel lives in practiceAssistant.js (same `.ex-tip` style as the
+    // rest of the assistant); a missing helper simply leaves the row unstyled.
+    function wireAudioTip(el) {
+        if (el && GPH.tip && GPH.tip.wireMedia) GPH.tip.wireMedia(el);
+    }
+
     // Type badge shown on hover: inline SVG painted with the section accent.
     function typeIcon(name) {
         const s = document.createElement('span');
@@ -93,7 +99,13 @@
         const li = document.createElement('li'); li.className = 'link-item';
 
         if (it.kind === 'youtube') {
-            const a = document.createElement('a'); a.href = it.url; a.className = 'has-icon'; a.appendChild(labelNodes(it)); a.appendChild(typeIcon('video')); li.appendChild(a); return li;
+            const a = document.createElement('a');
+            a.href = it.url;
+            a.className = 'has-icon';
+            a.dataset.url = it.url;
+            a.dataset.title = itemText(it);
+            wireAudioTip(a);
+            a.appendChild(labelNodes(it)); a.appendChild(typeIcon('video')); li.appendChild(a); return li;
         }
         if (it.kind === 'external' || it.kind === 'file') {
             const a = document.createElement('a'); a.href = it.url; a.target = '_blank'; a.className = 'has-icon'; a.appendChild(labelNodes(it)); a.appendChild(typeIcon(it.kind === 'file' ? 'file' : 'globe')); li.appendChild(a); return li;
@@ -102,6 +114,7 @@
             const d = document.createElement('div'); d.className = 'audio-trigger has-icon';
             d.dataset.url = (it.kind === 'song') ? ('/api/media?path=' + encodeURIComponent(it.url)) : it.url;
             d.dataset.title = itemText(it);
+            wireAudioTip(d);
             d.appendChild(labelNodes(it)); d.appendChild(typeIcon('music')); li.appendChild(d); return li;
         }
         if (it.kind === 'folder') {
@@ -117,6 +130,7 @@
                     const dd = document.createElement('div'); dd.className = 'audio-trigger';
                     dd.dataset.url = '/api/media?path=' + encodeURIComponent(sng.path);
                     dd.dataset.title = sng.title;
+                    wireAudioTip(dd);
                     const t = document.createElement('span'); t.className = 'song-icon';
                     t.innerHTML = (GPH.icons && GPH.icons.get) ? GPH.icons.get('music') : '';
                     dd.appendChild(t); dd.appendChild(document.createTextNode(' ' + sng.title));

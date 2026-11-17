@@ -56,6 +56,8 @@
                     <div class="fb-stats-title">Statistics</div>
                     <button class="fb-stats-home metro-btn small" title="Back">&#8962;</button>
                 </div>
+                <div class="fb-stat-kpis"></div>
+                <div class="fb-runs"></div>
                 <div class="fb-heatmap">Loading&hellip;</div>
                 <div class="fb-stat-tables"></div>
             </div>
@@ -126,6 +128,8 @@
         const resAvg = content.querySelector('.fb-res-avg');
         const keepBtn = content.querySelector('.fb-keep');
         const statsPanel = content.querySelector('.fb-stats');
+        const kpisEl = content.querySelector('.fb-stat-kpis');
+        const runsEl = content.querySelector('.fb-runs');
         const heatEl = content.querySelector('.fb-heatmap');
         const tablesEl = content.querySelector('.fb-stat-tables');
         const statsHomeBtn = content.querySelector('.fb-stats-home');
@@ -143,6 +147,16 @@
         let advTimer = null;
         let wrongTimer = null;
         let questionStart = 0;
+        // Per-run telemetry: the aggregate cell table cannot answer "how did
+        // this mode evolve" or "what was my best streak".
+        let streak = 0;
+        let bestStreak = 0;
+        let misses = 0;
+        let answerMs = 0;
+        let runUid = '';
+        var RUNS_PAGE_SIZE = 10;
+        var runsPage = 0;
+        var lastRunStats = null;
         const OPEN_BY_STR = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
 
         // Board shared with Fretboard Theory (js/fretboardBoard.js)
@@ -181,8 +195,17 @@
             paletteEl.style.display = (m === 'identify') ? '' : 'none';
             newQuestion(true);
         }
+        function resetRunMetrics() {
+            score = 0;
+            correct = 0;
+            misses = 0;
+            streak = 0;
+            bestStreak = 0;
+            answerMs = 0;
+            runUid = (GPH.stats && GPH.stats.uid) ? GPH.stats.uid() : ('r' + Date.now());
+        }
         function startGame() {
-            score = 0; correct = 0; updateScore();
+            resetRunMetrics(); updateScore();
             if (results) results.hidden = true;
             if (statsPanel) statsPanel.hidden = true;
             if (welcome) welcome.hidden = true;
@@ -215,7 +238,7 @@
         }
         function startAuto() {
             expandSelf();
-            score = 0; correct = 0; updateScore();
+            resetRunMetrics(); updateScore();
             if (welcome) welcome.hidden = true;
             if (results) results.hidden = true;
             if (statsPanel) statsPanel.hidden = true;
@@ -240,7 +263,7 @@
             if (game) game.hidden = true;
             if (welcome) welcome.hidden = true;
             if (results) { results.hidden = false; if (results.scrollIntoView) { try { results.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} } }
-            return { duration: durationSec, normalized: perMin, score: score, attempts: (2 * correct - score) };
+            return { duration: durationSec, normalized: perMin, score: score, attempts: (2 * correct - score), mode: mode, hits: correct, misses: misses, best_streak: bestStreak, avg_ms: correct ? Math.round(answerMs / correct) : 0, run_uid: runUid };
         }
         function hideResults() { if (results) results.hidden = true; }
         function recordCell(stringNo, fret, kind, timeMs) {
@@ -248,7 +271,7 @@
                 fetch('/api/fretboard/cell', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ string_no: stringNo, fret: fret, kind: kind, time_ms: Math.round(timeMs || 0), mode: mode })
+                    body: JSON.stringify({ string_no: stringNo, fret: fret, kind: kind, time_ms: Math.round(timeMs || 0), mode: mode, run_uid: runUid })
                 }).catch(function () {});
             } catch (e) {}
         }
@@ -389,6 +412,87 @@
             for (var ft = 0; ft <= maxFret; ft++) { var itf = cfg.filter(function (c) { return c.f === ft; }); fretRows.push(statRow('Fret ' + ft, itf)); }
             if (tablesEl) tablesEl.innerHTML = statTable('Note group', groupRows) + statTable('By note', noteRows) + statTable('By string', stringRows) + statTable('By fret', fretRows);
         }
+        var MODE_LABEL = { identify: 'Identify', locate: 'Locate', zone: 'Zone', '': 'Legacy' };
+        function escHtml(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+        function pctText(hits, misses) {
+            var total = (hits || 0) + (misses || 0);
+            return total ? Math.round((hits || 0) / total * 100) + '%' : '\u2014';
+        }
+        function msText(ms) {
+            return (ms && ms > 0) ? (Math.round(ms / 100) / 10).toFixed(1) + 's' : '\u2014';
+        }
+        function whenText(iso) {
+            if (!iso) return '\u2014';
+            var d = new Date(iso);
+            if (isNaN(d.getTime())) return '\u2014';
+            return d.toLocaleString('en-GB', {
+                day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+            });
+        }
+        function renderRunKpis(data) {
+            var s = data.summary || {};
+            if (!kpisEl) return;
+            kpisEl.innerHTML =
+                '<div class="fb-stat-kpi"><b>' + (s.runs || 0) + '</b><span>Detailed runs</span></div>' +
+                '<div class="fb-stat-kpi"><b>' + pctText(s.hits, s.misses) + '</b><span>Accuracy</span></div>' +
+                '<div class="fb-stat-kpi"><b>' + (s.best_streak || 0) + '</b><span>Best streak</span></div>' +
+                '<div class="fb-stat-kpi"><b>' + msText(s.avg_ms) + '</b><span>Avg response</span></div>';
+        }
+        function renderRunsBlock() {
+            if (!runsEl) return;
+            var data = lastRunStats || {};
+            var modes = data.by_mode || [];
+            var runs = data.runs || [];
+            var pages = Math.max(1, Math.ceil(runs.length / RUNS_PAGE_SIZE));
+            if (runsPage < 0) runsPage = 0;
+            if (runsPage >= pages) runsPage = pages - 1;
+            var html = '';
+            if (modes.length) {
+                html += '<div class="fb-stat-block"><h4>By mode</h4><table class="fb-stat-table">' +
+                    '<thead><tr><th>Mode</th><th>Runs</th><th>Acc</th><th>Avg</th><th>Streak</th></tr></thead><tbody>';
+                modes.forEach(function (m) {
+                    html += '<tr><td>' + escHtml(MODE_LABEL[m.mode] || m.mode || 'Legacy') + '</td>' +
+                        '<td>' + (m.runs || 0) + '</td><td>' + pctText(m.hits, m.misses) + '</td>' +
+                        '<td>' + msText(m.avg_ms) + '</td><td>' + (m.best_streak || 0) + '</td></tr>';
+                });
+                html += '</tbody></table></div>';
+            }
+            if (runs.length) {
+                var start = runsPage * RUNS_PAGE_SIZE;
+                var pageRuns = runs.slice(start, start + RUNS_PAGE_SIZE);
+                html += '<div class="fb-stat-block"><h4>Recent runs</h4><div class="fb-runs-scroll">' +
+                    '<table class="fb-stat-table"><thead><tr><th>When</th><th>Mode</th><th>Score</th>' +
+                    '<th>Acc</th><th>Streak</th><th>Avg</th></tr></thead><tbody>';
+                pageRuns.forEach(function (r) {
+                    html += '<tr><td class="fb-run-when">' + escHtml(whenText(r.played_at)) + '</td>' +
+                        '<td>' + escHtml(MODE_LABEL[r.mode] || r.mode || 'Legacy') + '</td>' +
+                        '<td>' + (r.score || 0) + '</td><td>' + pctText(r.hits, r.misses) + '</td>' +
+                        '<td>' + (r.best_streak || 0) + '</td><td>' + msText(r.avg_ms) + '</td></tr>';
+                });
+                html += '</tbody></table></div>' +
+                    '<div class="fb-runs-pager">' +
+                    '<button type="button" class="metro-btn small" data-fb-runs="prev"' +
+                    (runsPage === 0 ? ' disabled' : '') + '>\u2190 Prev</button>' +
+                    '<span>' + (runsPage + 1) + ' / ' + pages + ' \u00b7 ' + runs.length + ' runs</span>' +
+                    '<button type="button" class="metro-btn small" data-fb-runs="next"' +
+                    (runsPage >= pages - 1 ? ' disabled' : '') + '>Next \u2192</button>' +
+                    '</div></div>';
+            } else {
+                html += '<div class="fb-empty">No detailed runs yet. Play a run and its accuracy, ' +
+                    'streak and response time will appear here.</div>';
+            }
+            runsEl.innerHTML = html;
+        }
+        function renderRunStats(data) {
+            lastRunStats = data || {};
+            runsPage = 0;
+            renderRunKpis(lastRunStats);
+            renderRunsBlock();
+        }
         function showStats() {
             if (advTimer) { clearTimeout(advTimer); advTimer = null; }
             if (wrongTimer) { clearTimeout(wrongTimer); wrongTimer = null; }
@@ -397,12 +501,22 @@
             if (game) game.hidden = true;
             if (results) results.hidden = true;
             if (statsPanel) { statsPanel.hidden = false; if (statsPanel.scrollIntoView) { try { statsPanel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) {} } }
+            if (kpisEl) kpisEl.innerHTML = '';
+            if (runsEl) runsEl.innerHTML = '<div class="fb-empty">Loading\u2026</div>';
             if (heatEl) heatEl.textContent = 'Loading\u2026';
             if (tablesEl) tablesEl.innerHTML = '';
-            fetch('/api/fretboard/cell-stats', { cache: 'no-store' })
-                .then(function (r) { return r.ok ? r.json() : []; })
-                .then(function (cells) { renderStats(cells || []); })
-                .catch(function () { renderStats([]); });
+            function getJson(url, fallback) {
+                return fetch(url, { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : fallback; })
+                    .catch(function () { return fallback; });
+            }
+            Promise.all([
+                getJson('/api/fretboard/cell-stats', []),
+                getJson('/api/fretboard/stats', {})
+            ]).then(function (res) {
+                renderStats(res[0] || []);
+                renderRunStats(res[1] || {});
+            });
         }
         // Zone mode -------------------------------------------------------
         // Window = 3 consecutive strings x 3 consecutive frets (9 cells). Only
@@ -532,6 +646,9 @@
             if (advTimer) { clearTimeout(advTimer); advTimer = null; }
             if (wrongTimer) { clearTimeout(wrongTimer); wrongTimer = null; }
             locked = true; score++; correct++; updateScore();
+            streak++;
+            if (streak > bestStreak) bestStreak = streak;
+            answerMs += performance.now() - questionStart;
             recordCell(r + 1, f, 'hit', performance.now() - questionStart);
             promptEl.textContent = 'Correct!'; promptEl.className = 'fb-prompt ok';
             clearDots(); addDot(r, f, 'fb2-mark ok');
@@ -547,11 +664,11 @@
             }, 700);
         }
         function onWrongIdentify() {
-            score--; updateScore(); showWrong();
+            score--; misses++; streak = 0; updateScore(); showWrong();
             if (question) recordCell(question.row + 1, question.fret, 'miss', 0);
         }
         function onWrongLocate(r, f) {
-            score--; updateScore(); showWrong();
+            score--; misses++; streak = 0; updateScore(); showWrong();
             addDot(r, f, 'fb2-mark bad');
             if (question) recordCell(question.row + 1, question.fret, 'miss', 0);
         }
@@ -582,6 +699,21 @@
         if (statsHomeBtn) statsHomeBtn.addEventListener('click', goHome);
         if (resultsHomeBtn) resultsHomeBtn.addEventListener('click', goHome);
         if (keepBtn) keepBtn.addEventListener('click', startGame);
+        if (runsEl) {
+            runsEl.addEventListener('click', function (e) {
+                const btn = e.target && e.target.closest
+                    ? e.target.closest('[data-fb-runs]') : null;
+                if (!btn || btn.disabled) return;
+                const runs = (lastRunStats && lastRunStats.runs) || [];
+                const pages = Math.max(1, Math.ceil(runs.length / RUNS_PAGE_SIZE));
+                if (btn.getAttribute('data-fb-runs') === 'prev') {
+                    runsPage = Math.max(0, runsPage - 1);
+                } else {
+                    runsPage = Math.min(pages - 1, runsPage + 1);
+                }
+                renderRunsBlock();
+            });
+        }
         modeCards.forEach(function (c) {
             c.addEventListener('click', function () {
                 selectedMode = c.dataset.mode;

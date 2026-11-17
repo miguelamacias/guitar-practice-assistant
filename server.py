@@ -22,6 +22,7 @@ from db import (
     reorder_items, refresh_item_folder, get_setting, set_setting,
     add_fretboard_stat, get_fretboard_stats,
     add_cell_attempt, get_cell_stats,
+    add_media_play, get_media_stats, add_practice_event,
     get_song_cache, set_song_cache,
     table_counts, clear_tables,
     start_session, upsert_session_item, append_session_item, finish_session, list_sessions,
@@ -617,12 +618,32 @@ class Handler(SimpleHTTPRequestHandler):
                 if method == 'GET':
                     return self._send_json(get_fretboard_stats(conn))
                 if method == 'POST':
-                    return self._send_json(add_fretboard_stat(conn, data.get('duration_seconds'), data.get('normalized')))
+                    return self._send_json(add_fretboard_stat(
+                        conn, data.get('duration_seconds'), data.get('normalized'),
+                        mode=data.get('mode'), hits=data.get('hits'),
+                        misses=data.get('misses'), score=data.get('score'),
+                        best_streak=data.get('best_streak'), avg_ms=data.get('avg_ms'),
+                        run_uid=data.get('run_uid'), session_id=data.get('session_id'),
+                        item_position=data.get('item_position'),
+                        catalog_exercise_id=data.get('catalog_exercise_id')))
             if path == '/api/fretboard/cell' and method == 'POST':
                 return self._send_json(add_cell_attempt(conn, data.get('string_no'), data.get('fret'),
-                                                        data.get('kind'), data.get('time_ms'), data.get('mode')))
+                                                        data.get('kind'), data.get('time_ms'),
+                                                        data.get('mode'), data.get('run_uid')))
             if path == '/api/fretboard/cell-stats' and method == 'GET':
                 return self._send_json(get_cell_stats(conn))
+            if path == '/api/media/plays' and method == 'POST':
+                r = add_media_play(conn, data)
+                return self._send_json(r, 200 if 'error' not in r else 422)
+            if path == '/api/media/stats' and method == 'GET':
+                qs = parse_qs(urlparse(self.path).query)
+                r = get_media_stats(conn,
+                                    (qs.get('kind') or [''])[0],
+                                    (qs.get('ref') or [''])[0])
+                return self._send_json(r, 200 if 'error' not in r else 422)
+            if path == '/api/practice/events' and method == 'POST':
+                r = add_practice_event(conn, data)
+                return self._send_json(r, 200 if 'error' not in r else 422)
             if path == '/api/dialog/folder' and method == 'POST':
                 return self._send_json({'path': pick_dialog('folder')})
             if path == '/api/dialog/file' and method == 'POST':

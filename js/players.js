@@ -6,6 +6,106 @@
     const SHORT_TRACK_SECONDS = 120;
     let loopOverride = false;
 
+    // ---- Practice telemetry (transparent, no UI) ---------------------------
+    // One record per playback, sent at the end. `measured=0` means the time is
+    // a wall-clock approximation (YouTube: its iframe has no playback API).
+    let playContext = { session_id: null, item_position: null, catalog_exercise_id: null };
+    let media = null;
+    let playWallSince = 0;
+    let abLoops = 0;
+    let lastMediaTime = 0;
+    let mediaSeeked = false;
+
+    function setContext(ctx) {
+        playContext = {
+            session_id: (ctx && ctx.session_id != null) ? ctx.session_id : null,
+            item_position: (ctx && ctx.item_position != null) ? ctx.item_position : null,
+            catalog_exercise_id: (ctx && ctx.catalog_exercise_id != null)
+                ? ctx.catalog_exercise_id : null
+        };
+    }
+
+    function nowIso() { return new Date().toISOString(); }
+
+    function trackStart(kind, ref, label, measured) {
+        finalizeMedia('switch');
+        media = {
+            play_uid: (GPH.stats && GPH.stats.uid) ? GPH.stats.uid() : ('p' + Date.now()),
+            session_id: playContext.session_id,
+            item_position: playContext.item_position,
+            kind: kind,
+            ref: ref || '',
+            label: label || '',
+            duration_seconds: 0,
+            played_seconds: 0,
+            loops: 0,
+            ab_start: 0,
+            ab_end: 0,
+            completed: 0,
+            measured: measured ? 1 : 0,
+            started_at: nowIso()
+        };
+        playWallSince = 0;
+        abLoops = 0;
+        lastMediaTime = 0;
+        mediaSeeked = false;
+        if (GPH.stats && GPH.stats.event) {
+            GPH.stats.event('media_start', playContext, {
+                value_text: label || '',
+                payload: { kind: kind, ref: ref || '' }
+            });
+        }
+    }
+
+    function mediaClock(on) {
+        if (!media || !media.measured) return;
+        if (on) {
+            if (!playWallSince) playWallSince = Date.now();
+        } else if (playWallSince) {
+            media.played_seconds += Math.max(0, (Date.now() - playWallSince) / 1000);
+            playWallSince = 0;
+        }
+    }
+
+    function finalizeMedia(reason, completed) {
+        if (!media) return;
+        mediaClock(false);
+        const player = getAudioEl();
+        if (player && isFinite(player.duration) && player.duration > 0) {
+            media.duration_seconds = Math.round(player.duration);
+        }
+        if (media.kind === 'audio') {
+            media.ab_start = markA != null ? markA : 0;
+            media.ab_end = markB != null ? markB : 0;
+            media.loops = Math.max(media.loops || 0, abLoops);
+            if (completed == null) {
+                media.completed = !!(player && isFinite(player.duration) && player.duration > 0 &&
+                    player.currentTime >= player.duration - 1 && !player.loop && !abActive());
+            } else {
+                media.completed = completed ? 1 : 0;
+            }
+        } else {
+            // YouTube: wall time while the modal was open, explicitly unmeasured.
+            media.played_seconds = Math.max(0,
+                Math.round((Date.now() - new Date(media.started_at).getTime()) / 1000));
+            media.completed = 0;
+        }
+        media.ended_at = nowIso();
+        media.played_seconds = Math.round(media.played_seconds || 0);
+        media.loops = Math.round(media.loops || 0);
+        if (GPH.stats && GPH.stats.mediaPlay) GPH.stats.mediaPlay(media);
+        if (GPH.stats && GPH.stats.event) {
+            GPH.stats.event('media_stop', playContext, {
+                value_num: media.played_seconds,
+                value_text: reason || '',
+                payload: { kind: media.kind }
+            });
+        }
+        media = null;
+        playWallSince = 0;
+        abLoops = 0;
+    }
+
     function getAudioEl() { return document.getElementById('audioPlayer'); }
     function getTitleEl() { return document.getElementById('current-playing'); }
 
@@ -127,6 +227,8 @@
         if (now >= markB && prevHead < markB && (now - prevHead) <= AB_NATURAL_DELTA) {
             player.currentTime = markA;
             prevHead = markA;
+            abLoops++;
+            if (media) media.loops = (media.loops || 0) + 1;
         } else {
             prevHead = now;
         }
@@ -232,6 +334,12 @@
         abEnabled = abHasMarks();   // a freshly completed range starts looping
         saveMarks();
         syncAB();
+        if (abHasMarks() && GPH.stats && GPH.stats.event) {
+            GPH.stats.event('ab_loop_set', playContext, {
+                value_num: Math.round((markB - markA) * 10) / 10,
+                payload: { a: markA, b: markB }
+            });
+        }
         // Setting B at the playhead should start looping right away: pretend the
         // playhead is a hair before B so the next frame counts as a crossing.
         if (which === 'B' && markB != null) prevHead = markB - 0.01;
@@ -255,6 +363,7 @@
     }
 
     function playAudio(url, title) {
+        finalizeMedia('switch');
         closeYouTube();
 
         const player = getAudioEl();
@@ -263,7 +372,9 @@
         loopOverride = false;
         loopBeforeAB = null;
         // Restore this track's saved range (idle: you enable it with the chip).
-        trackKey = localMediaPath(url);
+        // Local files use the inner path (stable, short); web audio uses its URL
+        // so every track has a key for A-B marks and playback stats.
+        trackKey = localMediaPath(url) || String(url || '');
         const saved = loadMarks(trackKey);
         markA = saved ? saved.a : null;
         markB = saved ? saved.b : null;
@@ -272,6 +383,7 @@
         player.loop = false;
         player.src = url;
         titleSpan.textContent = title;
+        trackStart('audio', trackKey, title, true);
         applyCover(url);
         const panel = document.getElementById('audioPanel');
         if (panel) panel.classList.add('is-open');
@@ -286,6 +398,7 @@
     }
 
     function openYouTube(videoId, title, originalUrl) {
+        finalizeMedia('switch');
         const audioPlayer = getAudioEl();
         if (audioPlayer) audioPlayer.pause();
         clearCover();
@@ -302,9 +415,11 @@
         iframe.src = 'https://www.youtube.com/embed/' + videoId + '?autoplay=1';
         titleSpan.textContent = title;
         modal.classList.add('is-open');
+        trackStart('youtube', videoId, title, false);
     }
 
     function closeYouTube() {
+        if (media && media.kind === 'youtube') finalizeMedia('close');
         const modal = document.getElementById('youtubeModal');
         const iframe = document.getElementById('ytIframe');
         if (iframe) iframe.src = '';
@@ -318,6 +433,7 @@
     }
 
     function closeAudio() {
+        finalizeMedia('close');
         const player = getAudioEl();
         if (player) {
             player.pause();
@@ -439,16 +555,38 @@
         if (btnA) btnA.addEventListener('click', function () { setMark('A'); });
         if (btnB) btnB.addEventListener('click', function () { setMark('B'); });
         if (rangeTag) rangeTag.addEventListener('click', toggleAB);
-        player.addEventListener('play', function () { playBtn.classList.add('is-playing'); startABLoop(); });
-        player.addEventListener('pause', function () { playBtn.classList.remove('is-playing'); stopABLoop(); });
+        player.addEventListener('play', function () {
+            playBtn.classList.add('is-playing');
+            mediaClock(true);
+            startABLoop();
+        });
+        player.addEventListener('pause', function () {
+            playBtn.classList.remove('is-playing');
+            mediaClock(false);
+            stopABLoop();
+        });
         // B at the very end of the track: the loop jump happens before `ended`.
         player.addEventListener('ended', function () {
-            if (!abActive()) return;
-            player.currentTime = markA;
-            prevHead = markA;
-            player.play();
+            if (abActive()) {
+                player.currentTime = markA;
+                prevHead = markA;
+                player.play();
+                return;
+            }
+            if (player.loop) return;
+            finalizeMedia('ended', true);
         });
+        player.addEventListener('seeking', function () { mediaSeeked = true; });
         player.addEventListener('timeupdate', function () {
+            const t = player.currentTime || 0;
+            // A native loop restarts the playhead; a manual seek also does it,
+            // so `seeking` masks the next one. A-B wraps have their own counter.
+            if (media && media.kind === 'audio' && !mediaSeeked && player.loop &&
+                !abActive() && t + 1 < lastMediaTime) {
+                media.loops = (media.loops || 0) + 1;
+            }
+            mediaSeeked = false;
+            lastMediaTime = t;
             if (player.duration) {
                 seek.value = Math.floor((player.currentTime / player.duration) * 1000);
                 if (current) current.textContent = fmtTime(player.currentTime);
@@ -482,6 +620,8 @@
     }
 
     document.addEventListener('DOMContentLoaded', initAudioControls);
+    // A tab closed while a track is playing still leaves its record.
+    window.addEventListener('pagehide', function () { finalizeMedia('pagehide'); });
 
-    GPH.players = { playAudio, openYouTube, closeYouTube, getYouTubeId, closeAudio };
+    GPH.players = { playAudio, openYouTube, closeYouTube, getYouTubeId, closeAudio, setContext };
 })(window.GPH = window.GPH || {});
