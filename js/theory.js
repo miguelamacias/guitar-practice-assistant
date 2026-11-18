@@ -145,17 +145,8 @@
         'Melodic minor': 9
     };
 
-    // Arpeggios: parent major that contains the chord tones (used to place the 5 shapes).
-    //   maj / maj7 / sus2 / sus4 -> Ionian (same tonic)
-    //   7                        -> Mixolydian
-    //   m / m7                   -> Aeolian (relative major)
-    //   m7b5 / dim               -> Locrian
-    const CHORD_PARENT_OFFSET = {
-        'maj': 0, 'maj7': 0, 'sus2': 0, 'sus4': 0,
-        '7': 7,
-        'm': 9, 'm7': 9,
-        'm7b5': 11, 'dim': 11
-    };
+    // Arpeggios use the chord root itself: the CAGED forms belong to the chord
+    // (E/A/D/C/G), and anchoring them on a parent scale shifts e.g. G7 onto C.
 
     // Old -> current names (for state already saved in localStorage).
     const SCALE_ALIASES = {
@@ -374,7 +365,7 @@
     function shapeAnchorPc(rootPc, kind, typeName) {
         let off = null;
         if (kind === 'arp') {
-            if (Object.prototype.hasOwnProperty.call(CHORD_PARENT_OFFSET, typeName)) off = CHORD_PARENT_OFFSET[typeName];
+            return rootPc;
         } else if (kind !== 'chord') {
             if (isMajorMode(typeName)) off = MODE_PARENT_OFFSET[typeName];
             else if (Object.prototype.hasOwnProperty.call(DERIVED_PARENT_OFFSET, typeName)) off = DERIVED_PARENT_OFFSET[typeName];

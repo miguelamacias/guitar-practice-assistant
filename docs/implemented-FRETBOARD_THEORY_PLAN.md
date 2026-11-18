@@ -428,9 +428,10 @@ forma G (4-8)                forma E (6-10)               forma C (11-15)
 - `index.html`: `theory.js?v=16`.
 
 
-### 14. Arpegios sobre las 5 formas del mayor: solo los grados del acorde (2026-10-11)
-- **Idea**: un arpegio es la ventana de la forma del mayor **con solo los grados del acorde** iluminados. No hacen falta formas nuevas: se reutiliza el sistema de las escalas (ventana de 5 trastes + regla del unísono) y `paintScale()` pinta `ivals` del acorde, que ya era lo que hacía. Ahora recibe también `scaleShape` y el anclaje en el mayor padre.
-- **Mayor padre por calidad** (`CHORD_PARENT_OFFSET`): `maj` / `maj7` / `sus2` / `sus4` → **Ionian** (misma tónica) · `7` → **Mixolydian** · `m` / `m7` → **Aeolian** (relativa mayor) · `m7b5` / `dim` → **Locrian**. Así todas las notas del acorde caen siempre dentro de la forma.
+### 14. Arpegios sobre las 5 formas CAGED: solo los grados del acorde (2026-10-11; anclaje corregido 2026-11-17)
+- **Corrección 2026-11-17**: la primera versión anclaba los arpegios en el mayor padre (`CHORD_PARENT_OFFSET`). Eso desplazaba los Dom7 a la forma del padre (G7 sobre C) y dejaba la fundamental fuera de la cuerda esperada. Ahora todos los arpegios se anclan en la fundamental del acorde. Para G7 las raíces quedan en E/G sobre la 6ª cuerda, A/C sobre la 5ª y D sobre la 4ª, igual que en Maj7. Se retiró `CHORD_PARENT_OFFSET`; `theory.js?v=23`.
+- **Idea**: un arpegio es la ventana de la forma del mayor **con solo los grados del acorde** iluminados. No hacen falta formas nuevas: se reutiliza el sistema de las escalas (ventana de 5 trastes + regla del unísono) y `paintScale()` pinta `ivals` del acorde, que ya era lo que hacía. Ahora recibe también `scaleShape` y el anclaje en la fundamental del acorde.
+- **Anclaje en la fundamental**: cada forma se coloca sobre la tónica del acorde, no sobre la tónica de una escala padre. Así G7 usa las raíces G de las formas E/G (6ª cuerda), A/C (5ª) y D (4ª).
 - **Chips**: los arpegios recuperan los chips `All · C · A · G · E · D` (los mismos que las escalas). `shapeAnchorPc()` devuelve `null` para los acordes, que siguen con sus chips de digitación, y en *All notes* se ocultan.
 - **Resultado** (Do maj7; solo `1 3 5 7` = Do Mi Sol Si):
 
@@ -444,7 +445,7 @@ forma C (11-15)            forma E (6-10)           forma A (2-6)
   E | 12 E  15 G             E | 7 B  8 C             E | 3 G
 ```
 - **Validación**: 9 calidades × 12 raíces × 5 formas = **540 escenarios, 0 problemas**: todas las notas iluminadas son grados del acorde, dentro de la ventana, sin duplicados, **están todas** las apariciones de esos grados dentro de la ventana y **todas caen dentro de la forma de su escala padre** · 6-10 notas por forma · regresión: **420 escenarios de modos, 0 diferencias**; pentatónicas (12), blues (14), armónica (18) y melódica (18) intactas; los acordes conservan sus 5 chips y su digitación.
-- **Nota sobre `m7`**: se usa la **Aeolian** (relativa mayor: La m7 → Do). Con **Dorian** (La m7 → Sol) las ventanas se mueven un traste; es cambiar un número en `CHORD_PARENT_OFFSET` si se prefiere ese criterio.
+- **Nota sobre `m7`**: queda anclado en su propia fundamental, como el resto de arpegios; ya no depende de la Aeolian relativa.
 - `index.html`: `theory.js?v=17`.
 
 
