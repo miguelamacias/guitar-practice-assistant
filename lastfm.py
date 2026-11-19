@@ -20,7 +20,7 @@ import db
 
 API_URL = 'https://ws.audioscrobbler.com/2.0/'
 AUTH_URL = 'https://www.last.fm/api/auth/'
-USER_AGENT = 'GuitarPracticeHub/1.4.3 (https://github.com/miguelamacias/guitar-practice-assistant)'
+USER_AGENT = 'GuitarPracticeHub/1.5.4 (https://github.com/miguelamacias/guitar-practice-assistant)'
 MIN_DURATION = 120                 # "more than 1:59": a 2:00 track is eligible
 MAX_BATCH = 50
 AUTH_TIMEOUT = 300
@@ -329,6 +329,193 @@ def read_mp3_cover(path):
             return fallback
     except Exception:  # noqa: BLE001
         return None
+
+
+_ID3_TEXT_FIELDS = {'TIT2': 'title', 'TPE1': 'artist', 'TALB': 'album'}
+
+
+def _syncsafe_bytes(value):
+    value = max(0, min(0x0fffffff, int(value)))
+    return bytes(((value >> 21) & 0x7f, (value >> 14) & 0x7f,
+                  (value >> 7) & 0x7f, value & 0x7f))
+
+
+def _id3_frame(fid, payload, version):
+    size = _syncsafe_bytes(len(payload)) if version == 4 else \
+        int(len(payload)).to_bytes(4, 'big')
+    return fid.encode('latin-1') + size + b'\x00\x00' + payload
+
+
+def _id3_text_frame(fid, text, version):
+    # v2.3 readers do not all understand UTF-8 text frames, so use the
+    # UTF-16 BOM form there; v2.4 uses UTF-8.
+    payload = (b'\x03' + text.encode('utf-8')) if version == 4 else \
+        (b'\x01' + text.encode('utf-16'))
+    return _id3_frame(fid, payload, version)
+
+
+def _id3_apic_frame(image, mime, version):
+    mime = (mime or 'image/jpeg').lower()
+    payload = b'\x03' + mime.encode('latin-1', errors='replace') + b'\x00' + \
+        b'\x03' + b'\x00' + image
+    return _id3_frame('APIC', payload, version)
+
+
+def _existing_id3_frames(data, version, flags, drop_ids=None):
+    """Return raw non-target frames from an ID3v2.3/2.4 tag.
+
+    The caller only needs to preserve metadata it does not edit. Frames with a
+    malformed size stop preservation; the audio stream itself is never touched.
+    """
+    frames = []
+    pos = 0
+    if flags & 0x40:
+        if version == 4:
+            if len(data) < 4:
+                return frames
+            pos = _syncsafe(data[:4])
+        else:
+            if len(data) < 4:
+                return frames
+            pos = 4 + int.from_bytes(data[:4], 'big')
+    while pos + 10 <= len(data):
+        if data[pos] == 0:
+            break
+        fid = data[pos:pos + 4].decode('latin-1', errors='replace')
+        size = _syncsafe(data[pos + 4:pos + 8]) if version == 4 else \
+            int.from_bytes(data[pos + 4:pos + 8], 'big')
+        end = pos + 10 + size
+        if not fid.strip('\x00') or size <= 0 or end > len(data):
+            break
+        if fid not in (drop_ids or set()):
+            frames.append(data[pos:end])
+        pos = end
+    return frames
+
+
+def write_mp3_tags(path, title=None, artist=None, album=None,
+                   cover=None, cover_mime='image/jpeg'):
+    """Rewrite MP3 ID3v2 tags while preserving untouched frames and audio.
+
+    Text fields with value None are preserved; an empty string removes that
+    frame. `cover` is new image bytes, or None to preserve the existing APIC.
+    The caller is responsible for validating/allowing the path and making a
+    backup before calling this function.
+    """
+    try:
+        with open(path, 'rb') as f:
+            head = f.read(10)
+            old_version = 0
+            old_size = 0
+            old_flags = 0
+            old_end = 0
+            old_data = b''
+            v1 = None
+            if len(head) == 10 and head[:3] == b'ID3':
+                old_version = head[3]
+                old_flags = head[5]
+                old_size = _syncsafe(head[6:10])
+                old_end = 10 + old_size
+                f.seek(10)
+                old_data = f.read(old_size)
+            f.seek(0, os.SEEK_END)
+            total = f.tell()
+            if total >= 128:
+                f.seek(-128, os.SEEK_END)
+                tail = f.read(128)
+                if len(tail) == 128 and tail[:3] == b'TAG':
+                    v1 = bytearray(tail)
+        if old_end > total:
+            return {'ok': False, 'error': 'bad_id3_header'}
+
+        version = 4 if old_version == 4 else 3
+        values = {'title': title, 'artist': artist, 'album': album}
+        drop_ids = {fid for fid, key in _ID3_TEXT_FIELDS.items()
+                    if values[key] is not None}
+        if cover is not None:
+            drop_ids.add('APIC')
+        frames = []
+        if old_version in (3, 4):
+            data = old_data
+            if old_flags & 0x80:
+                data = data.replace(b'\xff\x00', b'\xff')
+            frames = _existing_id3_frames(data, old_version, old_flags,
+                                          drop_ids=drop_ids)
+        for fid, key in _ID3_TEXT_FIELDS.items():
+            value = values[key]
+            if value is None:
+                continue
+            value = str(value)
+            if value:
+                frames.append(_id3_text_frame(fid, value, version))
+        if cover is not None:
+            frames.append(_id3_apic_frame(cover, cover_mime, version))
+        elif old_version == 2:
+            # ID3v2.2 has no APIC frame. Preserve its cover as a new APIC.
+            old_cover = read_mp3_cover(path)
+            if old_cover:
+                frames.append(_id3_apic_frame(old_cover['data'],
+                                              old_cover['mime'], version))
+
+        tag_body = b''.join(frames) + b'\x00' * 1024
+        tag = b'ID3' + bytes((version, 0, 0)) + _syncsafe_bytes(len(tag_body)) + tag_body
+        tmp = path + '.id3tmp-' + uuid.uuid4().hex
+        try:
+            with open(path, 'rb') as src, open(tmp, 'wb') as dst:
+                src.seek(old_end)
+                dst.write(tag)
+                while True:
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+                if v1 is not None:
+                    for key, start, end in (
+                            ('title', 3, 33), ('artist', 33, 63),
+                            ('album', 63, 93)):
+                        if values[key] is not None:
+                            text = str(values[key]).encode('latin-1',
+                                                           errors='replace')[:30]
+                            v1[start:end] = text.ljust(30, b'\x00')
+                    dst.seek(-128, os.SEEK_END)
+                    dst.write(v1)
+            replaced = False
+            for attempt in range(3):
+                try:
+                    os.replace(tmp, path)
+                    replaced = True
+                    break
+                except PermissionError:
+                    if attempt == 2:
+                        # Windows can keep the media file open while the
+                        # browser is streaming it. Rewriting the same file in
+                        # place avoids the delete/rename lock; the backup is
+                        # already verified by the caller.
+                        try:
+                            with open(tmp, 'rb') as src, open(path, 'r+b') as dst:
+                                dst.seek(0)
+                                while True:
+                                    chunk = src.read(1024 * 1024)
+                                    if not chunk:
+                                        break
+                                    dst.write(chunk)
+                                dst.truncate()
+                            replaced = True
+                        except OSError:
+                            raise
+                    else:
+                        time.sleep(0.12)
+            if not replaced:
+                raise OSError('replace_failed')
+        finally:
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+        return {'ok': True, 'path': path}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': 'write_failed', 'detail': str(e)}
 
 
 def media_path(value):

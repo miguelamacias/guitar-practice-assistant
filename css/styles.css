@@ -1780,6 +1780,30 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
     font-variant-numeric: tabular-nums; min-width: 38px; text-align: center;
 }
 
+/* Pitch / speed steppers: compact segmented control in the player bar. */
+.ap-adjust {
+    display: inline-flex; align-items: center; flex: 0 0 auto;
+    height: 26px; border: 1px solid #3a3a3a; border-radius: 6px;
+    background: #1f1f1f; overflow: hidden;
+}
+.ap-adjust-label {
+    padding: 0 5px; color: #777; font-size: 0.58rem; font-weight: 700;
+    letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+}
+.ap-step {
+    width: 20px; height: 24px; padding: 0; border: 0; border-left: 1px solid #3a3a3a;
+    background: transparent; color: #bbb; cursor: pointer;
+    font-family: inherit; font-size: 0.9rem; line-height: 1;
+}
+.ap-step:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.ap-step:disabled { opacity: 0.35; cursor: default; }
+.ap-step-val {
+    min-width: 38px; padding: 0 3px; text-align: center;
+    border-left: 1px solid #3a3a3a; color: #ddd;
+    font-size: 0.66rem; font-variant-numeric: tabular-nums; white-space: nowrap;
+    user-select: none; -webkit-user-select: none; cursor: pointer;
+}
+
 .ap-icon-btn {
     width: 30px; height: 30px; padding: 0; flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
@@ -1845,6 +1869,64 @@ a.has-icon, .audio-trigger.has-icon { padding-right: 32px; }
 .ap-scrobble.is-error { color: var(--accent-red); }
 .ap-scrobble.is-off { color: #777; }
 .audio-panel audio { display: none; }
+
+/* Hover action on the album cover: opens the ID3 editor. */
+.ap-cover-edit {
+    position: absolute; inset: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: center;
+    border: 0; border-radius: 5px; cursor: pointer;
+    color: #fff; background: rgba(0, 0, 0, 0.58);
+    opacity: 0; transition: opacity 0.15s;
+}
+.audio-cover:hover .ap-cover-edit,
+.ap-cover-edit:focus-visible { opacity: 1; }
+.ap-cover-edit svg { width: 19px; height: 19px; }
+.ap-cover-edit:disabled { cursor: default; opacity: 0; }
+.audio-cover:hover .ap-cover-edit:disabled { opacity: 0.35; }
+
+/* Small ID3 editor, opened from the cover and kept above the player bar. */
+.id3-editor {
+    position: fixed; left: 14px; bottom: 78px; z-index: 1300;
+    width: 390px; max-width: calc(100vw - 28px); max-height: calc(100vh - 100px);
+    overflow-y: auto; box-sizing: border-box;
+    background: #1e1e1e; color: #ddd; border: 1px solid #444;
+    border-radius: 8px; box-shadow: 0 10px 34px rgba(0, 0, 0, 0.6);
+    padding: 12px 14px 10px; font-size: 0.82rem;
+}
+.id3-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.id3-editor-head h3 { margin: 0; font-size: 0.95rem; }
+.id3-track { color: var(--muted); font-size: 0.7rem; margin-top: 2px; max-width: 330px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.id3-x { background: transparent; border: 0; color: #bbb; font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.id3-x:hover { color: #fff; }
+.id3-fields { display: flex; flex-direction: column; gap: 8px; }
+.id3-field { display: flex; flex-direction: column; gap: 3px; color: #bbb; font-size: 0.76rem; }
+.id3-field input {
+    background: #141414; color: #e0e0e0; border: 1px solid #444;
+    border-radius: 5px; padding: 6px 7px; font: inherit;
+}
+.id3-field input:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.id3-cover-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.id3-cover-preview {
+    width: 60px; height: 60px; flex: 0 0 60px; border: 1px solid #444;
+    border-radius: 5px; background: #181818 center / cover no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    color: #777; font-size: 0.68rem; overflow: hidden;
+}
+.id3-cover-pick { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+.id3-cover-pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.id3-cover-pick span {
+    display: inline-block; padding: 6px 9px; border: 1px solid #444;
+    border-radius: 5px; background: #2a2a2a; color: #ddd; font-size: 0.78rem;
+}
+.id3-cover-pick:hover span { background: #3a3a3a; }
+.id3-error { margin-top: 8px; color: #ff8888; background: rgba(244, 67, 54, 0.12); border: 1px solid rgba(244, 67, 54, 0.35); border-radius: 5px; padding: 6px 8px; font-size: 0.76rem; }
+.id3-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.id3-btn { background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 6px 10px; font-weight: 600; cursor: pointer; font-size: 0.78rem; }
+.id3-btn:hover:not(:disabled) { background: #3a3a3a; }
+.id3-btn.id3-save { background: var(--accent); border-color: var(--accent); color: #111; }
+.id3-btn:disabled { opacity: 0.5; cursor: default; }
+.id3-note { color: #777; font-size: 0.66rem; margin-top: 8px; }
+.id3-note code { color: #aaa; }
 
 /* Keep the page end, the floating clock and the video panel clear of the bar. */
 body.has-player { padding-bottom: 84px; }

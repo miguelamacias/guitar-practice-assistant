@@ -6,6 +6,25 @@
     const SHORT_TRACK_SECONDS = 120;
     let loopOverride = false;
 
+    // ---- Pitch / speed controls ------------------------------------------
+    // Speed is native playbackRate with preservesPitch; pitch goes through the
+    // vendored Signalsmith Stretch live-input worklet.
+    const PITCH_MIN = -6;
+    const PITCH_MAX = 6;
+    const SPEED_MIN = 25;
+    const SPEED_MAX = 150;
+    const SPEED_STEP = 5;
+    let pitchSemitones = 0;
+    let speedPercent = 100;
+    let pitchGraph = null;
+    let pitchGraphPromise = null;
+    let pitchGraphFailed = false;
+    const FX_STORE_PREFIX = 'gph.audioFx:';
+    let currentFallbackTitle = '';
+    let id3EditorPath = '';
+    let id3EditorUrl = '';
+    let id3CoverData = null;
+
     // ---- Practice telemetry (transparent, no UI) ---------------------------
     // One record per playback, sent at the end. `measured=0` means the time is
     // a wall-clock approximation (YouTube: its iframe has no playback API).
@@ -15,6 +34,7 @@
     let abLoops = 0;
     let lastMediaTime = 0;
     let mediaSeeked = false;
+    let trackTitleToken = 0;
 
     function setContext(ctx) {
         playContext = {
@@ -109,6 +129,37 @@
     function getAudioEl() { return document.getElementById('audioPlayer'); }
     function getTitleEl() { return document.getElementById('current-playing'); }
 
+    function setPlayerTitle(text) {
+        const span = getTitleEl();
+        if (!span) return;
+        span.textContent = text;
+        if (typeof updateMarquee === 'function') updateMarquee();
+    }
+
+    function titleFromTags(tags, fallback) {
+        const title = String((tags && tags.title) || '').trim();
+        const artist = String((tags && tags.artist) || '').trim();
+        if (title && artist) return title + ' - ' + artist;
+        if (title || artist) return title || artist;
+        return fallback;
+    }
+
+    function loadTrackTags(url, fallback) {
+        const token = ++trackTitleToken;
+        const path = localMediaPath(url);
+        if (!path) return;
+        fetch('/api/media/tags?path=' + encodeURIComponent(path), { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (tags) {
+                if (token !== trackTitleToken || !tags || !tags.ok) return;
+                const title = String(tags.title || '').trim();
+                const artist = String(tags.artist || '').trim();
+                if (!title && !artist) return;
+                setPlayerTitle(titleFromTags(tags, fallback));
+            })
+            .catch(function () { /* no ID3 or no server: keep the element name */ });
+    }
+
     // ---- Album art ---------------------------------------------------------
     // The cover is read from the MP3's ID3 APIC/PIC frame by the local server.
     // Keep a token so a slow image for track A can never paint over track B.
@@ -140,7 +191,7 @@
         const cover = document.getElementById('apCover');
         if (!panel || !cover) return;
         const token = coverToken;
-        const coverUrl = '/api/cover?path=' + encodeURIComponent(path);
+        const coverUrl = '/api/cover?path=' + encodeURIComponent(path) + '&v=' + Date.now();
         const probe = new Image();
         probe.onload = function () {
             if (token !== coverToken) return;
@@ -149,6 +200,233 @@
         };
         probe.onerror = function () { /* no embedded cover: keep the black card */ };
         probe.src = coverUrl;
+    }
+
+    function id3Available() {
+        const player = getAudioEl();
+        const path = player ? localMediaPath(player.src) : '';
+        return !!path && /\.mp3$/i.test(path);
+    }
+
+    function syncId3Button() {
+        const btn = document.getElementById('apCoverEdit');
+        if (!btn) return;
+        const ok = id3Available();
+        btn.disabled = !ok;
+        btn.title = ok ? 'Edit ID3 tags' : 'ID3 editing is available for local MP3 files only';
+    }
+
+    function closeId3Editor() {
+        const panel = document.getElementById('id3Editor');
+        if (panel) panel.hidden = true;
+        id3EditorPath = '';
+        id3EditorUrl = '';
+        id3CoverData = null;
+        const file = document.getElementById('id3CoverFile');
+        if (file) file.value = '';
+        const err = document.getElementById('id3Error');
+        if (err) { err.hidden = true; err.textContent = ''; }
+    }
+
+    function setId3Error(message) {
+        const err = document.getElementById('id3Error');
+        if (!err) return;
+        err.textContent = message;
+        err.hidden = !message;
+    }
+
+    function setCoverPreview(dataUrl) {
+        const preview = document.getElementById('id3CoverPreview');
+        if (!preview) return;
+        if (dataUrl) {
+            preview.style.backgroundImage = 'url("' + dataUrl + '")';
+            preview.textContent = '';
+        } else {
+            preview.style.backgroundImage = '';
+            preview.textContent = 'No cover';
+        }
+    }
+
+    function openId3Editor() {
+        const player = getAudioEl();
+        const path = player ? localMediaPath(player.src) : '';
+        if (!path || !/\.mp3$/i.test(path)) return;
+        id3EditorPath = path;
+        id3EditorUrl = player.src;
+        id3CoverData = null;
+        const panel = document.getElementById('id3Editor');
+        const save = document.getElementById('id3Save');
+        const title = document.getElementById('id3Title');
+        const artist = document.getElementById('id3Artist');
+        const album = document.getElementById('id3Album');
+        const track = document.getElementById('id3Track');
+        const file = document.getElementById('id3CoverFile');
+        if (!panel || !save || !title || !artist || !album) return;
+        title.value = '';
+        artist.value = '';
+        album.value = '';
+        if (file) file.value = '';
+        setId3Error('');
+        if (track) {
+            track.textContent = path.split(/[\\/]/).pop() || path;
+            track.title = path;
+        }
+        const cover = document.getElementById('apCover');
+        const hasCover = cover && getComputedStyle(cover).backgroundImage !== 'none';
+        setCoverPreview(hasCover ? getComputedStyle(cover).backgroundImage.slice(5, -2) : '');
+        panel.hidden = false;
+        save.disabled = true;
+        save.textContent = 'Save tags';
+        fetch('/api/media/tags?path=' + encodeURIComponent(path), { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (tags) {
+                if (!tags || !tags.ok) {
+                    setId3Error('Could not read ID3 tags for this file.');
+                    return;
+                }
+                title.value = tags.title || '';
+                artist.value = tags.artist || '';
+                album.value = tags.album || '';
+                save.disabled = false;
+                title.focus();
+            })
+            .catch(function () {
+                setId3Error('Could not read ID3 tags. Restart the local server and try again.');
+            });
+    }
+
+    function suspendAudioForId3Write() {
+        const player = getAudioEl();
+        if (!player) return null;
+        const state = {
+            url: id3EditorUrl,
+            time: player.currentTime || 0,
+            paused: player.paused,
+            loop: !!player.loop
+        };
+        player.pause();
+        player.removeAttribute('src');
+        player.load();
+        return state;
+    }
+
+    function resumeAudioAfterId3Write(state) {
+        const player = getAudioEl();
+        if (!player || !state || !state.url) return;
+        player.src = state.url;
+        applySpeed();
+        player.loop = state.loop;
+        const restore = function () {
+            try {
+                player.currentTime = Math.max(0, Math.min(state.time,
+                    isFinite(player.duration) ? player.duration : state.time));
+            } catch (e) { /* metadata may still be settling */ }
+            syncLoopButton();
+            syncAB();
+            syncEffectControls();
+            syncId3Button();
+            if (!state.paused) {
+                const started = player.play();
+                if (started && typeof started.catch === 'function') started.catch(function () {});
+            }
+        };
+        if (player.readyState >= 1) restore();
+        else player.addEventListener('loadedmetadata', restore, { once: true });
+    }
+
+    function saveId3Editor(event) {
+        event.preventDefault();
+        if (!id3EditorPath) return;
+        const save = document.getElementById('id3Save');
+        const title = document.getElementById('id3Title');
+        const artist = document.getElementById('id3Artist');
+        const album = document.getElementById('id3Album');
+        if (!save || !title || !artist || !album) return;
+        if (save.disabled) return;
+        const path = id3EditorPath;
+        const url = id3EditorUrl;
+        const payload = {
+            path: path,
+            title: title.value,
+            artist: artist.value,
+            album: album.value
+        };
+        if (id3CoverData) {
+            payload.cover_base64 = id3CoverData.dataUrl;
+            payload.cover_mime = id3CoverData.mime;
+        }
+        save.disabled = true;
+        save.textContent = 'Saving…';
+        setId3Error('');
+        // Windows refuses to replace an MP3 while the browser still has the
+        // media stream open. Detach it briefly, then restore the same position.
+        const suspended = suspendAudioForId3Write();
+        setTimeout(function () {
+            fetch('/api/media/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(function (r) {
+                return r.json().catch(function () { return {}; }).then(function (data) {
+                    if (!r.ok || !data.ok) throw new Error(data.reason || data.error || 'save_failed');
+                    return data;
+                });
+            }).then(function (data) {
+                setPlayerTitle(titleFromTags(data, currentFallbackTitle));
+                if (url) applyCover(url);
+                resumeAudioAfterId3Write(suspended);
+                closeId3Editor();
+            }).catch(function (err) {
+                resumeAudioAfterId3Write(suspended);
+                save.disabled = false;
+                save.textContent = 'Save tags';
+                setId3Error('Could not save ID3 tags: ' + (err.message || 'unknown error'));
+            });
+        }, 180);
+    }
+
+    function setId3CoverFile(file) {
+        if (!file) {
+            id3CoverData = null;
+            return;
+        }
+        if (!/^image\/(jpeg|png|webp)$/i.test(file.type || '')) {
+            setId3Error('Choose a JPEG, PNG or WebP image.');
+            return;
+        }
+        if (file.size > 8 * 1024 * 1024) {
+            setId3Error('The cover image must be smaller than 8 MB.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function () {
+            id3CoverData = { dataUrl: reader.result, mime: file.type };
+            setCoverPreview(reader.result);
+            setId3Error('');
+        };
+        reader.onerror = function () { setId3Error('Could not read the selected image.'); };
+        reader.readAsDataURL(file);
+    }
+
+    function initId3Editor() {
+        const edit = document.getElementById('apCoverEdit');
+        const form = document.getElementById('id3Form');
+        const save = document.getElementById('id3Save');
+        const close = document.getElementById('id3Close');
+        const cancel = document.getElementById('id3Cancel');
+        const file = document.getElementById('id3CoverFile');
+        if (edit) edit.addEventListener('click', openId3Editor);
+        if (form) form.addEventListener('submit', saveId3Editor);
+        if (save) save.addEventListener('click', saveId3Editor);
+        if (close) close.addEventListener('click', closeId3Editor);
+        if (cancel) cancel.addEventListener('click', closeId3Editor);
+        if (file) file.addEventListener('change', function () {
+            setId3CoverFile(file.files && file.files[0]);
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeId3Editor();
+        });
+        syncId3Button();
     }
 
     function syncLoopButton() {
@@ -160,6 +438,177 @@
         btn.setAttribute('aria-pressed', on ? 'true' : 'false');
         btn.disabled = !player.getAttribute('src');
         btn.title = 'Loop: ' + (on ? 'on' : 'off');
+    }
+
+    function syncEffectControls() {
+        const player = getAudioEl();
+        const hasTrack = !!(player && player.getAttribute('src'));
+        const pitchReady = hasTrack && !pitchGraphFailed &&
+            typeof window.SignalsmithStretch === 'function';
+        const ids = ['apPitchDown', 'apPitchUp', 'apSpeedDown', 'apSpeedUp'];
+        ids.forEach(function (id) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.disabled = !hasTrack || (id.indexOf('apPitch') === 0 && !pitchReady);
+        });
+        const pv = document.getElementById('apPitchVal');
+        if (pv) pv.textContent = (pitchSemitones > 0 ? '+' : '') + pitchSemitones + ' st';
+        const sv = document.getElementById('apSpeedVal');
+        if (sv) sv.textContent = Math.round(speedPercent) + '%';
+        const pd = document.getElementById('apPitchDown');
+        const pu = document.getElementById('apPitchUp');
+        const sd = document.getElementById('apSpeedDown');
+        const su = document.getElementById('apSpeedUp');
+        if (pd) pd.title = 'Pitch down one semitone (' + PITCH_MIN + ' to ' + PITCH_MAX + ' st)';
+        if (pu) pu.title = 'Pitch up one semitone (' + PITCH_MIN + ' to ' + PITCH_MAX + ' st)';
+        if (sd) sd.title = 'Slow down 5 percent (min ' + SPEED_MIN + '%)';
+        if (su) su.title = 'Speed up 5 percent (max ' + SPEED_MAX + '%)';
+    }
+
+    function applySpeed() {
+        const player = getAudioEl();
+        if (!player) return;
+        player.playbackRate = speedPercent / 100;
+        // The pitch must stay put while the tempo changes.
+        try { player.preservesPitch = true; } catch (e) { /* old browser */ }
+        try { player.webkitPreservesPitch = true; } catch (e) { /* old WebKit */ }
+    }
+
+    function changeSpeed(delta) {
+        const player = getAudioEl();
+        if (!player || !player.getAttribute('src')) return;
+        const next = Math.max(SPEED_MIN, Math.min(SPEED_MAX, speedPercent + delta));
+        if (next === speedPercent) return;
+        speedPercent = next;
+        applySpeed();
+        syncEffectControls();
+        saveAudioFx();
+    }
+
+    function applyPitch(value) {
+        if (!pitchGraph) return;
+        const now = pitchGraph.ctx.currentTime;
+        const target = Math.max(PITCH_MIN, Math.min(PITCH_MAX, value));
+        pitchGraph.stretch.schedule({ semitones: target });
+        const dryTarget = target === 0 ? 1 : 0;
+        const wetTarget = target === 0 ? 0 : 1;
+        [ [pitchGraph.dry, dryTarget], [pitchGraph.wet, wetTarget] ].forEach(function (pair) {
+            const gain = pair[0];
+            const to = pair[1];
+            gain.gain.cancelScheduledValues(now);
+            gain.gain.setValueAtTime(gain.gain.value, now);
+            gain.gain.linearRampToValueAtTime(to, now + 0.06);
+        });
+    }
+
+    function ensurePitchGraph() {
+        if (pitchGraph) return Promise.resolve(pitchGraph);
+        if (pitchGraphPromise) return pitchGraphPromise;
+        if (pitchGraphFailed) return Promise.reject(new Error('pitch_unavailable'));
+        const player = getAudioEl();
+        if (!player || !GPH.audio || typeof GPH.audio.getCtx !== 'function' ||
+            typeof window.SignalsmithStretch !== 'function') {
+            pitchGraphFailed = true;
+            syncEffectControls();
+            return Promise.reject(new Error('pitch_unavailable'));
+        }
+        pitchGraphPromise = (async function () {
+            const ctx = GPH.audio.getCtx();
+            if (ctx.state === 'suspended') await ctx.resume();
+            // Keep the dry path alive while the worklet loads: if anything fails,
+            // the native player must never become silent.
+            const source = ctx.createMediaElementSource(player);
+            const dry = ctx.createGain();
+            const wet = ctx.createGain();
+            dry.gain.value = 1;
+            wet.gain.value = 0;
+            source.connect(dry);
+            dry.connect(ctx.destination);
+            const stretch = await window.SignalsmithStretch(ctx);
+            source.connect(stretch);
+            stretch.connect(wet);
+            wet.connect(ctx.destination);
+            pitchGraph = { ctx: ctx, source: source, dry: dry, wet: wet, stretch: stretch };
+            stretch.schedule({ semitones: pitchSemitones });
+            await stretch.start();
+            applyPitch(pitchSemitones);
+            return pitchGraph;
+        })().catch(function (err) {
+            pitchGraphFailed = true;
+            syncEffectControls();
+            if (window.console && console.warn) console.warn('Pitch shift unavailable:', err);
+            throw err;
+        });
+        return pitchGraphPromise;
+    }
+
+    function changePitch(delta) {
+        const player = getAudioEl();
+        if (!player || !player.getAttribute('src') || pitchGraphFailed) return;
+        const next = Math.max(PITCH_MIN, Math.min(PITCH_MAX, pitchSemitones + delta));
+        if (next === pitchSemitones) return;
+        pitchSemitones = next;
+        syncEffectControls();
+        saveAudioFx();
+        if (pitchSemitones === 0 && !pitchGraph) return;
+        ensurePitchGraph().then(function () {
+            if (pitchGraph) applyPitch(pitchSemitones);
+        }).catch(function () { /* buttons are disabled in syncEffectControls */ });
+    }
+
+    function resetAudioEffects() {
+        pitchSemitones = 0;
+        speedPercent = 100;
+        const player = getAudioEl();
+        if (player) {
+            player.playbackRate = 1;
+            try { player.preservesPitch = true; } catch (e) { /* noop */ }
+        }
+        if (pitchGraph) applyPitch(0);
+        syncEffectControls();
+    }
+
+    function loadAudioFx(path) {
+        if (!path) return { pitch: 0, speed: 100 };
+        try {
+            const raw = localStorage.getItem(FX_STORE_PREFIX + path);
+            if (!raw) return { pitch: 0, speed: 100 };
+            const o = JSON.parse(raw);
+            let pitch = Number(o && o.pitch);
+            let speed = Number(o && o.speed);
+            if (!isFinite(pitch)) pitch = 0;
+            if (!isFinite(speed)) speed = 100;
+            pitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.round(pitch)));
+            speed = Math.max(SPEED_MIN, Math.min(SPEED_MAX,
+                Math.round(speed / SPEED_STEP) * SPEED_STEP));
+            return { pitch: pitch, speed: speed };
+        } catch (e) {
+            return { pitch: 0, speed: 100 };
+        }
+    }
+
+    function saveAudioFx() {
+        if (!trackKey) return;
+        try {
+            if (pitchSemitones === 0 && speedPercent === 100) {
+                localStorage.removeItem(FX_STORE_PREFIX + trackKey);
+            } else {
+                localStorage.setItem(FX_STORE_PREFIX + trackKey, JSON.stringify({
+                    pitch: pitchSemitones,
+                    speed: speedPercent
+                }));
+            }
+        } catch (e) { /* storage blocked/full: playback still works */ }
+    }
+
+    function restoreAudioFx() {
+        applySpeed();
+        syncEffectControls();
+        if (pitchSemitones !== 0 && !pitchGraphFailed) {
+            ensurePitchGraph().then(function () {
+                if (pitchGraph) applyPitch(pitchSemitones);
+            }).catch(function () { /* controls are disabled */ });
+        }
     }
 
     // ---- A-B practice loop -------------------------------------------------
@@ -365,9 +814,10 @@
     function playAudio(url, title) {
         finalizeMedia('switch');
         closeYouTube();
+        closeId3Editor();
 
         const player = getAudioEl();
-        const titleSpan = getTitleEl();
+        resetAudioEffects();
 
         loopOverride = false;
         loopBeforeAB = null;
@@ -375,6 +825,9 @@
         // Local files use the inner path (stable, short); web audio uses its URL
         // so every track has a key for A-B marks and playback stats.
         trackKey = localMediaPath(url) || String(url || '');
+        const savedFx = loadAudioFx(trackKey);
+        pitchSemitones = savedFx.pitch;
+        speedPercent = savedFx.speed;
         const saved = loadMarks(trackKey);
         markA = saved ? saved.a : null;
         markB = saved ? saved.b : null;
@@ -382,8 +835,12 @@
         stopABLoop();
         player.loop = false;
         player.src = url;
-        titleSpan.textContent = title;
+        applySpeed();
+        currentFallbackTitle = title || '';
+        setPlayerTitle(currentFallbackTitle);
+        loadTrackTags(url, currentFallbackTitle);
         trackStart('audio', trackKey, title, true);
+        syncId3Button();
         applyCover(url);
         const panel = document.getElementById('audioPanel');
         if (panel) panel.classList.add('is-open');
@@ -394,11 +851,14 @@
         player.play();
         syncLoopButton();
         syncAB();      // A/B buttons enable once the track is loaded
+        restoreAudioFx();
         setTimeout(updateMarquee, 30);
     }
 
     function openYouTube(videoId, title, originalUrl) {
         finalizeMedia('switch');
+        trackTitleToken++;
+        closeId3Editor();
         const audioPlayer = getAudioEl();
         if (audioPlayer) audioPlayer.pause();
         clearCover();
@@ -436,6 +896,10 @@
 
     function closeAudio() {
         finalizeMedia('close');
+        trackTitleToken++;
+        closeId3Editor();
+        currentFallbackTitle = '';
+        resetAudioEffects();
         const player = getAudioEl();
         if (player) {
             player.pause();
@@ -458,6 +922,8 @@
         const time = document.getElementById('apTime'); if (time) time.textContent = '0:00';
         const cur = document.getElementById('apCurrent'); if (cur) cur.textContent = '0:00';
         const pb = document.getElementById('apPlay'); if (pb) pb.classList.remove('is-playing');
+        syncEffectControls();
+        syncId3Button();
     }
 
     // ---- Keyboard seek ------------------------------------------------------
@@ -564,6 +1030,28 @@
                 syncLoopButton();
             });
         }
+        // Pitch / speed steppers
+        const pitchDown = document.getElementById('apPitchDown');
+        const pitchUp = document.getElementById('apPitchUp');
+        const speedDown = document.getElementById('apSpeedDown');
+        const speedUp = document.getElementById('apSpeedUp');
+        if (pitchDown) pitchDown.addEventListener('click', function () { changePitch(-1); });
+        if (pitchUp) pitchUp.addEventListener('click', function () { changePitch(1); });
+        if (speedDown) speedDown.addEventListener('click', function () { changeSpeed(-SPEED_STEP); });
+        if (speedUp) speedUp.addEventListener('click', function () { changeSpeed(SPEED_STEP); });
+        const pitchVal = document.getElementById('apPitchVal');
+        const speedVal = document.getElementById('apSpeedVal');
+        if (pitchVal) {
+            pitchVal.addEventListener('dblclick', function () {
+                if (pitchSemitones !== 0) changePitch(-pitchSemitones);
+            });
+        }
+        if (speedVal) {
+            speedVal.addEventListener('dblclick', function () {
+                if (speedPercent !== 100) changeSpeed(100 - speedPercent);
+            });
+        }
+        try { player.preservesPitch = true; } catch (e) { /* old browser */ }
         // A-B marks
         const btnA = document.getElementById('apMarkA');
         const btnB = document.getElementById('apMarkB');
@@ -624,8 +1112,10 @@
             }
             syncLoopButton();
             syncAB();   // ticks need the real duration to place themselves
+            syncEffectControls();
         });
         player.addEventListener('emptied', syncLoopButton);
+        player.addEventListener('emptied', syncEffectControls);
         seek.addEventListener('input', function () {
             if (!player.duration) return;
             player.currentTime = (seek.value / 1000) * player.duration;
@@ -633,6 +1123,9 @@
         });
         syncLoopButton();
         syncAB();
+        syncEffectControls();
+        syncId3Button();
+        initId3Editor();
     }
 
     document.addEventListener('DOMContentLoaded', initAudioControls);

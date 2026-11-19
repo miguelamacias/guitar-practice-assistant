@@ -6,6 +6,7 @@ La capa de datos (esquema, seed y CRUD) vive en db.py.
 Uso:  python server.py [puerto]
 """
 import os, sys, re, functools, mimetypes, subprocess, threading, json, unicodedata
+import base64, hashlib, shutil
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, unquote, parse_qs, urlencode
 from urllib.request import Request, urlopen
@@ -44,6 +45,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MAIN_DB = os.path.join(HERE, 'practice.db')
 SANDBOX_DB = os.path.join(HERE, 'practice_sandbox.db')
 LASTFM_WORKER = None
+ID3_BACKUP_DIR = os.path.join(HERE, 'backups', 'id3')
+# ID3 edits are reversible for the same day only: a corrupt file is noticed
+# immediately, so old full-MP3 copies are deleted at the next daily sweep.
+ID3_BACKUP_RE = re.compile(r'-(\d{8}-\d{6}-\d{6})\.bak$', re.I)
 
 
 def _sandbox_mode():
@@ -52,6 +57,57 @@ def _sandbox_mode():
         return os.path.abspath(dbmod.DB_PATH) != os.path.abspath(MAIN_DB)
     except Exception:  # noqa: BLE001
         return False
+
+
+def _prune_id3_backups():
+    """Delete ID3 backups from previous calendar days.
+
+    Full-MP3 copies are only a same-day safety net. The timestamp is read from
+    the file name because `copy2` preserves the original MP3 mtime. Unknown
+    files in the folder are never touched, and sandbox runs skip the sweep.
+    """
+    if _sandbox_mode() or not os.path.isdir(ID3_BACKUP_DIR):
+        return 0
+    cutoff = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    removed = 0
+    try:
+        names = os.listdir(ID3_BACKUP_DIR)
+    except OSError:
+        return 0
+    for name in names:
+        match = ID3_BACKUP_RE.search(name)
+        if not match:
+            continue
+        try:
+            stamp = datetime.strptime(match.group(1), '%Y%m%d-%H%M%S-%f')
+        except ValueError:
+            continue
+        if stamp >= cutoff:
+            continue
+        try:
+            os.remove(os.path.join(ID3_BACKUP_DIR, name))
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def _start_id3_backup_cleaner():
+    """Run the daily ID3 cleanup even if the server stays open overnight."""
+    def loop():
+        while True:
+            now = datetime.now()
+            next_midnight = (now + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0)
+            wait_seconds = max(60.0, (next_midnight - now).total_seconds())
+            threading.Event().wait(wait_seconds)
+            try:
+                _prune_id3_backups()
+            except Exception:  # noqa: BLE001
+                pass
+
+    threading.Thread(target=loop, name='id3-backup-cleaner',
+                     daemon=True).start()
 
 # ------------------------- Song Info (FreqBlog) helpers -------------------------
 
@@ -733,6 +789,80 @@ class Handler(SimpleHTTPRequestHandler):
                                     (qs.get('kind') or [''])[0],
                                     (qs.get('ref') or [''])[0])
                 return self._send_json(r, 200 if 'error' not in r else 422)
+            if path == '/api/media/tags' and method == 'GET':
+                qs = parse_qs(urlparse(self.path).query)
+                value = (qs.get('path') or qs.get('url') or [''])[0]
+                target = lastfm.media_path(value)
+                if not target or not target.lower().endswith('.mp3'):
+                    return self._send_json({'ok': False, 'reason': 'not_mp3'}, 422)
+                if not os.path.isfile(target):
+                    return self._send_json({'ok': False, 'reason': 'not_found'}, 404)
+                if not _is_media_allowed(conn, target):
+                    return self._send_json({'ok': False, 'reason': 'forbidden'}, 403)
+                tags = lastfm.read_mp3_tags(target)
+                return self._send_json({
+                    'ok': True,
+                    'title': (tags.get('title') or '').strip(),
+                    'artist': (tags.get('artist') or '').strip(),
+                    'album': (tags.get('album') or '').strip(),
+                })
+            if path == '/api/media/tags' and method == 'POST':
+                value = data.get('path') or data.get('url') or ''
+                target = lastfm.media_path(value)
+                if not target or not target.lower().endswith('.mp3'):
+                    return self._send_json({'ok': False, 'reason': 'not_mp3'}, 422)
+                if not os.path.isfile(target):
+                    return self._send_json({'ok': False, 'reason': 'not_found'}, 404)
+                if not _is_media_allowed(conn, target):
+                    return self._send_json({'ok': False, 'reason': 'forbidden'}, 403)
+                fields = {}
+                for key in ('title', 'artist', 'album'):
+                    if key in data:
+                        fields[key] = str(data.get(key) or '').strip()[:500]
+                cover = None
+                mime = 'image/jpeg'
+                raw_cover = data.get('cover_base64') or ''
+                if raw_cover:
+                    if isinstance(raw_cover, str) and raw_cover.startswith('data:'):
+                        mime = raw_cover[5:].split(';', 1)[0] or mime
+                        raw_cover = raw_cover.split(',', 1)[-1]
+                    if mime not in ('image/jpeg', 'image/png', 'image/webp'):
+                        return self._send_json({'ok': False, 'reason': 'bad_cover_type'}, 422)
+                    try:
+                        cover = base64.b64decode(raw_cover, validate=True)
+                    except Exception:  # noqa: BLE001
+                        return self._send_json({'ok': False, 'reason': 'bad_cover_data'}, 422)
+                    if not cover or len(cover) > 8 * 1024 * 1024:
+                        return self._send_json({'ok': False, 'reason': 'cover_too_large'}, 422)
+                backup_dir = ID3_BACKUP_DIR
+                try:
+                    os.makedirs(backup_dir, exist_ok=True)
+                    stamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+                    backup = os.path.join(backup_dir,
+                                          os.path.basename(target) + '-' + stamp + '.bak')
+                    shutil.copy2(target, backup)
+                    with open(target, 'rb') as a, open(backup, 'rb') as b:
+                        if hashlib.sha256(a.read()).digest() != hashlib.sha256(b.read()).digest():
+                            return self._send_json({'ok': False, 'reason': 'backup_failed'}, 500)
+                except OSError:
+                    return self._send_json({'ok': False, 'reason': 'backup_failed'}, 500)
+                result = lastfm.write_mp3_tags(
+                    target,
+                    title=fields.get('title') if 'title' in fields else None,
+                    artist=fields.get('artist') if 'artist' in fields else None,
+                    album=fields.get('album') if 'album' in fields else None,
+                    cover=cover, cover_mime=mime)
+                if not result.get('ok'):
+                    return self._send_json(result, 422)
+                _prune_id3_backups()
+                tags = lastfm.read_mp3_tags(target)
+                return self._send_json({
+                    'ok': True,
+                    'title': (tags.get('title') or '').strip(),
+                    'artist': (tags.get('artist') or '').strip(),
+                    'album': (tags.get('album') or '').strip(),
+                    'backup': os.path.basename(backup),
+                })
             if path == '/api/practice/events' and method == 'POST':
                 r = add_practice_event(conn, data)
                 return self._send_json(r, 200 if 'error' not in r else 422)
@@ -959,6 +1089,8 @@ def main():
         dbmod.set_db_path(os.environ['GPH_DB'])
 
     init_db()
+    _prune_id3_backups()
+    _start_id3_backup_cleaner()
     global LASTFM_WORKER
     LASTFM_WORKER = lastfm.LastfmWorker(sandbox=_sandbox_mode())
     LASTFM_WORKER.start()
