@@ -19,7 +19,7 @@ from db import (
     create_exercise, update_exercise, delete_exercise, reorder_exercises,
     WIDGETS, api_sections, create_section, update_section, delete_section,
     reorder_sections, create_section_item, update_item, delete_item,
-    reorder_items, refresh_item_folder, get_setting, set_setting,
+    reorder_items, refresh_item_folder, move_item, get_setting, set_setting,
     add_fretboard_stat, get_fretboard_stats,
     add_cell_attempt, get_cell_stats,
     add_media_play, get_media_stats, add_practice_event,
@@ -33,6 +33,9 @@ from db import (
     list_catalog, catalog_detail,
     create_catalog_exercise, update_catalog_exercise, delete_catalog_exercise,
     list_paths, get_path, create_path, update_path, delete_path, set_path_steps,
+    list_guitars, get_guitar, create_guitar, update_guitar, delete_guitar,
+    add_string_change, update_string_change, delete_string_change,
+    list_string_changes, list_string_models,
 )
 import db as dbmod
 import lastfm
@@ -577,6 +580,88 @@ class Handler(SimpleHTTPRequestHandler):
                 if method == 'DELETE':
                     return self._send_json(delete_exercise(conn, eid))
 
+            # ---- Guitars / string maintenance ----------------------------
+            if path == '/api/guitars':
+                if method == 'GET':
+                    qs = parse_qs(urlparse(self.path).query)
+                    all_g = (qs.get('include_archived') or ['0'])[0] in ('1', 'true', 'yes')
+                    return self._send_json(list_guitars(conn, include_archived=all_g))
+                if method == 'POST':
+                    r = create_guitar(conn, data)
+                    if 'error' in r:
+                        return self._send_json(r, 409 if r['error'] == 'name_exists' else 422)
+                    return self._send_json(r, 201)
+            if path == '/api/string-models' and method == 'GET':
+                return self._send_json(list_string_models(conn))
+            if path == '/api/string-changes' and method == 'GET':
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    gid = (qs.get('guitar_id') or [None])[0]
+                    limit = int((qs.get('limit') or ['1000'])[0])
+                    offset = int((qs.get('offset') or ['0'])[0])
+                    r = list_string_changes(
+                        conn, guitar_id=gid,
+                        date_from=(qs.get('from') or [None])[0],
+                        date_to=(qs.get('to') or [None])[0],
+                        active_only=(qs.get('active_only') or ['0'])[0] in ('1', 'true', 'yes'),
+                        limit=limit, offset=offset)
+                except (TypeError, ValueError):
+                    return self._send_json({'error': 'bad_request'}, 422)
+                return self._send_json(r)
+            m = re.fullmatch(r'/api/guitars/(\d+)', path)
+            if m:
+                gid = int(m.group(1))
+                if method == 'GET':
+                    r = get_guitar(conn, gid)
+                    return self._send_json(r if r else {'error': 'not_found'}, 200 if r else 404)
+                if method == 'PUT':
+                    r = update_guitar(conn, gid, data)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    if 'error' in r:
+                        code = 409 if r['error'] in ('name_exists', 'string_count_locked') else 422
+                        return self._send_json(r, code)
+                    return self._send_json(r)
+                if method == 'DELETE':
+                    r = delete_guitar(conn, gid)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    if 'error' in r:
+                        return self._send_json(r, 409 if r['error'] == 'has_history' else 422)
+                    return self._send_json(r)
+            m = re.fullmatch(r'/api/guitars/(\d+)/changes', path)
+            if m:
+                gid = int(m.group(1))
+                if method == 'GET':
+                    qs = parse_qs(urlparse(self.path).query)
+                    try:
+                        limit = int((qs.get('limit') or ['500'])[0])
+                        offset = int((qs.get('offset') or ['0'])[0])
+                    except ValueError:
+                        limit = 500
+                        offset = 0
+                    return self._send_json(list_string_changes(conn, guitar_id=gid,
+                                                               limit=limit, offset=offset))
+                if method == 'POST':
+                    r = add_string_change(conn, gid, data)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    if 'error' in r:
+                        code = 409 if r['error'] == 'not_active' else 422
+                        return self._send_json(r, code)
+                    return self._send_json(r, 201)
+            m = re.fullmatch(r'/api/string-changes/(\d+)', path)
+            if m:
+                cid = int(m.group(1))
+                if method == 'PUT':
+                    r = update_string_change(conn, cid, data)
+                    if r is None:
+                        return self._send_json({'error': 'not_found'}, 404)
+                    return self._send_json(r, 422 if 'error' in r else 200)
+                if method == 'DELETE':
+                    r = delete_string_change(conn, cid)
+                    return self._send_json(r if r else {'error': 'not_found'}, 200 if r else 404)
+
             if path == '/api/widgets' and method == 'GET':
                 return self._send_json(WIDGETS)
             if path == '/api/sections':
@@ -610,6 +695,13 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._send_json(r if r else {'error': 'not_found'}, 200 if r else 404)
                 if method == 'DELETE':
                     return self._send_json(delete_item(conn, iid))
+            m = re.fullmatch(r'/api/items/(\d+)/move', path)
+            if m and method == 'POST':
+                r = move_item(conn, int(m.group(1)), data.get('section_id'),
+                              data.get('position'))
+                if r is None or 'error' in (r or {}):
+                    return self._send_json(r or {'error': 'not_found'}, 404)
+                return self._send_json(r)
             m = re.fullmatch(r'/api/items/(\d+)/refresh', path)
             if m and method == 'POST':
                 r = refresh_item_folder(conn, int(m.group(1)))

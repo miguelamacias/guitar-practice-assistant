@@ -158,6 +158,37 @@
         return 'best: ' + best.count + ' days ~(' + fmtDMY(best.start) + ' - ' + fmtDMY(best.end) + ')~';
     }
 
+    const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    // The weekday with the most real practice time in the selected window.
+    // `avg` is the mean for the days actually practised on that weekday; the
+    // global figure is the mean real time per practised day, so both compare
+    // the same thing.
+    function topWeekdayCard(stats) {
+        const activity = stats.activity || [];
+        const totals = new Array(7).fill(0);
+        const counts = new Array(7).fill(0);
+        activity.forEach(function (a) {
+            const seconds = Number(a.seconds) || 0;
+            if (!a.date || seconds <= 0) return;
+            const d = new Date(String(a.date).slice(0, 10) + 'T12:00:00');
+            if (isNaN(d.getTime())) return;
+            const day = d.getDay();
+            totals[day] += seconds;
+            counts[day] += 1;
+        });
+        let best = -1;
+        for (let i = 0; i < 7; i++) {
+            if (counts[i] && (best < 0 || totals[i] > totals[best])) best = i;
+        }
+        if (best < 0) return ['Most practised day', '\u2014', 'no practice yet', 'is-text'];
+        const avg = totals[best] / counts[best];
+        const globalDays = stats.totals && stats.totals.days_practised;
+        const globalAvg = globalDays ? (stats.totals.real_seconds || 0) / globalDays : 0;
+        return ['Most practised day', WEEKDAYS[best].toUpperCase(),
+                fmtDur(Math.round(avg)) + ' avg vs ' + fmtDur(Math.round(globalAvg)) + ' global'];
+    }
+
     function kpiCards(stats) {
         const t = stats.totals || {};
         const st = stats.states || {};
@@ -181,7 +212,7 @@
             ['Wall clock', fmtDur(wall), 'sitting time, pauses included'],
             ['Days practised', dp + ' / ' + dt, 'of the calendar days · ' + dayPct + '%'],
             ['Done exercises', closed ? Math.round(done / closed * 100) + '%' : '—', done + ' of ' + closed],
-            ['Partial exercises', String(st.partial || 0), 'skipped, but with time inside'],
+            topWeekdayCard(stats),
             ['Current streak', streak + (streak === 1 ? ' day' : ' days'), streakNote(best)]
         ];
         // Area cards come from the same by_area block the breakdown uses, so

@@ -56,6 +56,11 @@ body {
 .btn.primary { background: var(--accent); border-color: var(--accent); }
 .btn.danger { color: #ff8888; border-color: #5a2a2a; }
 .btn.small { padding: 4px 8px; font-size: 0.78rem; }
+.btn.small.icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 4px 7px;
+}
+.btn.small.icon-btn .ico { width: 15px; height: 15px; }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .btn.block { width: 100%; margin-top: 12px; }
 /* Create buttons moved to the top of their panel: they need air below them,
@@ -141,6 +146,12 @@ textarea { resize: vertical; min-height: 44px; }
 }
 .section-item:hover { background: var(--hover); }
 .section-item.selected { background: rgba(233, 30, 99, 0.12); border-color: var(--accent); }
+.section-item.is-hidden, .item-row.is-hidden { opacity: 0.55; }
+.item-actions .item-move {
+    max-width: 155px; height: 28px; padding: 0 6px; font-size: 0.72rem;
+    background: #1b1b1b; color: #ddd; border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 5px; cursor: pointer;
+}
 .section-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
 .section-item .sname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Dashboard lane badge (L1/L2 = left column, R = right rail) */
@@ -187,7 +198,7 @@ textarea { resize: vertical; min-height: 44px; }
 /* Form fields that live next to text inputs: same control as the inputs.
    #sLane belongs to the section editor, between the title and subtitle fields.
    #catArea is the Area select of the exercise editor. */
-#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane, #catArea {
+#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane, #catArea, #guitarType {
     background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
     padding: 8px 10px; font-family: inherit; font-size: 0.9rem;
 }
@@ -790,4 +801,66 @@ label.sub-check input { margin: 0; flex: 0 0 auto; }
 .hist-pivot-label { position: relative; }
 .hist-pivot-time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+
+
+/* ---- Guitars tab + shared change dialog ---- */
+.gc-header-note { color: var(--muted); font-size: 0.8rem; }
+.gc-archived-head { margin-top: 18px !important; }
+.gc-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 9px; margin-bottom: 6px;
+    border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; cursor: pointer;
+}
+.gc-item:hover { background: var(--hover); }
+.gc-item.selected { background: rgba(233, 30, 99, 0.12); border-color: var(--accent); }
+.gc-item.is-archived { opacity: 0.66; }
+.gc-item-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.gc-item-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.gc-item-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-item-meta { color: var(--muted); font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gc-badge { font-size: 0.65rem; color: var(--muted); border: 1px solid #444; border-radius: 9px; padding: 1px 6px; }
+.gc-form-grid { display: grid; grid-template-columns: 1fr 90px 80px; gap: 10px; }
+.gc-check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 0.85rem; margin: 4px 0 12px; }
+.gc-check input { accent-color: var(--accent); }
+.gc-history-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 20px 0 8px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 14px; }
+.gc-history-head h2 { margin: 0; font-size: 1.05rem; }
+.gc-pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 0.78rem; }
+.gc-pager .btn:disabled { opacity: 0.4; cursor: default; }
+.gc-hist-row { border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 8px 9px; margin-bottom: 7px; background: var(--panel); }
+.gc-hist-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gc-kind { font-size: 0.68rem; font-weight: 700; border-radius: 9px; padding: 1px 7px; }
+.gc-kind.is-full { background: rgba(76, 175, 80, 0.18); color: #8bd17c; }
+.gc-kind.is-partial { background: rgba(255, 193, 7, 0.14); color: #ffc107; }
+.gc-hist-date { color: var(--muted); font-size: 0.78rem; }
+.gc-hist-main b { font-size: 0.82rem; }
+.gc-hist-notes { color: var(--muted); font-size: 0.78rem; margin-top: 3px; }
+.gc-hist-actions { display: flex; gap: 6px; margin-top: 7px; }
+.gc-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 10000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.gc-modal { width: min(470px, 100%); background: #1e1e1e; border: 1px solid #444; border-radius: 8px; box-shadow: 0 12px 35px rgba(0,0,0,0.55); color: #e0e0e0; font-size: 0.86rem; }
+.gc-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #333; }
+.gc-modal-head h3 { margin: 0; font-size: 1rem; }
+.gc-x { background: transparent; color: #bbb; border: 0; font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.gc-x:hover { color: #fff; }
+.gc-form { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+.gc-guitar-line { display: flex; align-items: center; gap: 6px; padding: 5px 7px; background: #181818; border-radius: 5px; }
+.gc-color-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.gc-muted { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
+.gc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.gc-field { display: flex; flex-direction: column; gap: 4px; color: #bbb; font-size: 0.78rem; }
+.gc-field input, .gc-field select, .gc-field textarea { background: #141414; color: #e0e0e0; border: 1px solid #444; border-radius: 5px; padding: 6px 7px; font: inherit; }
+.gc-field input:focus, .gc-field select:focus, .gc-field textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.gc-field textarea { resize: vertical; }
+.gc-strings { display: flex; flex-direction: column; gap: 4px; }
+.gc-label { color: #bbb; font-size: 0.78rem; }
+.gc-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.gc-chip { display: inline-flex; align-items: center; gap: 3px; background: #181818; border: 1px solid #3b3b3b; border-radius: 5px; padding: 3px 6px; cursor: pointer; font-size: 0.76rem; }
+.gc-chip input { accent-color: var(--accent); margin: 0; }
+.gc-error { color: #ff8888; background: rgba(244, 67, 54, 0.12); border: 1px solid rgba(244, 67, 54, 0.35); border-radius: 5px; padding: 6px 8px; font-size: 0.78rem; }
+.gc-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.gc-btn { background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 7px 12px; font-weight: 600; cursor: pointer; }
+.gc-btn:hover:not(:disabled) { background: #3a3a3a; }
+.gc-btn.gc-save { background: var(--accent); border-color: var(--accent); color: #111; }
+.gc-btn:disabled { opacity: 0.5; cursor: default; }
 

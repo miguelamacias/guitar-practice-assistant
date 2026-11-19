@@ -467,6 +467,10 @@
             padding-right: 5px;
             transition: max-height 0.3s ease-in-out;
         }
+        /* The guitar widget carries cards + two calendars; give it more room
+           than a normal widget, while the inner lists keep their own pagination. */
+        .subfolder-content-guitars { max-height: 680px; }
+
 		
         .subfolder-content.collapsed {
             max-height: 0;
@@ -2274,4 +2278,133 @@ body.has-player .youtube-modal { bottom: 78px; }
 .chord-name { font-size: 1.05rem; font-weight: 800; line-height: 1.15; }
 .chord-tones { font-size: 0.67rem; color: #7f7f7f; letter-spacing: 0.04em; white-space: nowrap; }
 
+
+
+/* ---- Guitar maintenance widget + change dialog ---- */
+.guitars-widget {
+    background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px; padding: 12px 14px; margin: 5px 0;
+    color: var(--text); font-size: 0.86rem;
+}
+.gw-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.gw-heading { display: flex; flex-direction: column; gap: 2px; }
+.gw-title { font-weight: 700; color: var(--accent); font-size: 0.95rem; }
+.gw-sub { color: var(--muted); font-size: 0.76rem; }
+.gw-btn {
+    background: var(--hover-bg); color: #fff; border: 1px solid #444; border-radius: 5px;
+    padding: 6px 9px; font-size: 0.78rem; cursor: pointer; font-weight: 600;
+}
+.gw-btn:hover:not(:disabled) { background: #3a3a3a; }
+.gw-btn:disabled { opacity: 0.4; cursor: default; }
+.gw-cards { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 9px; }
+.gw-card {
+    background: #202020; border: 1px solid #333; border-left: 3px solid var(--guitar-color);
+    border-radius: 6px; padding: 7px 8px; display: flex; align-items: center;
+    gap: 8px; min-width: 0;
+}
+.gw-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.gw-card-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.gw-card-info {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    color: #aaa; font-size: 0.72rem; line-height: 1.25; min-width: 0;
+}
+.gw-card-info span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gw-color, .gc-color-dot, .gc-item-dot {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--guitar-color, #ff9800);
+    flex: 0 0 auto; display: inline-block;
+}
+.gw-name { font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gw-state { font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
+.gw-tone-good { color: #8bd17c; }
+.gw-tone-warn { color: #ffc107; }
+.gw-tone-bad { color: #ff7777; }
+.gw-last-full { color: #ddd; }
+.gw-icon-btn {
+    width: 28px; height: 28px; padding: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.gw-icon-btn svg { width: 15px; height: 15px; }
+.gw-empty { color: var(--muted); font-size: 0.8rem; padding: 8px 2px; }
+.gw-error-text { color: #ff8888; }
+.gw-calendar { margin-top: 10px; border-top: 1px solid #333; padding-top: 8px; }
+.gw-cal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    max-width: 600px; margin: 0 auto 6px;
+}
+.gw-month { font-weight: 700; color: #ddd; font-size: 0.78rem; }
+.gw-nav {
+    background: transparent; color: #ccc; border: 1px solid #444; border-radius: 4px;
+    width: 22px; height: 20px; cursor: pointer; font-size: 0.95rem; line-height: 1;
+}
+.gw-nav:hover { background: var(--hover-bg); color: #fff; }
+.gw-months {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px; max-width: 600px; margin: 0 auto;
+}
+.gw-month-panel { min-width: 0; }
+.gw-month-name { text-align: center; font-size: 0.7rem; font-weight: 700; color: #ddd; margin-bottom: 3px; }
+.gw-dow, .gw-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.gw-dow { color: var(--muted); font-size: 0.55rem; text-align: center; margin-bottom: 2px; }
+.gw-day {
+    min-height: 26px; background: #1a1a1a; color: #ccc; border: 1px solid #2e2e2e;
+    border-radius: 3px; cursor: pointer; padding: 1px 1px 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: flex-start; gap: 0;
+}
+.gw-day:hover { border-color: #555; background: #262626; }
+.gw-day-blank { background: transparent; border-color: transparent; cursor: default; }
+.gw-day.gw-today { border-color: var(--accent); }
+.gw-day.gw-selected { background: rgba(255, 128, 64, 0.16); border-color: var(--accent); }
+.gw-day-num { font-size: 0.64rem; font-weight: 600; line-height: 1.1; }
+.gw-dots { display: flex; align-items: center; justify-content: center; gap: 1px; min-height: 4px; }
+
+.gw-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--guitar-color, #ff9800); }
+.gw-dot.gw-partial { background: transparent; border: 1px solid var(--guitar-color, #ff9800); }
+.gw-more { font-size: 0.5rem; color: var(--muted); line-height: 1; }
+.gw-day-detail { margin-top: 9px; border-top: 1px dashed #333; padding-top: 7px; }
+.gw-detail-head { color: #ddd; font-size: 0.78rem; font-weight: 600; margin-bottom: 5px; }
+.gw-detail-row {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.76rem;
+}
+.gw-detail-row b { color: #eee; }
+.gw-kind { color: var(--muted); font-size: 0.72rem; }
+.gw-detail-text { color: #bbb; }
+.gw-detail-note { flex-basis: 100%; color: var(--muted); font-size: 0.72rem; padding-left: 15px; }
+
+/* Shared change dialog (widget + manager) */
+.gc-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 10000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.gc-modal {
+    width: min(470px, 100%); background: #1e1e1e; border: 1px solid #444;
+    border-radius: 8px; box-shadow: 0 12px 35px rgba(0,0,0,0.55); color: #e0e0e0;
+    font-size: 0.86rem;
+}
+.gc-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #333; }
+.gc-modal-head h3 { margin: 0; font-size: 1rem; }
+.gc-x { background: transparent; color: #bbb; border: 0; font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.gc-x:hover { color: #fff; }
+.gc-form { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 9px; }
+.gc-guitar-line { display: flex; align-items: center; gap: 6px; padding: 5px 7px; background: #181818; border-radius: 5px; }
+.gc-muted { color: var(--muted); font-size: 0.75rem; margin-left: auto; }
+.gc-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.gc-field { display: flex; flex-direction: column; gap: 4px; color: #bbb; font-size: 0.78rem; }
+.gc-field input, .gc-field select, .gc-field textarea {
+    background: #141414; color: #e0e0e0; border: 1px solid #444; border-radius: 5px;
+    padding: 6px 7px; font: inherit;
+}
+.gc-field input:focus, .gc-field select:focus, .gc-field textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+.gc-field textarea { resize: vertical; }
+.gc-strings { display: flex; flex-direction: column; gap: 4px; }
+.gc-label { color: #bbb; font-size: 0.78rem; }
+.gc-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.gc-chip { display: inline-flex; align-items: center; gap: 3px; background: #181818; border: 1px solid #3b3b3b; border-radius: 5px; padding: 3px 6px; cursor: pointer; font-size: 0.76rem; }
+.gc-chip input { accent-color: var(--accent); margin: 0; }
+.gc-error { color: #ff8888; background: rgba(244, 67, 54, 0.12); border: 1px solid rgba(244, 67, 54, 0.35); border-radius: 5px; padding: 6px 8px; font-size: 0.78rem; }
+.gc-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.gc-btn { background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 7px 12px; font-weight: 600; cursor: pointer; }
+.gc-btn:hover:not(:disabled) { background: #3a3a3a; }
+.gc-btn.gc-save { background: var(--accent); border-color: var(--accent); color: #111; }
+.gc-btn:disabled { opacity: 0.5; cursor: default; }
 

@@ -479,7 +479,21 @@
     function togglePlayback() {
         const player = getAudioEl();
         if (!player || !player.getAttribute('src')) return false;
-        if (player.paused) { player.play(); } else { player.pause(); }
+        // Space after a finished track must start it again from 0, even when
+        // the UI/countdown has already been reset and the element is paused.
+        if (player.ended || (isFinite(player.duration) && player.duration > 0 &&
+            player.currentTime >= player.duration - 0.01)) {
+            player.currentTime = 0;
+            const started = player.play();
+            if (started && typeof started.catch === 'function') started.catch(function () {});
+            return true;
+        }
+        if (player.paused) {
+            const started = player.play();
+            if (started && typeof started.catch === 'function') started.catch(function () {});
+        } else {
+            player.pause();
+        }
         return true;
     }
 

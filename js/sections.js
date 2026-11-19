@@ -61,6 +61,7 @@
         else if (it.url === 'delay') html = GPH.widgets.DELAY_HTML;
         else if (it.url === 'song') html = GPH.widgets.SONG_HTML;
         else if (it.url === 'transposer') html = GPH.widgets.TRANSPOSER_HTML;
+        else if (it.url === 'guitars' && GPH.guitarsWidget) html = GPH.guitarsWidget.HTML;
         if (!html) { li.textContent = 'Unknown widget: ' + it.url; return li; }
         if (rendered[it.url]) {
             const warn = document.createElement('span');
@@ -76,9 +77,10 @@
         const sp = document.createElement('span'); sp.appendChild(labelNodes(it)); tog.appendChild(sp);
 
         const content = document.createElement('div');
-        content.className = (it.url === 'drums')
-            ? 'subfolder-content-drum-machine collapsed'
-            : 'subfolder-content collapsed';
+        let contentClass = 'subfolder-content';
+        if (it.url === 'drums') contentClass = 'subfolder-content-drum-machine';
+        else if (it.url === 'guitars') contentClass += ' subfolder-content-guitars';
+        content.className = contentClass + ' collapsed';
         content.innerHTML = html;
         applySubState(tog, content, 'widget-' + it.url, loadSubCollapsed());
 
@@ -87,6 +89,7 @@
         if (it.url === 'delay') GPH.widgets.initDelay(content);
         if (it.url === 'song') GPH.widgets.initSong(content);
         if (it.url === 'transposer') GPH.widgets.initTransposer(content);
+        if (it.url === 'guitars' && GPH.guitarsWidget) GPH.guitarsWidget.init(content);
         return li;
     }
 
@@ -196,6 +199,7 @@
         const rendered = {};
         const collapsedMap = loadCollapsed();
         sections.forEach(function (sec) {
+            if (sec.hidden) return;
             const card = document.createElement('div');
             card.className = 'section-card dyn-section';
             card.dataset.secId = String(sec.id);
@@ -203,7 +207,10 @@
             const h2 = document.createElement('h2'); h2.className = 'section-heading'; h2.textContent = sec.title; card.appendChild(h2);
             const ul = document.createElement('ul'); ul.className = 'link-list';
             if (collapsedMap[sec.id]) { h2.classList.add('collapsed'); ul.classList.add('collapsed'); }
-            (sec.items || []).forEach(function (it) { ul.appendChild(renderItemLi(it, rendered)); });
+            (sec.items || []).forEach(function (it) {
+                if (it.hidden) return;
+                ul.appendChild(renderItemLi(it, rendered));
+            });
             card.appendChild(ul);
             const idx = (sec.lane >= 1 && sec.lane <= 3) ? sec.lane - 1 : 0;
             const target = lanes[idx] || lanes[0];

@@ -66,16 +66,20 @@
         if (h) h.classList.toggle('view-hidden', which !== 'history');
         const x = $('viewExercises');
         if (x) x.classList.toggle('view-hidden', which !== 'exercises');
+        const gu = $('viewGuitars');
+        if (gu) gu.classList.toggle('view-hidden', which !== 'guitars');
         $('tabRoutines').classList.toggle('active', which === 'routines');
         $('tabSections').classList.toggle('active', which === 'sections');
         const tabA = $('tabAbout'); if (tabA) tabA.classList.toggle('active', which === 'about');
         const tabH = $('tabHistory'); if (tabH) tabH.classList.toggle('active', which === 'history');
         const tabE = $('tabExercises'); if (tabE) tabE.classList.toggle('active', which === 'exercises');
+        const tabG = $('tabGuitars'); if (tabG) tabG.classList.toggle('active', which === 'guitars');
         if (which === 'history' && GPH.history) GPH.history.show();
         if (which === 'exercises' && GPH.exercises) {
             GPH.exercises.show();
             if (GPH.paths) GPH.paths.show();
         }
+        if (which === 'guitars' && GPH.guitarsManager) GPH.guitarsManager.show();
         if (which === 'about' && GPH.areas) GPH.areas.load();
     }
 
@@ -101,7 +105,8 @@
         }
         sections.forEach(function (s, index) {
             const it = document.createElement('div');
-            it.className = 'section-item has-drag' + (s.id === selectedId ? ' selected' : '');
+            it.className = 'section-item has-drag' + (s.id === selectedId ? ' selected' : '') +
+                (s.hidden ? ' is-hidden' : '');
             it.dataset.id = String(s.id);
             it.appendChild(GPH.mgr.dragHandle('Drag to reorder this section'));
             const dot = document.createElement('span'); dot.className = 'section-dot'; dot.style.background = s.color || '#888'; it.appendChild(dot);
@@ -111,6 +116,10 @@
             lane.title = (s.lane || 1) === 3 ? 'Right rail' : ('Left column, lane ' + (s.lane || 1));
             it.appendChild(lane);
             const nm = document.createElement('span'); nm.className = 'sname'; nm.textContent = s.title; it.appendChild(nm);
+            const hide = mkIconBtn(s.hidden ? 'eye-off' : 'eye',
+                s.hidden ? 'Show this section' : 'Hide this section', null,
+                function (ev) { ev.stopPropagation(); toggleSectionHidden(s); });
+            it.appendChild(hide);
             // Arrows reorder inside the lane only; the column is the select in the editor.
             const prevSec = sections[index - 1];
             const nextSec = sections[index + 1];
@@ -278,6 +287,39 @@
         await applySectionOrder(arr.map(function (s) { return s.id; }));
     }
 
+    async function toggleSectionHidden(section) {
+        const next = section.hidden ? 0 : 1;
+        try {
+            await api('PUT', '/api/sections/' + section.id, { hidden: next });
+            section.hidden = next;
+            if (current && current.id === section.id) current.hidden = next;
+            renderSectionList();
+            notify();
+        } catch (e) { toast('Error: ' + e.message, true); }
+    }
+
+    async function toggleItemHidden(item, row) {
+        const next = item.hidden ? 0 : 1;
+        try {
+            await api('PUT', '/api/items/' + item.id, { hidden: next });
+            item.hidden = next;
+            row.classList.toggle('is-hidden', !!next);
+            notify();
+        } catch (e) { toast('Error: ' + e.message, true); }
+    }
+
+    async function moveItemTo(item, targetSection) {
+        const target = Number(targetSection);
+        if (!target) return;
+        try {
+            await savePendingQuiet();
+            await api('POST', '/api/items/' + item.id + '/move', { section_id: target });
+            notify();
+            toast('Item moved');
+            await loadSections(target);
+        } catch (e) { toast('Error: ' + e.message, true); }
+    }
+
     function renderItems() {
         const wrap = $('itemList'); wrap.innerHTML = '';
         const items = current.items || [];
@@ -293,6 +335,13 @@
         const b = document.createElement('button');
         b.className = 'btn small' + (cls ? ' ' + cls : '');
         b.textContent = txt; b.title = title; b.addEventListener('click', fn);
+        return b;
+    }
+
+    function mkIconBtn(name, title, cls, fn) {
+        const b = mkBtn('', title, cls, fn);
+        b.classList.add('icon-btn');
+        b.innerHTML = GPH.icons.get(name);
         return b;
     }
 
@@ -314,7 +363,8 @@
     }
 
     function buildItemRow(it, idx, total) {
-        const row = document.createElement('div'); row.className = 'item-row has-drag';
+        const row = document.createElement('div');
+        row.className = 'item-row has-drag' + (it.hidden ? ' is-hidden' : '');
         row.dataset.iid = String(it.id);
         row.dataset.kind = it.kind || '';
         row.appendChild(GPH.mgr.dragHandle('Drag to reorder this item'));
@@ -363,6 +413,28 @@
         }
         const up = mkBtn('↑', 'Move up', null, function () { moveItem(idx, -1); }); up.disabled = idx === 0;
         const down = mkBtn('↓', 'Move down', null, function () { moveItem(idx, 1); }); down.disabled = idx === total - 1;
+        const hide = mkIconBtn(it.hidden ? 'eye-off' : 'eye',
+            it.hidden ? 'Show this item' : 'Hide this item', null,
+            function (ev) { ev.stopPropagation(); toggleItemHidden(it, row); });
+        const move = document.createElement('select');
+        move.className = 'item-move';
+        move.title = 'Move to another section';
+        const placeholder = document.createElement('option');
+        placeholder.value = ''; placeholder.textContent = 'Move to…';
+        move.appendChild(placeholder);
+        sections.forEach(function (sec) {
+            if (!current || sec.id === current.id) return;
+            const opt = document.createElement('option');
+            opt.value = String(sec.id);
+            opt.textContent = sec.title + (sec.hidden ? ' (hidden)' : '');
+            move.appendChild(opt);
+        });
+        move.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        move.addEventListener('change', function () {
+            if (this.value) moveItemTo(it, this.value);
+        });
+        actions.appendChild(hide);
+        actions.appendChild(move);
         actions.appendChild(up); actions.appendChild(down);
         actions.appendChild(mkBtn('🗑', 'Delete', 'danger', function () { delItem(it.id); }));
 
@@ -692,6 +764,8 @@
         $('sColor').addEventListener('change', applySelectColor);
         $('tabRoutines').addEventListener('click', function () { showView('routines'); });
         $('tabSections').addEventListener('click', function () { showView('sections'); });
+        const tabGuitars = $('tabGuitars');
+        if (tabGuitars) tabGuitars.addEventListener('click', function () { showView('guitars'); });
         $('tabAbout').addEventListener('click', function () { showView('about'); });
         const tabHistory = $('tabHistory');
         if (tabHistory) tabHistory.addEventListener('click', function () { showView('history'); });
@@ -700,7 +774,7 @@
         // Deep link from the app (chart icon on the welcome card): manager.html?view=history
         try {
             const want = new URLSearchParams(location.search).get('view');
-            if (want && ['routines', 'sections', 'history', 'about', 'exercises'].indexOf(want) >= 0) showView(want);
+            if (want && ['routines', 'sections', 'history', 'about', 'exercises', 'guitars'].indexOf(want) >= 0) showView(want);
         } catch (e) { /* noop */ }
         $('newSectionBtn').addEventListener('click', newSection);
         const resetLayoutBtn = $('resetLayoutBtn');

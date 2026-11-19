@@ -10,7 +10,9 @@
         prev: '<path d="M6.4 5v14"/><path d="M18.4 5.4v13.2L9.1 12z" fill="currentColor" stroke="none"/>',
         next: '<path d="M17.6 5v14"/><path d="M5.6 5.4v13.2L14.9 12z" fill="currentColor" stroke="none"/>',
         check: '<path d="M5 12.6l4.2 4.2L19 7"/>',
-        /* Curved back arrow: "park this routine and go back". */
+        /* Visibility: eye / eye-off for hide-without-delete controls. */
+        eye: '<path d="M2.6 12S6.3 5.8 12 5.8 21.4 12 21.4 12 17.7 18.2 12 18.2 2.6 12 2.6 12z"/><circle cx="12" cy="12" r="2.8"/>',
+        'eye-off': '<path d="M3.2 3.2l17.6 17.6"/><path d="M9.8 6.2A8.9 8.9 0 0 1 12 6c5.7 0 9.4 6 9.4 6a16.2 16.2 0 0 1-3.5 3.9"/><path d="M6.1 7.1A16.4 16.4 0 0 0 2.6 12s3.7 6 9.4 6c1.4 0 2.7-.4 3.8-.9"/><path d="M10.3 10.3a2.5 2.5 0 0 0 3.4 3.4"/>',
         undo: '<path d="M9 5.4 4.2 10.2 9 15"/><path d="M4.2 10.2h9.6a5.4 5.4 0 0 1 0 10.8H9.4"/>',
         chevrons: '<path d="M7.6 6.6L13 12l-5.4 5.4"/><path d="M13.4 6.6L18.8 12l-5.4 5.4"/>',
         'check-box': '<rect x="4.2" y="4.2" width="15.6" height="15.6" rx="3"/><path d="M8 12.3l2.9 2.9 5.4-5.6"/>',

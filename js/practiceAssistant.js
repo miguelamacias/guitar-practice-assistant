@@ -1639,18 +1639,48 @@
             // session log keeps the exercise that was practised.
             ex.catalog_exercise_id = cid;
             ex.catalog_exercise = null;
-            if (cid) {
-                const found = (catalogCache || []).filter(function (c) { return c.id === cid; })[0];
+            ex.recursos = [];
+            const finish = function (cat) {
+                const found = cat || picked;
                 if (found) {
                     ex.catalog_exercise = { id: found.id, name: found.name,
                                             description: found.description || '' };
+                    // Read the live resources, not a stale catalog cache: a
+                    // Manager edit must be visible in the running session too.
+                    ex.recursos = found.resources || [];
                 }
+                // Keep the legacy mirror in sync: `resourcesOf` falls back to it
+                // when an exercise has no resources at all.
+                const first = ex.recursos[0] || {};
+                ex.recurso_kind = first.kind || '';
+                ex.recurso_url = first.url || '';
+                ex.recurso_bpm = first.bpm || 0;
+                ex.recurso_label = first.label || '';
+                if (body.area_id) {
+                    ex.area_id = body.area_id;
+                    ex.area = (picked && picked.area) || '';
+                }
+                // The resource changed under the same slot. Close the old one and
+                // either apply the new one now (timer running) or let Play do it.
+                const wasApplied = resourceApplied;
+                if (wasApplied) {
+                    resourceApplied = false;
+                    stopCurrentExerciseResource();
+                }
+                renderSlotHeader();
+                updateResourceTag(ex);
+                if (isExerciseRunning && wasApplied) {
+                    applyExerciseResource(ex);
+                    resourceApplied = true;
+                }
+            };
+            if (cid) {
+                // A fresh detail request also bypasses a catalog cache that may
+                // predate the last Manager save.
+                fetchCatalogExercise(cid).then(finish).catch(function () { finish(picked); });
+            } else {
+                finish(null);
             }
-            if (body.area_id) {
-                ex.area_id = body.area_id;
-                ex.area = (picked && picked.area) || '';
-            }
-            renderSlotHeader();
         }).catch(function (e) {
             renderSlotHeader();
             alert('Could not change the exercise (' + e.message + ')');
@@ -2261,6 +2291,17 @@
             return [{ kind: ex.recurso_kind, url: ex.recurso_url || '', bpm: ex.recurso_bpm || 0, label: ex.recurso_label || '' }];
         }
         return [];
+    }
+
+    // Stops whatever the current exercise had loaded before a new resource is
+    // applied. Changing the material of the same slot is an explicit user
+    // action, so the old track/tools must not keep running behind the new one.
+    function stopCurrentExerciseResource() {
+        if (GPH.players && GPH.players.closeAudio) GPH.players.closeAudio();
+        if (GPH.players && GPH.players.closeYouTube) GPH.players.closeYouTube();
+        if (GPH.metronome && GPH.metronome.stopMetronome) GPH.metronome.stopMetronome();
+        if (GPH.drumMachine && GPH.drumMachine.stopDrumMachine) GPH.drumMachine.stopDrumMachine();
+        resourceAudioActive = false;
     }
 
     function applyExerciseResource(ex) {

@@ -120,7 +120,8 @@ CREATE TABLE IF NOT EXISTS sections (
     subtitle TEXT DEFAULT '',
     accent_color TEXT DEFAULT '',
     position INTEGER DEFAULT 0,
-    full_width INTEGER DEFAULT 0
+    full_width INTEGER DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS section_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,8 +131,37 @@ CREATE TABLE IF NOT EXISTS section_items (
     tag TEXT DEFAULT '',
     url TEXT DEFAULT '',
     position INTEGER DEFAULT 0,
-    meta_json TEXT DEFAULT ''
+    meta_json TEXT DEFAULT '',
+    hidden INTEGER NOT NULL DEFAULT 0
 );
+-- Guitar setup and string maintenance. IDs stay integers like the rest of the
+-- app; `date` is a local calendar date (YYYY-MM-DD), while timestamps are UTC.
+CREATE TABLE IF NOT EXISTS guitars (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    type         TEXT NOT NULL DEFAULT 'electric',
+    string_count INTEGER NOT NULL DEFAULT 6,
+    color_hex    TEXT NOT NULL DEFAULT '#ff9800',
+    active       INTEGER NOT NULL DEFAULT 1,
+    notes        TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS string_changes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    guitar_id       INTEGER NOT NULL REFERENCES guitars(id) ON DELETE CASCADE,
+    date            TEXT NOT NULL,
+    type            TEXT NOT NULL DEFAULT 'full',
+    changed_strings TEXT NOT NULL DEFAULT '[]',
+    string_model    TEXT NOT NULL DEFAULT '',
+    notes           TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_string_changes_guitar_date
+    ON string_changes(guitar_id, date DESC);
+CREATE INDEX IF NOT EXISTS idx_string_changes_date
+    ON string_changes(date);
 CREATE TABLE IF NOT EXISTS song_folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -522,6 +552,8 @@ def _migrate(conn):
             if name not in have:
                 conn.execute('ALTER TABLE %s ADD COLUMN %s %s' % (table, name, ddl))
 
+    add_cols('sections', [('hidden', 'INTEGER NOT NULL DEFAULT 0')])
+    add_cols('section_items', [('hidden', 'INTEGER NOT NULL DEFAULT 0')])
     add_cols('routine_session_items', [('elapsed_seconds', 'INTEGER NOT NULL DEFAULT 0'),
                                        ('started_at', 'TEXT')])
     add_cols('routine_sessions', [('real_seconds', 'INTEGER NOT NULL DEFAULT 0'),
@@ -1061,6 +1093,7 @@ WIDGETS = [
     {'key': 'delay', 'name': 'Delay Calculator'},
     {'key': 'transposer', 'name': 'Chord Transposer'},
     {'key': 'song', 'name': 'Song Info (BPM/Key)'},
+    {'key': 'guitars', 'name': 'Guitar Maintenance'},
 ]
 AUDIO_EXTS = ('.mp3', '.m4a', '.wav', '.ogg', '.flac')
 COLORS = ['#ff9800', '#2196f3', '#4caf50', '#f44336', '#e91e63',
@@ -1108,27 +1141,331 @@ def _is_media_allowed(conn, target):
 
 def api_sections(conn):
     secs = conn.execute(
-        'SELECT id, title, subtitle, accent_color, position, full_width, lane FROM sections'
+        'SELECT id, title, subtitle, accent_color, position, full_width, lane, hidden FROM sections'
         ' ORDER BY lane, position, id'
     ).fetchall()
     out = []
     for s in secs:
         items = conn.execute(
-            'SELECT id, kind, label, tag, url, position, meta_json FROM section_items '
+            'SELECT id, kind, label, tag, url, position, meta_json, hidden FROM section_items '
             'WHERE section_id=? ORDER BY position, id', (s['id'],)
         ).fetchall()
         out.append({
             'id': s['id'], 'title': s['title'], 'description': s['subtitle'],
             'color': s['accent_color'], 'position': s['position'], 'full_width': s['full_width'],
-            'lane': s['lane'],
+            'lane': s['lane'], 'hidden': s['hidden'],
             'items': [
                 {'id': i['id'], 'kind': i['kind'], 'label': i['label'], 'tag': i['tag'],
-                 'url': i['url'], 'position': i['position'],
+                 'url': i['url'], 'position': i['position'], 'hidden': i['hidden'],
                  'meta': json.loads(i['meta_json'] or '{}')}
                 for i in items
             ],
         })
     return out
+
+
+GUITAR_TYPES = ('electric', 'acoustic', 'classical', 'bass', 'twelve', 'other')
+GUITAR_DEFAULT_STRINGS = {
+    'electric': 6, 'acoustic': 6, 'classical': 6,
+    'bass': 4, 'twelve': 12, 'other': 6,
+}
+GUITAR_COLOR_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+
+def _guitar_row_dict(row):
+    changed = []
+    if row['last_partial_changed']:
+        try:
+            changed = json.loads(row['last_partial_changed'])
+            changed = [int(x) for x in changed] if isinstance(changed, list) else []
+        except (TypeError, ValueError):
+            changed = []
+    return {
+        'id': row['id'], 'name': row['name'], 'type': row['type'],
+        'string_count': row['string_count'], 'color_hex': row['color_hex'],
+        'active': 1 if row['active'] else 0, 'notes': row['notes'] or '',
+        'created_at': row['created_at'], 'updated_at': row['updated_at'],
+        'changes_count': row['changes_count'] or 0,
+        'last_full_date': row['last_full_date'],
+        'last_partial': ({
+            'date': row['last_partial_date'],
+            'changed_strings': changed,
+            'string_model': row['last_partial_model'] or '',
+        } if row['last_partial_date'] else None),
+    }
+
+
+def _guitar_query(where=''):
+    return (
+        'SELECT g.*,'
+        ' (SELECT COUNT(*) FROM string_changes c WHERE c.guitar_id=g.id) AS changes_count,'
+        ' (SELECT MAX(c.date) FROM string_changes c'
+        "   WHERE c.guitar_id=g.id AND c.type='full') AS last_full_date,"
+        ' (SELECT c.date FROM string_changes c'
+        "   WHERE c.guitar_id=g.id AND c.type='partial'"
+        '   ORDER BY c.date DESC, c.id DESC LIMIT 1) AS last_partial_date,'
+        ' (SELECT c.changed_strings FROM string_changes c'
+        "   WHERE c.guitar_id=g.id AND c.type='partial'"
+        '   ORDER BY c.date DESC, c.id DESC LIMIT 1) AS last_partial_changed,'
+        ' (SELECT c.string_model FROM string_changes c'
+        "   WHERE c.guitar_id=g.id AND c.type='partial'"
+        '   ORDER BY c.date DESC, c.id DESC LIMIT 1) AS last_partial_model'
+        ' FROM guitars g ' + where
+    )
+
+
+def list_guitars(conn, include_archived=False):
+    where = '' if include_archived else 'WHERE g.active=1'
+    rows = conn.execute(_guitar_query(where) +
+                        ' ORDER BY g.name COLLATE NOCASE, g.id', ()).fetchall()
+    return [_guitar_row_dict(r) for r in rows]
+
+
+def get_guitar(conn, gid):
+    row = conn.execute(_guitar_query('WHERE g.id=?'), (gid,)).fetchone()
+    return _guitar_row_dict(row) if row else None
+
+
+def create_guitar(conn, data):
+    name = str(data.get('name') or '').strip()[:100]
+    if not name:
+        return {'error': 'missing_name'}
+    gtype = str(data.get('type') or 'electric').strip().lower()
+    if gtype not in GUITAR_TYPES:
+        return {'error': 'bad_type'}
+    try:
+        count = int(data.get('string_count', GUITAR_DEFAULT_STRINGS[gtype]))
+    except (TypeError, ValueError):
+        return {'error': 'bad_string_count'}
+    if count <= 0 or count > 24:
+        return {'error': 'bad_string_count'}
+    color = str(data.get('color_hex') or '#ff9800').strip()
+    if not GUITAR_COLOR_RE.match(color):
+        return {'error': 'bad_color'}
+    try:
+        cur = conn.execute(
+            'INSERT INTO guitars(name, type, string_count, color_hex, active, notes)'
+            ' VALUES(?,?,?,?,?,?)',
+            (name, gtype, count, color, 1 if data.get('active', True) else 0,
+             str(data.get('notes') or '')[:2000]))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return {'error': 'name_exists'}
+    return get_guitar(conn, cur.lastrowid)
+
+
+def update_guitar(conn, gid, data):
+    row = conn.execute('SELECT * FROM guitars WHERE id=?', (gid,)).fetchone()
+    if row is None:
+        return None
+    name = str(data.get('name', row['name']) or '').strip()[:100]
+    if not name:
+        return {'error': 'missing_name'}
+    gtype = str(data.get('type', row['type']) or row['type']).strip().lower()
+    if gtype not in GUITAR_TYPES:
+        return {'error': 'bad_type'}
+    try:
+        count = int(data.get('string_count', row['string_count']))
+    except (TypeError, ValueError):
+        return {'error': 'bad_string_count'}
+    if count <= 0 or count > 24:
+        return {'error': 'bad_string_count'}
+    if count != row['string_count']:
+        changes = conn.execute('SELECT COUNT(*) n FROM string_changes WHERE guitar_id=?',
+                               (gid,)).fetchone()['n']
+        if changes:
+            return {'error': 'string_count_locked'}
+    color = str(data.get('color_hex', row['color_hex']) or row['color_hex']).strip()
+    if not GUITAR_COLOR_RE.match(color):
+        return {'error': 'bad_color'}
+    active = row['active'] if data.get('active') is None else (1 if data.get('active') else 0)
+    notes = str(data.get('notes', row['notes']) or '')[:2000]
+    try:
+        conn.execute(
+            'UPDATE guitars SET name=?, type=?, string_count=?, color_hex=?,'
+            ' active=?, notes=?, updated_at=? WHERE id=?',
+            (name, gtype, count, color, active, notes, _utc_now(), gid))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return {'error': 'name_exists'}
+    return get_guitar(conn, gid)
+
+
+def delete_guitar(conn, gid):
+    row = conn.execute('SELECT id FROM guitars WHERE id=?', (gid,)).fetchone()
+    if row is None:
+        return None
+    changes = conn.execute('SELECT COUNT(*) n FROM string_changes WHERE guitar_id=?',
+                           (gid,)).fetchone()['n']
+    if changes:
+        return {'error': 'has_history'}
+    conn.execute('DELETE FROM guitars WHERE id=?', (gid,))
+    conn.commit()
+    return {'deleted': gid}
+
+
+def _change_date(value):
+    try:
+        d = datetime.strptime(str(value or '')[:10], '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return None
+    if d > datetime.now().date():
+        return None
+    return d.isoformat()
+
+
+def _clean_changed_strings(value, count, kind):
+    if not isinstance(value, list):
+        return None, 'bad_strings'
+    out = []
+    for raw in value:
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            return None, 'bad_strings'
+        if n < 1 or n > count or n in out:
+            return None, 'bad_strings'
+        out.append(n)
+    out.sort()
+    if kind == 'partial':
+        if not out:
+            return None, 'missing_strings'
+        if len(out) >= count:
+            return None, 'all_strings'
+    else:
+        out = []
+    return out, None
+
+
+def _change_dict(row):
+    try:
+        changed = json.loads(row['changed_strings'] or '[]')
+        changed = [int(x) for x in changed] if isinstance(changed, list) else []
+    except (TypeError, ValueError):
+        changed = []
+    keys = row.keys()
+    return {
+        'id': row['id'], 'guitar_id': row['guitar_id'],
+        'guitar_name': row['guitar_name'] if 'guitar_name' in keys else '',
+        'guitar_color': row['guitar_color'] if 'guitar_color' in keys else '',
+        'date': row['date'], 'type': row['type'],
+        'changed_strings': changed, 'string_model': row['string_model'] or '',
+        'notes': row['notes'] or '', 'created_at': row['created_at'],
+        'updated_at': row['updated_at'],
+    }
+
+
+def add_string_change(conn, gid, data):
+    guitar = conn.execute('SELECT * FROM guitars WHERE id=?', (gid,)).fetchone()
+    if guitar is None:
+        return None
+    if not guitar['active']:
+        return {'error': 'not_active'}
+    date = _change_date(data.get('date'))
+    if not date:
+        return {'error': 'bad_date'}
+    kind = str(data.get('type') or 'full').strip().lower()
+    if kind not in ('full', 'partial'):
+        return {'error': 'bad_type'}
+    changed, err = _clean_changed_strings(data.get('changed_strings') or [],
+                                         guitar['string_count'], kind)
+    if err:
+        return {'error': err}
+    model = str(data.get('string_model') or '').strip()[:200]
+    if kind == 'full' and not model:
+        return {'error': 'missing_model'}
+    cur = conn.execute(
+        'INSERT INTO string_changes(guitar_id, date, type, changed_strings, string_model, notes)'
+        ' VALUES(?,?,?,?,?,?)',
+        (gid, date, kind, json.dumps(changed), model,
+         str(data.get('notes') or '')[:2000]))
+    conn.commit()
+    row = conn.execute(
+        'SELECT c.*, g.name guitar_name, g.color_hex guitar_color FROM string_changes c'
+        ' JOIN guitars g ON g.id=c.guitar_id WHERE c.id=?', (cur.lastrowid,)).fetchone()
+    return _change_dict(row)
+
+
+def update_string_change(conn, cid, data):
+    row = conn.execute(
+        'SELECT c.*, g.name guitar_name, g.color_hex guitar_color, g.string_count'
+        ' FROM string_changes c JOIN guitars g ON g.id=c.guitar_id WHERE c.id=?',
+        (cid,)).fetchone()
+    if row is None:
+        return None
+    date = _change_date(data.get('date', row['date']))
+    if not date:
+        return {'error': 'bad_date'}
+    kind = str(data.get('type', row['type']) or row['type']).strip().lower()
+    if kind not in ('full', 'partial'):
+        return {'error': 'bad_type'}
+    raw_changed = data.get('changed_strings')
+    if raw_changed is None:
+        try:
+            raw_changed = json.loads(row['changed_strings'] or '[]')
+        except (TypeError, ValueError):
+            raw_changed = []
+    changed, err = _clean_changed_strings(raw_changed, row['string_count'], kind)
+    if err:
+        return {'error': err}
+    model = str(data.get('string_model', row['string_model']) or '').strip()[:200]
+    if kind == 'full' and not model:
+        return {'error': 'missing_model'}
+    conn.execute(
+        'UPDATE string_changes SET date=?, type=?, changed_strings=?, string_model=?,'
+        ' notes=?, updated_at=? WHERE id=?',
+        (date, kind, json.dumps(changed), model,
+         str(data.get('notes', row['notes']) or '')[:2000], _utc_now(), cid))
+    conn.commit()
+    out = conn.execute(
+        'SELECT c.*, g.name guitar_name, g.color_hex guitar_color FROM string_changes c'
+        ' JOIN guitars g ON g.id=c.guitar_id WHERE c.id=?', (cid,)).fetchone()
+    return _change_dict(out)
+
+
+def delete_string_change(conn, cid):
+    if conn.execute('SELECT id FROM string_changes WHERE id=?', (cid,)).fetchone() is None:
+        return None
+    conn.execute('DELETE FROM string_changes WHERE id=?', (cid,))
+    conn.commit()
+    return {'deleted': cid}
+
+
+def list_string_changes(conn, guitar_id=None, date_from=None, date_to=None,
+                        active_only=False, limit=1000, offset=0):
+    where, args = [], []
+    if guitar_id not in (None, ''):
+        where.append('c.guitar_id=?')
+        args.append(int(guitar_id))
+    if date_from:
+        where.append('c.date >= ?')
+        args.append(str(date_from)[:10])
+    if date_to:
+        where.append('c.date <= ?')
+        args.append(str(date_to)[:10])
+    if active_only:
+        where.append('g.active=1')
+    sql = ('SELECT c.*, g.name guitar_name, g.color_hex guitar_color'
+           ' FROM string_changes c JOIN guitars g ON g.id=c.guitar_id')
+    if where:
+        sql += ' WHERE ' + ' AND '.join(where)
+    sql += ' ORDER BY c.date DESC, c.id DESC LIMIT ? OFFSET ?'
+    args.append(max(1, min(5000, int(limit or 1000))))
+    args.append(max(0, int(offset or 0)))
+    return [_change_dict(r) for r in conn.execute(sql, args).fetchall()]
+
+
+def list_string_models(conn):
+    rows = conn.execute(
+        "SELECT TRIM(string_model) value, MAX(date) last_used, COUNT(*) use_count"
+        " FROM string_changes WHERE TRIM(string_model) <> ''"
+        " GROUP BY lower(TRIM(string_model))"
+        " ORDER BY last_used DESC, use_count DESC, value COLLATE NOCASE"
+        " LIMIT 100").fetchall()
+    return [{'value': r['value'], 'last_used': r['last_used'],
+             'use_count': r['use_count']} for r in rows]
 
 
 def create_section(conn, data):
@@ -1169,6 +1506,9 @@ def update_section(conn, sid, data):
         except (TypeError, ValueError):
             lane = 1
         conn.execute('UPDATE sections SET lane=? WHERE id=?', (lane if lane in (1, 2, 3) else 1, sid))
+    if data.get('hidden') is not None:
+        conn.execute('UPDATE sections SET hidden=? WHERE id=?',
+                     (1 if data['hidden'] else 0, sid))
     conn.commit()
     return {'updated': sid}
 
@@ -1254,6 +1594,9 @@ def update_item(conn, iid, data):
         conn.execute('UPDATE section_items SET kind=? WHERE id=?', (kind, iid))
     if data.get('url') is not None:
         conn.execute('UPDATE section_items SET url=? WHERE id=?', (url, iid))
+    if data.get('hidden') is not None:
+        conn.execute('UPDATE section_items SET hidden=? WHERE id=?',
+                     (1 if data['hidden'] else 0, iid))
     if data.get('meta') is not None:
         conn.execute('UPDATE section_items SET meta_json=? WHERE id=?',
                      (json.dumps(data['meta'], ensure_ascii=False), iid))
@@ -1276,6 +1619,45 @@ def reorder_items(conn, sid, order):
                      (idx, int(iid), sid))
     conn.commit()
     return {'ok': True}
+
+
+def move_item(conn, iid, section_id, position=None):
+    """Move one item to another section, preserving its id and every field.
+
+    Only `section_id` and the positions change; the URL/meta that tie a section
+    item to an exercise resource are untouched. Positions in both sections are
+    normalized in the same transaction.
+    """
+    row = conn.execute('SELECT section_id FROM section_items WHERE id=?', (iid,)).fetchone()
+    if row is None:
+        return None
+    try:
+        target = int(section_id)
+    except (TypeError, ValueError):
+        return {'error': 'bad_section'}
+    if conn.execute('SELECT id FROM sections WHERE id=?', (target,)).fetchone() is None:
+        return {'error': 'not_found'}
+    old = row['section_id']
+    if old == target:
+        return {'ok': True, 'moved': iid, 'section_id': target}
+    order = [r['id'] for r in conn.execute(
+        'SELECT id FROM section_items WHERE section_id=? ORDER BY position, id',
+        (target,)).fetchall()]
+    try:
+        pos = len(order) if position is None else int(position)
+    except (TypeError, ValueError):
+        pos = len(order)
+    pos = max(0, min(len(order), pos))
+    order.insert(pos, iid)
+    conn.execute('UPDATE section_items SET section_id=? WHERE id=?', (target, iid))
+    for idx, item_id in enumerate(order):
+        conn.execute('UPDATE section_items SET position=? WHERE id=?', (idx, item_id))
+    for idx, item_id in enumerate(conn.execute(
+            'SELECT id FROM section_items WHERE section_id=? ORDER BY position, id',
+            (old,)).fetchall()):
+        conn.execute('UPDATE section_items SET position=? WHERE id=?', (idx, item_id['id']))
+    conn.commit()
+    return {'ok': True, 'moved': iid, 'section_id': target}
 
 
 def refresh_item_folder(conn, iid):
