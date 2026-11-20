@@ -58,6 +58,154 @@
     // True when the dry-run flag is on (js/debug.js): nothing must be recorded.
     function debugMode() { return !!(GPH.debug && GPH.debug.on); }
 
+    // ---- Weekly pedalboard-mode reminder -----------------------------------
+    // Kept intentionally small: one optional modal, two hooks and localStorage
+    // acknowledgements. No widget, no extra table and no server route.
+    const RIG_ACK_PREFIX = 'gphRigAck:';
+    const RIG_PENDING_KEY = 'gphRigPendingHome';
+    const RIG_ACK_KEEP_MS = 14 * 24 * 60 * 60 * 1000;
+    const RIG_DEFAULT_END = 'Switch the pedalboard to LINE-IN before packing up.';
+    const RIG_DEFAULT_START = 'Switch the pedalboard to AMP mode.';
+    let rigConfig = null;
+    let rigConfigPromise = null;
+    let rigModalDate = '';
+    let rigModalKind = '';
+    let rigModalLastFocus = null;
+    let rigModalKeyHandler = null;
+
+    function rigDateKey(date) {
+        const d = date || new Date();
+        return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' +
+            ('0' + d.getDate()).slice(-2);
+    }
+
+    function rigAckKey(kind, dateKey) {
+        return RIG_ACK_PREFIX + dateKey + ':' + kind;
+    }
+
+    function pruneRigAcks() {
+        try {
+            const cutoff = Date.now() - RIG_ACK_KEEP_MS;
+            Object.keys(localStorage).forEach(function (key) {
+                if (key.indexOf(RIG_ACK_PREFIX) !== 0) return;
+                const dateKey = key.slice(RIG_ACK_PREFIX.length).split(':')[0];
+                const at = Date.parse(dateKey + 'T00:00:00');
+                if (!isNaN(at) && at < cutoff) localStorage.removeItem(key);
+            });
+        } catch (e) { /* private mode */ }
+    }
+
+    function loadRigConfig(force) {
+        if (rigConfig && !force) return Promise.resolve(rigConfig);
+        if (rigConfigPromise && !force) return rigConfigPromise;
+        if (!(GPH.settings && GPH.settings.getOr)) return Promise.resolve(null);
+        rigConfigPromise = Promise.all([
+            GPH.settings.getOr('rig_reminder_enabled'),
+            GPH.settings.getOr('rig_reminder_day'),
+            GPH.settings.getOr('rig_reminder_end_text'),
+            GPH.settings.getOr('rig_reminder_start_text')
+        ]).then(function (values) {
+            const day = parseInt(values[1], 10);
+            rigConfig = {
+                enabled: GPH.settings.isOn(values[0]),
+                day: (day >= 0 && day <= 6) ? day : null,
+                endText: String(values[2] || '').trim() || RIG_DEFAULT_END,
+                startText: String(values[3] || '').trim() || RIG_DEFAULT_START
+            };
+            return rigConfig;
+        }).catch(function () { return null; });
+        return rigConfigPromise;
+    }
+
+    function closeRigReminder() {
+        const modal = document.getElementById('rigReminderModal');
+        if (rigModalDate && rigModalKind) {
+            try { localStorage.setItem(rigAckKey(rigModalKind, rigModalDate), '1'); }
+            catch (e) { /* private mode */ }
+        }
+        if (rigModalKind === 'start') {
+            try { localStorage.removeItem(RIG_PENDING_KEY); }
+            catch (e) { /* private mode */ }
+        }
+        if (modal) modal.hidden = true;
+        document.body.classList.remove('rig-modal-open');
+        if (rigModalKeyHandler) {
+            document.removeEventListener('keydown', rigModalKeyHandler, true);
+            rigModalKeyHandler = null;
+        }
+        const previous = rigModalLastFocus;
+        rigModalLastFocus = null;
+        rigModalDate = '';
+        rigModalKind = '';
+        if (previous && previous.focus) {
+            try { previous.focus(); } catch (e) { /* node gone */ }
+        }
+    }
+
+    function showRigReminder(kind, dateKey) {
+        const modal = document.getElementById('rigReminderModal');
+        const badge = document.getElementById('rigReminderBadge');
+        const title = document.getElementById('rigReminderTitle');
+        const text = document.getElementById('rigReminderText');
+        const ok = document.getElementById('rigReminderOk');
+        if (!modal || !badge || !title || !text || !ok) return;
+        const end = kind === 'end';
+        rigModalDate = dateKey;
+        rigModalKind = kind;
+        if (end) {
+            // The line-in reminder leaves a marker for the next routine, not
+            // only for tomorrow: the user may skip the next calendar day.
+            try { localStorage.setItem(RIG_PENDING_KEY, dateKey); }
+            catch (e) { /* private mode */ }
+        }
+        badge.textContent = end ? 'LOCAL DAY' : 'BACK HOME';
+        title.textContent = 'Pedalboard check';
+        text.textContent = end ? rigConfig.endText : rigConfig.startText;
+        ok.textContent = 'I switched it';
+        rigModalLastFocus = document.activeElement;
+        modal.hidden = false;
+        document.body.classList.add('rig-modal-open');
+        // alertdialog semantics need a real focus trap: Tab must not reach the
+        // practice form behind the overlay, and Escape must not dismiss it.
+        rigModalKeyHandler = function (event) {
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                ok.focus();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+            }
+        };
+        document.addEventListener('keydown', rigModalKeyHandler, true);
+        ok.onclick = closeRigReminder;
+        setTimeout(function () { if (!modal.hidden) ok.focus(); }, 30);
+    }
+
+    function maybeRigReminder(kind) {
+        loadRigConfig().then(function (cfg) {
+            if (!cfg || !cfg.enabled || cfg.day === null) return;
+            const now = new Date();
+            const dateKey = rigDateKey(now);
+            if (kind === 'end') {
+                if (now.getDay() !== cfg.day) return;
+                try {
+                    if (localStorage.getItem(rigAckKey(kind, dateKey))) return;
+                } catch (e) { return; }
+                showRigReminder(kind, dateKey);
+                return;
+            }
+            // Start reminder: pending from the rehearsal-day end reminder. This
+            // is checked on the next new routine, even if it is not tomorrow.
+            let pending = '';
+            try { pending = localStorage.getItem(RIG_PENDING_KEY) || ''; }
+            catch (e) { return; }
+            if (!pending || pending === dateKey) return;
+            try {
+                if (localStorage.getItem(rigAckKey(kind, dateKey))) return;
+            } catch (e) { return; }
+            showRigReminder(kind, dateKey);
+        });
+    }
+
     function setWelcomeName(name, totalMins) {
         const el = document.getElementById('welcomeRoutineName');
         el.textContent = name + ' ';
@@ -971,6 +1119,8 @@
     }
 
     function initSimpleAssistant() {
+        loadRigConfig();
+        pruneRigAcks();
         updateStartBtnTip();
         loadStates();
         loadSessionId();
@@ -1187,6 +1337,7 @@
         document.getElementById('welcomeCard').classList.add('is-hidden');
         document.getElementById('exerciseCard').classList.remove('is-hidden');
         displayCurrentExercise();
+        if (!freeMode) maybeRigReminder('start');
     }
 
     // "Exercise 2 of 8 · done" / "· skipped" (no suffix while pending).
@@ -3257,10 +3408,12 @@
 
     // Ends the routine: the real finish time is recorded by showWelcomeScreen().
     function finishRoutine() {
+        const wasFree = freeMode;
         persistCurrentPlayed();
         persistCurrentBpm();
         applyFinishAction();
         showWelcomeScreen();
+        if (!wasFree) maybeRigReminder('end');
     }
 
     // "Mark done": accepts the current exercise as done (50 % rule) and moves on.

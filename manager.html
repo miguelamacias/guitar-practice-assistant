@@ -15,7 +15,7 @@
         } catch (e) { /* private mode: the CSS default is the shipped one */ }
     </script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%B8</text></svg>">
-    <link rel="stylesheet" href="css/manager.css?v=80">
+    <link rel="stylesheet" href="css/manager.css?v=81">
 </head>
 <body>
 <div class="mgr">
@@ -471,6 +471,33 @@
         <div class="field">
             <label class="sub-check"><input type="checkbox" id="audioCloseOnChange" checked> Close players and stop metronome/drums when moving to the next exercise</label>
         </div>
+        <div class="field">
+            <label class="sub-check"><input type="checkbox" id="rigReminderEnabled"> Pedalboard mode reminder</label>
+        </div>
+        <div id="rigReminderOptions" class="sub-block" hidden>
+            <div class="field">
+                <label for="rigReminderDay">Rehearsal day</label>
+                <select id="rigReminderDay">
+                    <option value="">— Not set —</option>
+                    <option value="1">Monday</option>
+                    <option value="2">Tuesday</option>
+                    <option value="3">Wednesday</option>
+                    <option value="4">Thursday</option>
+                    <option value="5">Friday</option>
+                    <option value="6">Saturday</option>
+                    <option value="0">Sunday</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="rigReminderEndText">Before going to the local</label>
+                <input id="rigReminderEndText" type="text" maxlength="240" autocomplete="off">
+            </div>
+            <div class="field">
+                <label for="rigReminderStartText">Back home</label>
+                <input id="rigReminderStartText" type="text" maxlength="240" autocomplete="off">
+            </div>
+            <p class="about-note">Shown as a blocking reminder when you finish a routine on the selected day, and again when you start the next new routine after that session, even if you skip a day.</p>
+        </div>
     </div>
 
     <div class="about-card">
@@ -615,7 +642,7 @@
 
 <div id="toast" class="toast"></div>
 <script src="js/debug.js?v=2"></script>
-<script src="js/settings.js?v=4"></script>
+<script src="js/settings.js?v=5"></script>
 <script src="js/managerLastfm.js?v=2"></script>
 <script src="js/icons.js?v=14"></script>
 <script src="js/theory.js?v=20"></script>
@@ -625,7 +652,7 @@
 <script src="js/guitars.js?v=2"></script>
 <!-- the drum preset catalog comes from the widget itself (single source of truth) -->
 <script src="js/drumMachine.js?v=14"></script>
-<script src="js/manager.js?v=38"></script>
+<script src="js/manager.js?v=39"></script>
 <script src="js/managerExercises.js?v=8"></script>
 <script src="js/managerPaths.js?v=3"></script>
 <script src="js/managerSections.js?v=27"></script>

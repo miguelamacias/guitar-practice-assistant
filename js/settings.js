@@ -19,6 +19,12 @@
         fretboard_color: '#607d8b',
         fretboard_strings: '1,2,3,4,5,6',
         fretboard_frets: '12',
+        // Optional, very specific rehearsal reminder. Empty day = disabled
+        // even when the checkbox is on; the messages stay editable.
+        rig_reminder_enabled: '0',
+        rig_reminder_day: '',
+        rig_reminder_end_text: 'Switch the pedalboard to LINE-IN before packing up.',
+        rig_reminder_start_text: 'Switch the pedalboard to AMP mode.',
         // The real defaults live in db.DEFAULT_AREAS; this copy is only a
         // fallback when the settings endpoint cannot be reached.
         practice_areas: '[{"id":"knowledge","label":"Knowledge","position":0},' +

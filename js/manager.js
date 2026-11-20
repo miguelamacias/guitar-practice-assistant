@@ -1564,6 +1564,51 @@
         });
     }
 
+    function setRigReminderOptions() {
+        const cb = $('rigReminderEnabled');
+        const box = $('rigReminderOptions');
+        if (box) box.hidden = !(cb && cb.checked);
+    }
+
+    function loadRigReminderSettings() {
+        Promise.all([
+            GPH.settings.getOr('rig_reminder_enabled'),
+            GPH.settings.getOr('rig_reminder_day'),
+            GPH.settings.getOr('rig_reminder_end_text'),
+            GPH.settings.getOr('rig_reminder_start_text')
+        ]).then(function (v) {
+            const cb = $('rigReminderEnabled');
+            const day = $('rigReminderDay');
+            const end = $('rigReminderEndText');
+            const start = $('rigReminderStartText');
+            if (cb) cb.checked = GPH.settings.isOn(v[0]);
+            if (day) day.value = v[1] || '';
+            if (end) end.value = v[2] || '';
+            if (start) start.value = v[3] || '';
+            setRigReminderOptions();
+        }).catch(function () {});
+    }
+
+    function bindRigReminderSettings() {
+        const cb = $('rigReminderEnabled');
+        const day = $('rigReminderDay');
+        const end = $('rigReminderEndText');
+        const start = $('rigReminderStartText');
+        if (cb) cb.addEventListener('change', function () {
+            putSetting('rig_reminder_enabled', this.checked ? '1' : '0');
+            setRigReminderOptions();
+        });
+        if (day) day.addEventListener('change', function () {
+            putSetting('rig_reminder_day', this.value);
+        });
+        if (end) end.addEventListener('change', function () {
+            putSetting('rig_reminder_end_text', this.value.trim());
+        });
+        if (start) start.addEventListener('change', function () {
+            putSetting('rig_reminder_start_text', this.value.trim());
+        });
+    }
+
     function init() {
         bindDebugSetting();
         bindExports();
@@ -1573,6 +1618,8 @@
         loadFretboardSubSettings();
         bindAssistantSettings();
         loadAssistantSettings();
+        bindRigReminderSettings();
+        loadRigReminderSettings();
         $('newRoutineBtn').addEventListener('click', createRoutine);
         $('saveRoutineBtn').addEventListener('click', saveRoutine);
         $('activateBtn').addEventListener('click', activateRoutine);

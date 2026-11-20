@@ -16,7 +16,7 @@
             }
         } catch (e) { /* private mode: the CSS default is the shipped one */ }
     </script>
-    <link rel="stylesheet" href="css/styles.css?v=149">
+    <link rel="stylesheet" href="css/styles.css?v=150">
 
     <!-- App modules (classic scripts, in dependency order) -->
     <!-- Debug dry-run + sandbox badge (?debug=1). Must load before the other modules
@@ -31,9 +31,9 @@
     <script defer src="js/ui.js?v=4"></script>
     <script defer src="js/metronome.js?v=7"></script>
     <script defer src="js/drumMachine.js?v=15"></script>
-    <script defer src="js/practiceAssistant.js?v=104"></script>
+    <script defer src="js/practiceAssistant.js?v=107"></script>
     <script defer src="js/api.js?v=1"></script>
-    <script defer src="js/settings.js?v=4"></script>
+    <script defer src="js/settings.js?v=5"></script>
     <script defer src="js/prefs.js?v=1"></script>
     <script defer src="js/chords.js?v=3"></script>
     <script defer src="js/chordDiagrams.js?v=2"></script>
@@ -389,6 +389,18 @@
         </div>
         <div class="id3-note">A verified backup is created in <code>backups/id3</code> before saving.</div>
     </form>
+</div>
+
+<div id="rigReminderModal" class="gc-modal-backdrop rig-modal-backdrop" hidden>
+    <div class="gc-modal rig-modal" role="alertdialog" aria-modal="true"
+         aria-labelledby="rigReminderTitle" aria-describedby="rigReminderText">
+        <div class="rig-modal-body">
+            <div id="rigReminderBadge" class="rig-modal-badge">LOCAL DAY</div>
+            <h3 id="rigReminderTitle">Pedalboard check</h3>
+            <p id="rigReminderText">Switch the pedalboard to LINE-IN before packing up.</p>
+            <button id="rigReminderOk" class="rig-modal-btn" type="button">I switched it</button>
+        </div>
+    </div>
 </div>
 
 <!-- Manager floating layer (iframe) -->

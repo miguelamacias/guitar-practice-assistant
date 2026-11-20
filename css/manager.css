@@ -198,7 +198,7 @@ textarea { resize: vertical; min-height: 44px; }
 /* Form fields that live next to text inputs: same control as the inputs.
    #sLane belongs to the section editor, between the title and subtitle fields.
    #catArea is the Area select of the exercise editor. */
-#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane, #catArea, #guitarType {
+#newItemKind, #sColor, #newWidgetKey, #finishResource, #sLane, #catArea, #guitarType, #rigReminderDay {
     background: #111; color: var(--text); border: 1px solid #333; border-radius: 5px;
     padding: 8px 10px; font-family: inherit; font-size: 0.9rem;
 }
